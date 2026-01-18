@@ -19,13 +19,16 @@
 ///
 
 pub mod ast;
+pub mod diagnostic;
 pub mod lexer;
 pub mod parser;
 pub mod source;
 pub mod typechecker;
 
+pub use diagnostic::DiagnosticReporter;
 pub use lexer::tokenize;
 pub use parser::parse;
+pub use source::SourceFile;
 pub use typechecker::check;
 
 #[test]

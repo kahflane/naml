@@ -11,6 +11,8 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+use namlc::{check, parse, tokenize, DiagnosticReporter, SourceFile};
+
 #[derive(Parser)]
 #[command(name = "naml")]
 #[command(author, version, about = "The naml programming language", long_about = None)]
@@ -84,7 +86,7 @@ fn main() {
 }
 
 fn run_file(file: &PathBuf, cached: bool) {
-    let source = match std::fs::read_to_string(file) {
+    let source_text = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error reading file: {}", e);
@@ -92,19 +94,34 @@ fn run_file(file: &PathBuf, cached: bool) {
         }
     };
 
-    let (tokens, _interner) = namlc::tokenize(&source);
+    let file_name = file.display().to_string();
+    let source_file = SourceFile::new(file_name.clone(), source_text.clone());
+    let (tokens, interner) = tokenize(&source_text);
 
-    println!("Tokenized {} tokens from {}", tokens.len(), file.display());
+    let parse_result = parse(&tokens);
 
-    for token in &tokens {
-        if !token.is_trivia() {
-            println!("  {:?} @ {:?}", token.kind, token.span);
-        }
+    if !parse_result.errors.is_empty() {
+        let reporter = DiagnosticReporter::new(&source_file);
+        reporter.report_parse_errors(&parse_result.errors);
+        std::process::exit(1);
     }
+
+    let type_errors = check(&parse_result.ast, &interner);
+
+    if !type_errors.is_empty() {
+        let reporter = DiagnosticReporter::new(&source_file);
+        reporter.report_type_errors(&type_errors);
+        std::process::exit(1);
+    }
+
+    println!("Successfully compiled: {}", file_name);
+    println!("  {} items parsed", parse_result.ast.items.len());
 
     if cached {
         println!("(cached mode not yet implemented)");
     }
+
+    println!("(JIT execution not yet implemented)");
 }
 
 fn build_project(target: &str, release: bool) {
@@ -113,9 +130,110 @@ fn build_project(target: &str, release: bool) {
 }
 
 fn check_code(path: Option<&std::path::Path>) {
-    let path_str = path.map(|p| p.display().to_string()).unwrap_or_else(|| ".".into());
-    println!("Checking: {}", path_str);
-    println!("(check not yet implemented)");
+    let path = path.unwrap_or(std::path::Path::new("."));
+
+    if path.is_file() {
+        check_file(path);
+    } else if path.is_dir() {
+        check_directory(path);
+    } else {
+        eprintln!("Error: {} does not exist", path.display());
+        std::process::exit(1);
+    }
+}
+
+fn check_file(path: &std::path::Path) {
+    let source_text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let file_name = path.display().to_string();
+    let source_file = SourceFile::new(file_name.clone(), source_text.clone());
+    let (tokens, interner) = tokenize(&source_text);
+
+    let parse_result = parse(&tokens);
+    let mut has_errors = false;
+
+    if !parse_result.errors.is_empty() {
+        let reporter = DiagnosticReporter::new(&source_file);
+        reporter.report_parse_errors(&parse_result.errors);
+        has_errors = true;
+    }
+
+    if !has_errors {
+        let type_errors = check(&parse_result.ast, &interner);
+
+        if !type_errors.is_empty() {
+            let reporter = DiagnosticReporter::new(&source_file);
+            reporter.report_type_errors(&type_errors);
+            has_errors = true;
+        }
+    }
+
+    if has_errors {
+        std::process::exit(1);
+    } else {
+        println!("No errors in {}", file_name);
+    }
+}
+
+fn check_directory(path: &std::path::Path) {
+    let mut checked = 0;
+    let mut errors = 0;
+
+    for entry in walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let file_path = entry.path();
+        if file_path.extension().map(|e| e == "naml").unwrap_or(false) {
+            let source_text = match std::fs::read_to_string(file_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error reading {}: {}", file_path.display(), e);
+                    errors += 1;
+                    continue;
+                }
+            };
+
+            let file_name = file_path.display().to_string();
+            let source_file = SourceFile::new(file_name.clone(), source_text.clone());
+            let (tokens, interner) = tokenize(&source_text);
+
+            let parse_result = parse(&tokens);
+            let mut file_has_errors = false;
+
+            if !parse_result.errors.is_empty() {
+                let reporter = DiagnosticReporter::new(&source_file);
+                reporter.report_parse_errors(&parse_result.errors);
+                file_has_errors = true;
+            }
+
+            if !file_has_errors {
+                let type_errors = check(&parse_result.ast, &interner);
+                if !type_errors.is_empty() {
+                    let reporter = DiagnosticReporter::new(&source_file);
+                    reporter.report_type_errors(&type_errors);
+                    file_has_errors = true;
+                }
+            }
+
+            if file_has_errors {
+                errors += 1;
+            }
+            checked += 1;
+        }
+    }
+
+    println!("Checked {} files, {} with errors", checked, errors);
+
+    if errors > 0 {
+        std::process::exit(1);
+    }
 }
 
 fn init_project(name: Option<&str>) {
