@@ -1,0 +1,89 @@
+##
+## namlc - The naml compiler
+##
+## Provides lexing, parsing, type checking, JIT execution, and code generation.
+##
+
+[package]
+name = "namlc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "The naml programming language compiler"
+
+[[bin]]
+name = "naml"
+path = "src/main.rs"
+
+[lib]
+name = "namlc"
+path = "src/lib.rs"
+
+[dependencies]
+##
+## String interning
+##
+lasso.workspace = true
+
+##
+## Cranelift JIT
+##
+cranelift.workspace = true
+cranelift-codegen.workspace = true
+cranelift-frontend.workspace = true
+cranelift-jit.workspace = true
+cranelift-module.workspace = true
+cranelift-native.workspace = true
+
+##
+## Error handling
+##
+thiserror.workspace = true
+miette.workspace = true
+ariadne.workspace = true
+
+##
+## CLI
+##
+clap.workspace = true
+
+##
+## Serialization
+##
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+##
+## Hashing
+##
+blake3.workspace = true
+
+##
+## File system
+##
+walkdir.workspace = true
+
+##
+## Async runtime
+##
+tokio.workspace = true
+
+##
+## Parser combinators
+##
+nom.workspace = true
+
+
+[dev-dependencies]
+insta.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+web-sys.workspace = true
+
+[features]
+default = ["jit"]
+jit = []

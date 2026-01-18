@@ -1,0 +1,102 @@
+##
+## naml - A fast, cross-platform programming language
+##
+## Workspace manifest defining the compiler and related crates.
+## Targets: Native binary, Server WASM, Browser WASM
+##
+
+[workspace]
+resolver = "2"
+members = ["namlc"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["naml contributors"]
+license = "MIT"
+repository = "https://github.com/naml-lang/naml"
+description = "A fast, cross-platform programming language"
+
+[workspace.dependencies]
+##
+## String interning for zero-allocation identifiers
+##
+lasso = { version = "0.7", features = ["multi-threaded"] }
+
+##
+## Cranelift JIT compilation
+##
+cranelift = "0.116"
+cranelift-codegen = "0.116"
+cranelift-frontend = "0.116"
+cranelift-jit = "0.116"
+cranelift-module = "0.116"
+cranelift-native = "0.116"
+
+##
+## Error handling and diagnostics
+##
+thiserror = "2.0"
+miette = { version = "7.4", features = ["fancy"] }
+ariadne = "0.5"
+
+##
+## CLI and argument parsing
+##
+clap = { version = "4.5", features = ["derive"] }
+
+##
+## Serialization for cache and config
+##
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+##
+## Hashing for cache invalidation
+##
+blake3 = "1.5"
+
+##
+## File system utilities
+##
+walkdir = "2.5"
+
+##
+## Async runtime (for server mode)
+##
+tokio = { version = "1.43", features = ["full"] }
+
+##
+## HTTP client/server
+##
+hyper = { version = "1.5", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+
+##
+## WASM targets
+##
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console", "Window", "Document"] }
+
+##
+## Testing
+##
+insta = { version = "1.41", features = ["json"] }
+
+##
+## Parser combinators
+##
+nom = "7"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true
