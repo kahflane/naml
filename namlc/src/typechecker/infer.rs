@@ -32,6 +32,8 @@ pub struct TypeInferrer<'a> {
     pub interner: &'a Rodeo,
     pub next_var_id: &'a mut u32,
     pub errors: &'a mut Vec<TypeError>,
+    /// Current switch scrutinee type for resolving bare enum variants in case patterns
+    pub switch_scrutinee: Option<Type>,
 }
 
 impl<'a> TypeInferrer<'a> {
@@ -87,6 +89,29 @@ impl<'a> TypeInferrer<'a> {
             binding.ty.clone()
         } else if let Some(func) = self.symbols.get_function(ident.ident.symbol) {
             Type::Function(self.symbols.to_function_type(func))
+        } else if let Some(def) = self.symbols.get_type(ident.ident.symbol) {
+            // Handle enum type names being used directly (e.g., UserRole in UserRole.Admin)
+            use super::symbols::TypeDef;
+            match def {
+                TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
+                _ => {
+                    let name = self.interner.resolve(&ident.ident.symbol).to_string();
+                    self.errors
+                        .push(TypeError::undefined_var(name, ident.span));
+                    Type::Error
+                }
+            }
+        } else if let Some(Type::Enum(ref e)) = self.switch_scrutinee {
+            // In a switch context, try to resolve bare identifier as enum variant
+            for variant in &e.variants {
+                if variant.name == ident.ident.symbol {
+                    return Type::Enum(e.clone());
+                }
+            }
+            let name = self.interner.resolve(&ident.ident.symbol).to_string();
+            self.errors
+                .push(TypeError::undefined_var(name, ident.span));
+            Type::Error
         } else {
             let name = self.interner.resolve(&ident.ident.symbol).to_string();
             self.errors
@@ -136,7 +161,57 @@ impl<'a> TypeInferrer<'a> {
 
         use ast::BinaryOp::*;
         match bin.op {
-            Add | Sub | Mul | Div | Mod => {
+            Add => {
+                let left_resolved = left_ty.resolve();
+                let right_resolved = right_ty.resolve();
+
+                match (&left_resolved, &right_resolved) {
+                    (Type::String, Type::String) => Type::String,
+                    _ if left_resolved.is_numeric() || right_resolved.is_numeric() => {
+                        // Handle int/uint coercion for Add as well
+                        let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, &bin.left, &bin.right);
+                        if let Some(result_ty) = coerced {
+                            return result_ty;
+                        }
+
+                        if let Err(e) = unify(&left_ty, &right_ty, bin.span) {
+                            self.errors.push(e);
+                            return Type::Error;
+                        }
+                        let resolved = left_ty.resolve();
+                        if !resolved.is_numeric() && resolved != Type::Error {
+                            self.errors.push(TypeError::InvalidBinaryOp {
+                                op: format!("{:?}", bin.op),
+                                left: left_ty.to_string(),
+                                right: right_ty.to_string(),
+                                span: bin.span,
+                            });
+                            return Type::Error;
+                        }
+                        resolved
+                    }
+                    _ => {
+                        self.errors.push(TypeError::InvalidBinaryOp {
+                            op: format!("{:?}", bin.op),
+                            left: left_ty.to_string(),
+                            right: right_ty.to_string(),
+                            span: bin.span,
+                        });
+                        Type::Error
+                    }
+                }
+            }
+
+            Sub | Mul | Div | Mod => {
+                let left_resolved = left_ty.resolve();
+                let right_resolved = right_ty.resolve();
+
+                // Handle int/uint coercion: if one is uint and other is int, prefer uint
+                let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, &bin.left, &bin.right);
+                if let Some(result_ty) = coerced {
+                    return result_ty;
+                }
+
                 if let Err(e) = unify(&left_ty, &right_ty, bin.span) {
                     self.errors.push(e);
                     return Type::Error;
@@ -306,9 +381,60 @@ impl<'a> TypeInferrer<'a> {
         let receiver_ty = self.infer_expr(&call.receiver);
         let resolved = receiver_ty.resolve();
 
+        // Handle built-in option methods
+        if let Type::Option(inner) = &resolved {
+            let method_name = self.interner.resolve(&call.method.symbol);
+            return match method_name {
+                "is_some" | "is_none" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Bool
+                }
+                "unwrap" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    (**inner).clone()
+                }
+                "unwrap_or" => {
+                    if call.args.len() != 1 {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 1,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return (**inner).clone();
+                    }
+                    let default_ty = self.infer_expr(&call.args[0]);
+                    if let Err(e) = unify(&default_ty, inner, call.args[0].span()) {
+                        self.errors.push(e);
+                    }
+                    (**inner).clone()
+                }
+                _ => {
+                    self.errors.push(TypeError::UndefinedMethod {
+                        ty: resolved.to_string(),
+                        method: method_name.to_string(),
+                        span: call.span,
+                    });
+                    Type::Error
+                }
+            };
+        }
+
         let type_name = match &resolved {
             Type::Struct(s) => s.name,
             Type::Enum(e) => e.name,
+            Type::Generic(name, _) => *name,
             Type::Error => return Type::Error,
             _ => {
                 let method = self.interner.resolve(&call.method.symbol).to_string();
@@ -403,6 +529,48 @@ impl<'a> TypeInferrer<'a> {
                     span: field.span,
                 });
                 Type::Error
+            }
+            Type::Enum(ref e) => {
+                // Handle EnumType.Variant syntax (e.g., UserRole.Admin)
+                for variant in &e.variants {
+                    if variant.name == field.field.symbol {
+                        return Type::Enum(e.clone());
+                    }
+                }
+                let field_name = self.interner.resolve(&field.field.symbol).to_string();
+                let enum_name = self.interner.resolve(&e.name).to_string();
+                self.errors.push(TypeError::Custom {
+                    message: format!("unknown variant '{}' for enum '{}'", field_name, enum_name),
+                    span: field.span,
+                });
+                Type::Error
+            }
+            Type::Generic(name, ref _type_args) => {
+                // Look up the struct definition by name
+                use super::symbols::TypeDef;
+                if let Some(TypeDef::Struct(def)) = self.symbols.get_type(name) {
+                    let struct_ty = self.symbols.to_struct_type(def);
+                    for f in &struct_ty.fields {
+                        if f.name == field.field.symbol {
+                            return f.ty.clone();
+                        }
+                    }
+                    let field_name = self.interner.resolve(&field.field.symbol).to_string();
+                    self.errors.push(TypeError::UndefinedField {
+                        ty: format!("{:?}", name),
+                        field: field_name,
+                        span: field.span,
+                    });
+                    Type::Error
+                } else {
+                    let field_name = self.interner.resolve(&field.field.symbol).to_string();
+                    self.errors.push(TypeError::UndefinedField {
+                        ty: resolved.to_string(),
+                        field: field_name,
+                        span: field.span,
+                    });
+                    Type::Error
+                }
             }
             Type::Error => Type::Error,
             _ => {
@@ -659,8 +827,12 @@ impl<'a> TypeInferrer<'a> {
 
                 if let Some(init) = &var.init {
                     let init_ty = self.infer_expr(init);
-                    if let Err(e) = unify(&init_ty, &ty, init.span()) {
-                        self.errors.push(e);
+                    // Allow int literals to be assigned to uint (non-negative int → uint coercion)
+                    let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, init);
+                    if should_unify {
+                        if let Err(e) = unify(&init_ty, &ty, init.span()) {
+                            self.errors.push(e);
+                        }
                     }
                 }
 
@@ -674,8 +846,12 @@ impl<'a> TypeInferrer<'a> {
                 };
 
                 let init_ty = self.infer_expr(&c.init);
-                if let Err(e) = unify(&init_ty, &ty, c.init.span()) {
-                    self.errors.push(e);
+                // Allow int literals to be assigned to uint (non-negative int → uint coercion)
+                let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, &c.init);
+                if should_unify {
+                    if let Err(e) = unify(&init_ty, &ty, c.init.span()) {
+                        self.errors.push(e);
+                    }
                 }
 
                 self.env.define(c.name.symbol, ty, false);
@@ -787,6 +963,10 @@ impl<'a> TypeInferrer<'a> {
             Switch(switch) => {
                 let scrutinee_ty = self.infer_expr(&switch.scrutinee);
 
+                // Set switch context for resolving bare enum variants in case patterns
+                let old_scrutinee = self.switch_scrutinee.take();
+                self.switch_scrutinee = Some(scrutinee_ty.resolve());
+
                 for case in &switch.cases {
                     let pattern_ty = self.infer_expr(&case.pattern);
                     if let Err(e) = unify(&pattern_ty, &scrutinee_ty, case.pattern.span()) {
@@ -799,6 +979,9 @@ impl<'a> TypeInferrer<'a> {
                     }
                     self.env.pop_scope();
                 }
+
+                // Restore previous context
+                self.switch_scrutinee = old_scrutinee;
 
                 if let Some(default) = &switch.default {
                     self.env.push_scope();
@@ -870,6 +1053,42 @@ impl<'a> TypeInferrer<'a> {
                 })
             }
             ast::NamlType::Inferred => fresh_type_var(&mut 0),
+        }
+    }
+
+    /// Check if this is an int literal being assigned to a uint type (allowed coercion)
+    fn is_int_to_uint_coercion(&self, init_ty: &Type, target_ty: &Type, init: &Expression) -> bool {
+        let init_resolved = init_ty.resolve();
+        let target_resolved = target_ty.resolve();
+
+        // Check if target is uint and init type is int
+        if target_resolved != Type::Uint || init_resolved != Type::Int {
+            return false;
+        }
+
+        // Check if the expression is an integer literal
+        matches!(init, Expression::Literal(lit) if matches!(lit.value, Literal::Int(_)))
+    }
+
+    /// Coerce int/uint operations: if one operand is uint and the other is an int literal, result is uint
+    fn coerce_int_uint(
+        &self,
+        left_ty: &Type,
+        right_ty: &Type,
+        left_expr: &Expression,
+        right_expr: &Expression,
+    ) -> Option<Type> {
+        let is_left_int_literal =
+            matches!(left_expr, Expression::Literal(lit) if matches!(lit.value, Literal::Int(_)));
+        let is_right_int_literal =
+            matches!(right_expr, Expression::Literal(lit) if matches!(lit.value, Literal::Int(_)));
+
+        match (left_ty, right_ty) {
+            // uint op int_literal -> uint
+            (Type::Uint, Type::Int) if is_right_int_literal => Some(Type::Uint),
+            // int_literal op uint -> uint
+            (Type::Int, Type::Uint) if is_left_int_literal => Some(Type::Uint),
+            _ => None,
         }
     }
 }

@@ -730,7 +730,7 @@ pub fn (self: UserDeletedEvent) payload() -> map<string, string> {
 pub fn map_array<T, U>(arr: [T], f: fn(T) -> U) -> [U] {
     var result: [U] = [];
     for (item in arr) {
-        result = result + [f(item)];
+        result.push(f(item));
     }
     return result;
 }
@@ -739,7 +739,7 @@ pub fn filter_array<T>(arr: [T], predicate: fn(T) -> bool) -> [T] {
     var result: [T] = [];
     for (item in arr) {
         if (predicate(item)) {
-            result = result + [item];
+            result.push(item);
         }
     }
     return result;
@@ -789,7 +789,7 @@ pub fn zip<A, B>(a: [A], b: [B]) -> [Pair<A, B>] {
     var result: [Pair<A, B>] = [];
     var i: int = 0;
     while (i < a.length && i < b.length) {
-        result = result + [Pair { first: a[i], second: b[i] }];
+        result.push(Pair { first: a[i], second: b[i] });
         i = i + 1;
     }
     return result;
@@ -799,7 +799,7 @@ pub fn flatten<T>(nested: [[T]]) -> [T] {
     var result: [T] = [];
     for (inner in nested) {
         for (item in inner) {
-            result = result + [item];
+            result.push(item);
         }
     }
     return result;
@@ -849,7 +849,7 @@ pub async fn (mut self: Channel<T>) send(value: T) -> bool {
     while (self.buffer.length >= self.capacity) {
         await yield_now();
     }
-    self.buffer = self.buffer + [value];
+    self.buffer.push(value);
     return true;
 }
 
@@ -934,7 +934,7 @@ async fn main() {
         var task: promise<HttpResponse> = spawn {
             return await client.get("/items/" + (i as string));
         };
-        tasks = tasks + [task];
+        tasks.push(task);
     }
 
     for (task in tasks) {

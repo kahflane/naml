@@ -104,7 +104,8 @@ impl<'a> TypeChecker<'a> {
                 Item::Enum(e) => self.collect_enum(e),
                 Item::Interface(i) => self.collect_interface(i),
                 Item::Exception(e) => self.collect_exception(e),
-                Item::Import(_) | Item::Use(_) | Item::Extern(_) | Item::TopLevelStmt(_) => {}
+                Item::Extern(e) => self.collect_extern(e),
+                Item::Import(_) | Item::Use(_) | Item::TopLevelStmt(_) => {}
             }
         }
     }
@@ -140,6 +141,34 @@ impl<'a> TypeChecker<'a> {
             is_public: func.is_public,
             is_variadic: false,
             span: func.span,
+        });
+    }
+
+    fn collect_extern(&mut self, ext: &ast::ExternItem) {
+        let params = ext
+            .params
+            .iter()
+            .map(|p| (p.name.symbol, self.convert_type(&p.ty)))
+            .collect();
+
+        let return_ty = ext
+            .return_ty
+            .as_ref()
+            .map(|t| self.convert_type(t))
+            .unwrap_or(Type::Unit);
+
+        let throws = ext.throws.as_ref().map(|t| self.convert_type(t));
+
+        self.symbols.define_function(FunctionSig {
+            name: ext.name.symbol,
+            type_params: Vec::new(),
+            params,
+            return_ty,
+            throws,
+            is_async: false,
+            is_public: true,
+            is_variadic: false,
+            span: ext.span,
         });
     }
 
@@ -324,6 +353,7 @@ impl<'a> TypeChecker<'a> {
             interner: self.interner,
             next_var_id: &mut self.next_var_id,
             errors: &mut self.errors,
+            switch_scrutinee: None,
         };
 
         inferrer.check_stmt(&stmt_item.stmt);
@@ -360,6 +390,7 @@ impl<'a> TypeChecker<'a> {
                 interner: self.interner,
                 next_var_id: &mut self.next_var_id,
                 errors: &mut self.errors,
+                switch_scrutinee: None,
             };
 
             for stmt in &body.statements {
