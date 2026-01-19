@@ -9,16 +9,17 @@
 /// - ast: Abstract syntax tree definitions
 /// - parser: Parsing tokens into AST
 /// - typechecker: Type system and inference
-/// - jit: Cranelift-based JIT compilation (to be implemented)
-/// - codegen: Rust code generation (to be implemented)
+/// - codegen: Rust code generation (transpilation)
 ///
 /// Entry points:
 /// - `tokenize`: Convert source text into tokens
 /// - `parse`: Parse tokens into AST
 /// - `check`: Type check an AST
+/// - `codegen`: Generate Rust code from AST
 ///
 
 pub mod ast;
+pub mod codegen;
 pub mod diagnostic;
 pub mod lexer;
 pub mod parser;
@@ -26,6 +27,7 @@ pub mod source;
 pub mod typechecker;
 
 pub use ast::AstArena;
+pub use codegen::compile_and_run;
 pub use diagnostic::DiagnosticReporter;
 pub use lexer::tokenize;
 pub use parser::parse;
@@ -95,7 +97,7 @@ printf("After move - Point distance squared: {}", p.distance_from_origin());
 
     let (tokens, _interner) = tokenize(source);
     let arena = AstArena::new();
-    let result = parse(&tokens, &arena);
+    let result = parse(&tokens, source, &arena);
     if result.errors.is_empty() {
         println!("Parsed {} items successfully", result.ast.items.len());
         assert!(result.ast.items.len() > 10, "Expected at least 10 items");

@@ -1,0 +1,21 @@
+fn main() {
+    println("Hello, World!");
+
+    var x: int = 40;
+    var y: int = 2;
+    var result = x + y;
+
+    print("Result: ");
+    println(result);
+
+    if (result == 42) {
+        println("The answer!");
+    }
+
+    var i: int = 0;
+    while (i < 3) {
+        print("i = ");
+        println(i);
+        i = i + 1;
+    }
+}

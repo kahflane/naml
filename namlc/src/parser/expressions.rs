@@ -152,22 +152,22 @@ fn parse_atom<'a, 'ast>(
 }
 
 fn parse_int_literal<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Expression<'ast>> {
-    let (input, (_, span)) = int_lit(input)?;
+    let (input, (value, span)) = int_lit(input)?;
     Ok((
         input,
         Expression::Literal(LiteralExpr {
-            value: Literal::Int(0),
+            value: Literal::Int(value),
             span,
         }),
     ))
 }
 
 fn parse_float_literal<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Expression<'ast>> {
-    let (input, (_, span)) = float_lit(input)?;
+    let (input, (value, span)) = float_lit(input)?;
     Ok((
         input,
         Expression::Literal(LiteralExpr {
-            value: Literal::Float(0.0),
+            value: Literal::Float(value),
             span,
         }),
     ))

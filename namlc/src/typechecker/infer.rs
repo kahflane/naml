@@ -261,19 +261,31 @@ impl<'a> TypeInferrer<'a> {
 
         match resolved {
             Type::Function(func) => {
-                if call.args.len() != func.params.len() {
-                    self.errors.push(TypeError::WrongArgCount {
-                        expected: func.params.len(),
-                        found: call.args.len(),
-                        span: call.span,
-                    });
-                    return Type::Error;
-                }
+                if func.is_variadic {
+                    for (arg, param_ty) in call.args.iter().zip(func.params.iter()) {
+                        let arg_ty = self.infer_expr(arg);
+                        if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
+                            self.errors.push(e);
+                        }
+                    }
+                    for arg in call.args.iter().skip(func.params.len()) {
+                        self.infer_expr(arg);
+                    }
+                } else {
+                    if call.args.len() != func.params.len() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: func.params.len(),
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return Type::Error;
+                    }
 
-                for (arg, param_ty) in call.args.iter().zip(func.params.iter()) {
-                    let arg_ty = self.infer_expr(arg);
-                    if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
-                        self.errors.push(e);
+                    for (arg, param_ty) in call.args.iter().zip(func.params.iter()) {
+                        let arg_ty = self.infer_expr(arg);
+                        if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
+                            self.errors.push(e);
+                        }
                     }
                 }
 
@@ -566,6 +578,7 @@ impl<'a> TypeInferrer<'a> {
             returns: Box::new(return_ty),
             throws: None,
             is_async: false,
+            is_variadic: false,
         })
     }
 
@@ -853,6 +866,7 @@ impl<'a> TypeInferrer<'a> {
                     returns: Box::new(self.convert_ast_type(returns)),
                     throws: None,
                     is_async: false,
+                    is_variadic: false,
                 })
             }
             ast::NamlType::Inferred => fresh_type_var(&mut 0),

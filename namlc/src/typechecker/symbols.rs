@@ -29,6 +29,7 @@ pub struct FunctionSig {
     pub throws: Option<Type>,
     pub is_async: bool,
     pub is_public: bool,
+    pub is_variadic: bool,
     pub span: Span,
 }
 
@@ -205,6 +206,7 @@ impl SymbolTable {
             returns: Box::new(sig.return_ty.clone()),
             throws: sig.throws.clone().map(Box::new),
             is_async: sig.is_async,
+            is_variadic: sig.is_variadic,
         }
     }
 }
@@ -235,6 +237,7 @@ mod tests {
             throws: None,
             is_async: false,
             is_public: true,
+            is_variadic: false,
             span: Span::dummy(),
         });
 

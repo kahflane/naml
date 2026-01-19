@@ -46,12 +46,41 @@ pub struct TypeChecker<'a> {
 
 impl<'a> TypeChecker<'a> {
     pub fn new(interner: &'a Rodeo) -> Self {
-        Self {
+        let mut checker = Self {
             symbols: SymbolTable::new(),
             env: TypeEnv::new(),
             interner,
             errors: Vec::new(),
             next_var_id: 0,
+        };
+        checker.register_builtins();
+        checker
+    }
+
+    fn register_builtins(&mut self) {
+        use crate::source::Span;
+
+        let builtins: Vec<(&str, bool, Type)> = vec![
+            ("print", true, Type::Unit),
+            ("println", true, Type::Unit),
+            ("printf", true, Type::Unit),
+            ("read_line", false, Type::String),
+        ];
+
+        for (name, is_variadic, return_ty) in builtins {
+            if let Some(spur) = self.interner.get(name) {
+                self.symbols.define_function(FunctionSig {
+                    name: spur,
+                    type_params: vec![],
+                    params: vec![],
+                    return_ty,
+                    throws: None,
+                    is_async: false,
+                    is_public: true,
+                    is_variadic,
+                    span: Span::dummy(),
+                });
+            }
         }
     }
 
@@ -109,6 +138,7 @@ impl<'a> TypeChecker<'a> {
             throws,
             is_async: func.is_async,
             is_public: func.is_public,
+            is_variadic: false,
             span: func.span,
         });
     }
@@ -387,6 +417,7 @@ impl<'a> TypeChecker<'a> {
                     returns: Box::new(self.convert_type(returns)),
                     throws: None,
                     is_async: false,
+                    is_variadic: false,
                 })
             }
             ast::NamlType::Inferred => unify::fresh_type_var(&mut 0),
@@ -409,7 +440,7 @@ mod tests {
     fn check_source(source: &str) -> Vec<TypeError> {
         let (tokens, interner) = tokenize(source);
         let arena = AstArena::new();
-        let result = parse(&tokens, &arena);
+        let result = parse(&tokens, source, &arena);
         assert!(result.errors.is_empty(), "Parse errors: {:?}", result.errors);
         check(&result.ast, &interner)
     }

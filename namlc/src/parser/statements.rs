@@ -42,12 +42,15 @@ fn parse_var_stmt<'a, 'ast>(
 ) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::Var)(input)?;
 
-    let (input, mutable) = if check_keyword(Keyword::Mut)(input) {
+    // var is mutable by default (like Go)
+    // var mut x is explicitly mutable (redundant but allowed)
+    let input = if check_keyword(Keyword::Mut)(input) {
         let (input, _) = keyword(Keyword::Mut)(input)?;
-        (input, true)
+        input
     } else {
-        (input, false)
+        input
     };
+    let mutable = true;
 
     let (input, name) = ident(input)?;
 

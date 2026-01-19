@@ -55,12 +55,12 @@ impl ParseError {
     }
 }
 
-pub fn parse<'ast>(tokens: &[Token], arena: &'ast AstArena) -> ParseResult<'ast> {
+pub fn parse<'ast>(tokens: &[Token], source: &str, arena: &'ast AstArena) -> ParseResult<'ast> {
     reset_pending_gt();
 
     let mut items = Vec::with_capacity(32);
     let mut errors = Vec::with_capacity(4);
-    let mut input = TokenStream::new(tokens);
+    let mut input = TokenStream::new(tokens, source);
 
     let start_span = input.current_span();
 
@@ -107,140 +107,113 @@ mod tests {
     use super::*;
     use crate::lexer::tokenize;
 
-    fn parse_str(source: &str) -> (AstArena, Vec<Token>) {
+    fn assert_parses(source: &str) {
         let (tokens, _interner) = tokenize(source);
-        (AstArena::new(), tokens)
+        let arena = AstArena::new();
+        let result = parse(&tokens, source, &arena);
+        assert!(result.errors.is_empty(), "Parse errors for '{}': {:?}", source, result.errors);
+    }
+
+    fn assert_parses_items(source: &str, expected_items: usize) {
+        let (tokens, _interner) = tokenize(source);
+        let arena = AstArena::new();
+        let result = parse(&tokens, source, &arena);
+        assert!(result.errors.is_empty(), "Parse errors for '{}': {:?}", source, result.errors);
+        assert_eq!(result.ast.items.len(), expected_items);
     }
 
     #[test]
     fn test_parse_empty() {
-        let (arena, tokens) = parse_str("");
-        let result = parse(&tokens, &arena);
+        let source = "";
+        let (tokens, _interner) = tokenize(source);
+        let arena = AstArena::new();
+        let result = parse(&tokens, source, &arena);
         assert!(result.errors.is_empty());
         assert!(result.ast.items.is_empty());
     }
 
     #[test]
     fn test_parse_simple_function() {
-        let (arena, tokens) = parse_str("fn main() { }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
-        assert_eq!(result.ast.items.len(), 1);
+        assert_parses_items("fn main() { }", 1);
     }
 
     #[test]
     fn test_parse_function_with_return() {
-        let (arena, tokens) = parse_str("fn add(a: int, b: int) -> int { return a + b; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
-        assert_eq!(result.ast.items.len(), 1);
+        assert_parses_items("fn add(a: int, b: int) -> int { return a + b; }", 1);
     }
 
     #[test]
     fn test_parse_struct() {
-        let (arena, tokens) = parse_str("struct Point { x: int, y: int }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
-        assert_eq!(result.ast.items.len(), 1);
+        assert_parses_items("struct Point { x: int, y: int }", 1);
     }
 
     #[test]
     fn test_parse_enum() {
-        let (arena, tokens) = parse_str("enum Color { Red, Green, Blue }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
-        assert_eq!(result.ast.items.len(), 1);
+        assert_parses_items("enum Color { Red, Green, Blue }", 1);
     }
 
     #[test]
     fn test_parse_var_statement() {
-        let (arena, tokens) = parse_str("fn main() { var x = 42; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn main() { var x = 42; }");
     }
 
     #[test]
     fn test_parse_if_statement() {
-        let (arena, tokens) = parse_str("fn main() { if (x > 0) { return 1; } }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn main() { if (x > 0) { return 1; } }");
     }
 
     #[test]
     fn test_parse_generic_type() {
-        let (arena, tokens) = parse_str("fn identity<T>(x: T) -> T { return x; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn identity<T>(x: T) -> T { return x; }");
     }
 
     #[test]
     fn test_parse_nested_generics() {
-        let (arena, tokens) = parse_str("fn test() { var x: Map<string, Option<int>>; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn test() { var x: Map<string, Option<int>>; }");
     }
 
     #[test]
     fn test_parse_import() {
-        let (arena, tokens) = parse_str("import std.io;");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
-        assert_eq!(result.ast.items.len(), 1);
+        assert_parses_items("import std.io;", 1);
     }
 
     #[test]
     fn test_parse_method() {
-        let (arena, tokens) = parse_str("fn (self: Point) distance() -> float { return 0.0; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn (self: Point) distance() -> float { return 0.0; }");
     }
 
     #[test]
     fn test_parse_tuple_array_type() {
-        let (arena, tokens) = parse_str("fn zip() -> [(int, int)] { return []; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn zip() -> [(int, int)] { return []; }");
     }
 
     #[test]
     fn test_parse_generic_method() {
-        let (arena, tokens) = parse_str("fn (self: List<T>) size() -> int { return 0; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn (self: List<T>) size() -> int { return 0; }");
     }
 
     #[test]
     fn test_parse_range_expression() {
-        let (arena, tokens) = parse_str("fn test() { for (i in 0..10) { } }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn test() { for (i in 0..10) { } }");
     }
 
     #[test]
     fn test_parse_map_literal() {
-        let (arena, tokens) = parse_str(r#"fn test() { var x: map<string, string> = { "key": "value" }; }"#);
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses(r#"fn test() { var x: map<string, string> = { "key": "value" }; }"#);
     }
 
     #[test]
     fn test_parse_lambda_in_call() {
-        let (arena, tokens) = parse_str("fn test() { map_array(arr, |x: int| x * 2); }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn test() { map_array(arr, |x: int| x * 2); }");
     }
 
     #[test]
     fn test_parse_async_fn() {
-        let (arena, tokens) = parse_str("pub async fn get() -> int throws Error { return 0; }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("pub async fn get() -> int throws Error { return 0; }");
     }
 
     #[test]
     fn test_parse_mut_receiver() {
-        let (arena, tokens) = parse_str("fn (mut self: List<T>) add(item: T) { }");
-        let result = parse(&tokens, &arena);
-        assert!(result.errors.is_empty(), "Errors: {:?}", result.errors);
+        assert_parses("fn (mut self: List<T>) add(item: T) { }");
     }
 }

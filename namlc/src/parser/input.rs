@@ -16,12 +16,17 @@ use crate::source::Span;
 #[derive(Debug, Clone, Copy)]
 pub struct TokenStream<'a> {
     pub tokens: &'a [Token],
+    pub source: &'a str,
     pub start: usize,
 }
 
 impl<'a> TokenStream<'a> {
-    pub fn new(tokens: &'a [Token]) -> Self {
-        Self { tokens, start: 0 }
+    pub fn new(tokens: &'a [Token], source: &'a str) -> Self {
+        Self { tokens, source, start: 0 }
+    }
+
+    pub fn span_text(&self, span: Span) -> &'a str {
+        &self.source[span.start as usize..span.end as usize]
     }
 
     pub fn is_empty(&self) -> bool {
@@ -47,6 +52,7 @@ impl<'a> InputTake for TokenStream<'a> {
     fn take(&self, count: usize) -> Self {
         TokenStream {
             tokens: &self.tokens[..count],
+            source: self.source,
             start: self.start,
         }
     }
@@ -56,10 +62,12 @@ impl<'a> InputTake for TokenStream<'a> {
         (
             TokenStream {
                 tokens: suffix,
+                source: self.source,
                 start: self.start + count,
             },
             TokenStream {
                 tokens: prefix,
+                source: self.source,
                 start: self.start,
             },
         )
@@ -99,6 +107,7 @@ impl<'a> Slice<std::ops::RangeFrom<usize>> for TokenStream<'a> {
     fn slice(&self, range: std::ops::RangeFrom<usize>) -> Self {
         TokenStream {
             tokens: &self.tokens[range.start..],
+            source: self.source,
             start: self.start + range.start,
         }
     }
@@ -108,6 +117,7 @@ impl<'a> Slice<std::ops::RangeTo<usize>> for TokenStream<'a> {
     fn slice(&self, range: std::ops::RangeTo<usize>) -> Self {
         TokenStream {
             tokens: &self.tokens[..range.end],
+            source: self.source,
             start: self.start,
         }
     }
@@ -117,6 +127,7 @@ impl<'a> Slice<std::ops::Range<usize>> for TokenStream<'a> {
     fn slice(&self, range: std::ops::Range<usize>) -> Self {
         TokenStream {
             tokens: &self.tokens[range.start..range.end],
+            source: self.source,
             start: self.start + range.start,
         }
     }

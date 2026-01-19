@@ -58,6 +58,7 @@ pub struct FunctionType {
     pub returns: Box<Type>,
     pub throws: Option<Box<Type>>,
     pub is_async: bool,
+    pub is_variadic: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -180,6 +181,7 @@ impl Type {
             returns: Box::new(returns),
             throws: None,
             is_async: false,
+            is_variadic: false,
         })
     }
 
@@ -223,6 +225,7 @@ impl Type {
                 returns: Box::new(f.returns.resolve()),
                 throws: f.throws.as_ref().map(|t| Box::new(t.resolve())),
                 is_async: f.is_async,
+                is_variadic: f.is_variadic,
             }),
             _ => self.clone(),
         }
@@ -283,6 +286,7 @@ impl Type {
                 returns: Box::new(f.returns.substitute(substitutions)),
                 throws: f.throws.as_ref().map(|t| Box::new(t.substitute(substitutions))),
                 is_async: f.is_async,
+                is_variadic: f.is_variadic,
             }),
             _ => self.clone(),
         }

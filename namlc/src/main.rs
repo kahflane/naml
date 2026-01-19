@@ -2,7 +2,7 @@
 /// naml CLI - The naml programming language command-line interface
 ///
 /// Provides commands for running, building, and checking naml code:
-/// - naml run <file>: Execute with JIT compilation
+/// - naml run <file>: Transpile to Rust and execute
 /// - naml build: Compile to native binary or WASM
 /// - naml check: Type check without building
 /// - naml init: Create a new project
@@ -11,7 +11,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use namlc::{check, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
+use namlc::{check, compile_and_run, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
 
 #[derive(Parser)]
 #[command(name = "naml")]
@@ -23,7 +23,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Execute a naml file with JIT compilation
+    /// Execute a naml file (transpile to Rust and run)
     Run {
         /// The file to run
         file: PathBuf,
@@ -99,7 +99,7 @@ fn run_file(file: &PathBuf, cached: bool) {
     let (tokens, interner) = tokenize(&source_text);
 
     let arena = AstArena::new();
-    let parse_result = parse(&tokens, &arena);
+    let parse_result = parse(&tokens, &source_text, &arena);
 
     if !parse_result.errors.is_empty() {
         let reporter = DiagnosticReporter::new(&source_file);
@@ -115,14 +115,17 @@ fn run_file(file: &PathBuf, cached: bool) {
         std::process::exit(1);
     }
 
-    println!("Successfully compiled: {}", file_name);
-    println!("  {} items parsed", parse_result.ast.items.len());
-
     if cached {
-        println!("(cached mode not yet implemented)");
+        eprintln!("(cached mode not yet implemented)");
     }
 
-    println!("(JIT execution not yet implemented)");
+    match compile_and_run(&parse_result.ast, &interner) {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("Execution error: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 fn build_project(target: &str, release: bool) {
@@ -157,7 +160,7 @@ fn check_file(path: &std::path::Path) {
     let (tokens, interner) = tokenize(&source_text);
 
     let arena = AstArena::new();
-    let parse_result = parse(&tokens, &arena);
+    let parse_result = parse(&tokens, &source_text, &arena);
     let mut has_errors = false;
 
     if !parse_result.errors.is_empty() {
@@ -207,7 +210,7 @@ fn check_directory(path: &std::path::Path) {
             let (tokens, interner) = tokenize(&source_text);
 
             let arena = AstArena::new();
-            let parse_result = parse(&tokens, &arena);
+            let parse_result = parse(&tokens, &source_text, &arena);
             let mut file_has_errors = false;
 
             if !parse_result.errors.is_empty() {

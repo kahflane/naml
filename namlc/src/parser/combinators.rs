@@ -94,7 +94,9 @@ pub fn int_lit(input: TokenStream) -> PResult<(i64, Span)> {
     match input.first() {
         Some(tok) if tok.kind == TokenKind::IntLit => {
             let (rest, _) = input.take_split(1);
-            Ok((rest, (0, tok.span)))
+            let text = input.span_text(tok.span);
+            let value: i64 = text.replace('_', "").parse().unwrap_or(0);
+            Ok((rest, (value, tok.span)))
         }
         _ => Err(nom::Err::Error(PError {
             input,
@@ -107,7 +109,9 @@ pub fn float_lit(input: TokenStream) -> PResult<(f64, Span)> {
     match input.first() {
         Some(tok) if tok.kind == TokenKind::FloatLit => {
             let (rest, _) = input.take_split(1);
-            Ok((rest, (0.0, tok.span)))
+            let text = input.span_text(tok.span);
+            let value: f64 = text.replace('_', "").parse().unwrap_or(0.0);
+            Ok((rest, (value, tok.span)))
         }
         _ => Err(nom::Err::Error(PError {
             input,
