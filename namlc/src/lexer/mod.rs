@@ -22,6 +22,111 @@ use crate::source::Span;
 use lasso::{Rodeo, Spur};
 use memchr::{memchr, memchr2};
 
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
+
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
+
+#[inline]
+fn skip_whitespace_simd(bytes: &[u8]) -> usize {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("sse2") {
+            return unsafe { skip_whitespace_sse2(bytes) };
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        return unsafe { skip_whitespace_neon(bytes) };
+    }
+
+    #[allow(unreachable_code)]
+    skip_whitespace_scalar(bytes)
+}
+
+#[inline]
+fn skip_whitespace_scalar(bytes: &[u8]) -> usize {
+    for (i, &b) in bytes.iter().enumerate() {
+        if !matches!(b, b' ' | b'\t' | b'\r') {
+            return i;
+        }
+    }
+    bytes.len()
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn skip_whitespace_sse2(bytes: &[u8]) -> usize {
+    let len = bytes.len();
+    if len < 16 {
+        return skip_whitespace_scalar(bytes);
+    }
+
+    let space = _mm_set1_epi8(b' ' as i8);
+    let tab = _mm_set1_epi8(b'\t' as i8);
+    let cr = _mm_set1_epi8(b'\r' as i8);
+
+    let mut i = 0;
+    while i + 16 <= len {
+        let chunk = _mm_loadu_si128(bytes.as_ptr().add(i) as *const __m128i);
+
+        let is_space = _mm_cmpeq_epi8(chunk, space);
+        let is_tab = _mm_cmpeq_epi8(chunk, tab);
+        let is_cr = _mm_cmpeq_epi8(chunk, cr);
+
+        let is_ws = _mm_or_si128(_mm_or_si128(is_space, is_tab), is_cr);
+        let mask = _mm_movemask_epi8(is_ws) as u32;
+
+        if mask != 0xFFFF {
+            return i + mask.trailing_ones() as usize;
+        }
+        i += 16;
+    }
+
+    i + skip_whitespace_scalar(&bytes[i..])
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn skip_whitespace_neon(bytes: &[u8]) -> usize {
+    let len = bytes.len();
+    if len < 16 {
+        return skip_whitespace_scalar(bytes);
+    }
+
+    unsafe {
+        let space = vdupq_n_u8(b' ');
+        let tab = vdupq_n_u8(b'\t');
+        let cr = vdupq_n_u8(b'\r');
+
+        let mut i = 0;
+        while i + 16 <= len {
+            let chunk = vld1q_u8(bytes.as_ptr().add(i));
+
+            let is_space = vceqq_u8(chunk, space);
+            let is_tab = vceqq_u8(chunk, tab);
+            let is_cr = vceqq_u8(chunk, cr);
+
+            let is_ws = vorrq_u8(vorrq_u8(is_space, is_tab), is_cr);
+
+            let narrowed = vshrn_n_u16(vreinterpretq_u16_u8(is_ws), 4);
+            let mask = vget_lane_u64(vreinterpret_u64_u8(narrowed), 0);
+
+            if mask != 0xFFFFFFFFFFFFFFFF {
+                for j in 0..16 {
+                    if !matches!(bytes[i + j], b' ' | b'\t' | b'\r') {
+                        return i + j;
+                    }
+                }
+            }
+            i += 16;
+        }
+
+        i + skip_whitespace_scalar(&bytes[i..])
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
@@ -270,9 +375,8 @@ impl<'a> Lexer<'a> {
 
         let kind = match b {
             b' ' | b'\t' | b'\r' => {
-                while matches!(self.peek_byte(), Some(b' ' | b'\t' | b'\r')) {
-                    self.pos += 1;
-                }
+                // SIMD-accelerated whitespace skip
+                self.pos += skip_whitespace_simd(&self.bytes[self.pos..]);
                 TokenKind::Whitespace
             }
 
