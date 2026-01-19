@@ -31,7 +31,7 @@ use crate::ast::SourceFile;
 use crate::lexer::Token;
 use crate::source::{Span, Spanned};
 
-use combinators::{is_eof, skip_trivia};
+use combinators::is_eof;
 use items::parse_item;
 use types::reset_pending_gt;
 
@@ -58,18 +58,13 @@ impl ParseError {
 pub fn parse(tokens: &[Token]) -> ParseResult {
     reset_pending_gt();
 
-    let mut items = Vec::new();
-    let mut errors = Vec::new();
+    let mut items = Vec::with_capacity(32);
+    let mut errors = Vec::with_capacity(4);
     let mut input = TokenStream::new(tokens);
 
     let start_span = input.current_span();
 
     while !is_eof(input) {
-        input = skip_trivia(input);
-        if is_eof(input) {
-            break;
-        }
-
         match parse_item(input) {
             Ok((rest, item)) => {
                 items.push(item);
@@ -87,7 +82,6 @@ pub fn parse(tokens: &[Token]) -> ParseResult {
 
                 errors.push(ParseError::new(err_msg, err_span));
 
-                input = skip_trivia(input);
                 if !input.is_empty() {
                     let (rest, _) = input.take_split(1);
                     input = rest;

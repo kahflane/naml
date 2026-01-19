@@ -75,6 +75,11 @@ tokio.workspace = true
 ##
 nom.workspace = true
 
+##
+## Small vector optimization
+##
+smallvec.workspace = true
+
 
 [dev-dependencies]
 insta.workspace = true

@@ -7,7 +7,7 @@
 /// Key design decisions:
 /// - Zero-copy: Tokens reference the source string, no allocations per token
 /// - String interning: Identifiers and strings stored via lasso::Spur
-/// - Whitespace/comments preserved as trivia for formatting tools
+/// - Whitespace/comments filtered out for fast parsing (no trivia in output)
 ///
 /// Token categories:
 /// - Keywords: fn, var, const, if, while, for, etc.
@@ -21,7 +21,7 @@
 use crate::source::Span;
 use lasso::{Rodeo, Spur};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,
@@ -215,7 +215,10 @@ impl<'a> Lexer<'a> {
 
         while !self.is_eof() {
             let token = self.next_token();
-            tokens.push(token);
+            // Filter trivia at source - parser never sees whitespace/comments
+            if !token.is_trivia() {
+                tokens.push(token);
+            }
         }
 
         tokens.push(Token::new(
@@ -580,7 +583,7 @@ mod tests {
     #[test]
     fn test_tokenize_operators() {
         let (tokens, _) = tokenize("+ - * / == != < >");
-        let kinds: Vec<_> = tokens.iter().filter(|t| !t.is_trivia()).map(|t| t.kind).collect();
+        let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
         assert_eq!(
             kinds,
             vec![
@@ -600,7 +603,7 @@ mod tests {
     #[test]
     fn test_tokenize_keywords() {
         let (tokens, _) = tokenize("fn var if else while for");
-        let kinds: Vec<_> = tokens.iter().filter(|t| !t.is_trivia()).map(|t| t.kind).collect();
+        let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
         assert_eq!(
             kinds,
             vec![
@@ -618,7 +621,7 @@ mod tests {
     #[test]
     fn test_tokenize_numbers() {
         let (tokens, _) = tokenize("42 3.14 1_000");
-        let kinds: Vec<_> = tokens.iter().filter(|t| !t.is_trivia()).map(|t| t.kind).collect();
+        let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
         assert_eq!(
             kinds,
             vec![TokenKind::IntLit, TokenKind::FloatLit, TokenKind::IntLit, TokenKind::Eof]
@@ -635,8 +638,10 @@ mod tests {
 
     #[test]
     fn test_tokenize_comment() {
+        // Comments are filtered out - parser never sees them
         let (tokens, _) = tokenize("x // comment\ny");
         let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
-        assert!(kinds.contains(&TokenKind::Comment));
+        assert!(!kinds.contains(&TokenKind::Comment));
+        assert_eq!(kinds, vec![TokenKind::Ident, TokenKind::Ident, TokenKind::Eof]);
     }
 }

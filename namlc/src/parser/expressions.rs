@@ -26,7 +26,6 @@ fn pratt_expr(input: TokenStream, min_prec: u8) -> PResult<Expression> {
     let (mut input, mut left) = parse_unary(input)?;
 
     loop {
-        input = skip_trivia(input);
         let Some(op) = peek_binary_op(input) else {
             break;
         };
@@ -53,7 +52,6 @@ fn pratt_expr(input: TokenStream, min_prec: u8) -> PResult<Expression> {
 }
 
 fn parse_unary(input: TokenStream) -> PResult<Expression> {
-    let input = skip_trivia(input);
     let start_span = input.current_span();
 
     let op = match peek_token(input) {
@@ -85,7 +83,6 @@ fn parse_postfix(input: TokenStream) -> PResult<Expression> {
     let (mut input, mut expr) = parse_atom(input)?;
 
     loop {
-        input = skip_trivia(input);
         match peek_token(input) {
             Some(TokenKind::LParen) => {
                 let (new_input, new_expr) = parse_call(input, expr)?;
@@ -115,29 +112,27 @@ fn parse_postfix(input: TokenStream) -> PResult<Expression> {
 }
 
 fn parse_atom(input: TokenStream) -> PResult<Expression> {
-    let input = skip_trivia(input);
-    let _start_span = input.current_span();
-
-    if check(TokenKind::Pipe)(input) || check(TokenKind::PipePipe)(input) {
-        return parse_lambda_expr(input);
+    match input.first().map(|t| t.kind) {
+        Some(TokenKind::IntLit) => parse_int_literal(input),
+        Some(TokenKind::FloatLit) => parse_float_literal(input),
+        Some(TokenKind::StringLit) => parse_string_literal(input),
+        Some(TokenKind::Keyword(Keyword::True | Keyword::False)) => parse_bool_literal(input),
+        Some(TokenKind::Keyword(Keyword::None)) => parse_none_literal(input),
+        Some(TokenKind::Keyword(Keyword::Some)) => parse_some_expr(input),
+        Some(TokenKind::Ident) => parse_ident_or_struct(input),
+        Some(TokenKind::LParen) => parse_grouped(input),
+        Some(TokenKind::LBracket) => parse_array_expr(input),
+        Some(TokenKind::LBrace) => parse_block_or_map(input),
+        Some(TokenKind::Keyword(Keyword::If)) => parse_if_expr(input),
+        Some(TokenKind::Keyword(Keyword::Spawn)) => parse_spawn_expr(input),
+        Some(TokenKind::Keyword(Keyword::Await)) => parse_await_expr(input),
+        Some(TokenKind::Keyword(Keyword::Try)) => parse_try_expr(input),
+        Some(TokenKind::Pipe | TokenKind::PipePipe) => parse_lambda_expr(input),
+        _ => Err(nom::Err::Error(PError {
+            input,
+            kind: PErrorKind::ExpectedExpr,
+        })),
     }
-
-    alt((
-        parse_int_literal,
-        parse_float_literal,
-        parse_string_literal,
-        parse_bool_literal,
-        parse_none_literal,
-        parse_some_expr,
-        parse_ident_or_struct,
-        parse_grouped,
-        parse_array_expr,
-        parse_block_or_map,
-        parse_if_expr,
-        parse_spawn_expr,
-        parse_await_expr,
-        parse_try_expr,
-    ))(input)
 }
 
 fn parse_int_literal(input: TokenStream) -> PResult<Expression> {
@@ -217,7 +212,6 @@ fn parse_some_expr(input: TokenStream) -> PResult<Expression> {
 
 fn parse_ident_or_struct(input: TokenStream) -> PResult<Expression> {
     let (input, name) = ident(input)?;
-    let input = skip_trivia(input);
 
     if check(TokenKind::LBrace)(input) {
         return parse_struct_literal(input, name);
@@ -236,11 +230,10 @@ fn parse_struct_literal(input: TokenStream, name: Ident) -> PResult<Expression> 
     let start_span = name.span;
     let (input, _) = token(TokenKind::LBrace)(input)?;
 
-    let mut fields = Vec::new();
+    let mut fields = Vec::with_capacity(6);
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
         if check(TokenKind::RBrace)(input) {
             break;
         }
@@ -256,7 +249,6 @@ fn parse_struct_literal(input: TokenStream, name: Ident) -> PResult<Expression> 
         });
         input = new_input;
 
-        input = skip_trivia(input);
         if !check(TokenKind::Comma)(input) {
             break;
         }
@@ -317,7 +309,6 @@ fn parse_array_expr(input: TokenStream) -> PResult<Expression> {
 
 fn parse_block_or_map(input: TokenStream) -> PResult<Expression> {
     let (input, start) = token(TokenKind::LBrace)(input)?;
-    let input = skip_trivia(input);
 
     if check(TokenKind::RBrace)(input) {
         let (input, end) = token(TokenKind::RBrace)(input)?;
@@ -331,7 +322,7 @@ fn parse_block_or_map(input: TokenStream) -> PResult<Expression> {
     }
 
     if check(TokenKind::StringLit)(input) || check(TokenKind::Ident)(input) {
-        let test_input = skip_trivia(input.slice(1..));
+        let test_input = input.slice(1..);
         if check(TokenKind::Colon)(test_input) {
             return parse_map_entries(input, start.span);
         }
@@ -345,7 +336,6 @@ fn parse_map_entries(input: TokenStream, start_span: Span) -> PResult<Expression
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
         if check(TokenKind::RBrace)(input) {
             break;
         }
@@ -357,7 +347,6 @@ fn parse_map_entries(input: TokenStream, start_span: Span) -> PResult<Expression
         entries.push(MapEntry { key, value, span });
         input = new_input;
 
-        input = skip_trivia(input);
         if !check(TokenKind::Comma)(input) {
             break;
         }
@@ -376,14 +365,10 @@ fn parse_map_entries(input: TokenStream, start_span: Span) -> PResult<Expression
 }
 
 fn parse_block_inner(input: TokenStream, start_span: Span) -> PResult<Expression> {
-    let mut statements = Vec::new();
+    let mut statements = Vec::with_capacity(8);
     let mut input = input;
 
     while !check(TokenKind::RBrace)(input) && !is_eof(input) {
-        input = skip_trivia(input);
-        if check(TokenKind::RBrace)(input) {
-            break;
-        }
         let (new_input, stmt) = parse_statement(input)?;
         statements.push(stmt);
         input = new_input;
@@ -632,7 +617,6 @@ fn parse_cast(input: TokenStream, expr: Expression) -> PResult<Expression> {
 }
 
 fn peek_binary_op(input: TokenStream) -> Option<BinaryOp> {
-    let input = skip_trivia(input);
     match input.first().map(|t| t.kind) {
         Some(TokenKind::Plus) => Some(BinaryOp::Add),
         Some(TokenKind::Minus) => Some(BinaryOp::Sub),
@@ -662,20 +646,15 @@ fn peek_binary_op(input: TokenStream) -> Option<BinaryOp> {
 }
 
 fn advance_binary_op(input: TokenStream) -> TokenStream {
-    let input = skip_trivia(input);
     input.slice(1..)
 }
 
 pub fn parse_block(input: TokenStream) -> PResult<BlockStmt> {
     let (input, start) = token(TokenKind::LBrace)(input)?;
-    let mut statements = Vec::new();
+    let mut statements = Vec::with_capacity(8);
     let mut input = input;
 
     while !check(TokenKind::RBrace)(input) && !is_eof(input) {
-        input = skip_trivia(input);
-        if check(TokenKind::RBrace)(input) {
-            break;
-        }
         let (new_input, stmt) = parse_statement(input)?;
         statements.push(stmt);
         input = new_input;

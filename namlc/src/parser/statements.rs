@@ -4,7 +4,6 @@
 /// Parses statements using nom combinators.
 ///
 
-use nom::branch::alt;
 use nom::InputTake;
 
 use crate::ast::*;
@@ -17,23 +16,21 @@ use super::input::TokenStream;
 use super::types::parse_type;
 
 pub fn parse_statement(input: TokenStream) -> PResult<Statement> {
-    let input = skip_trivia(input);
-
-    alt((
-        parse_var_stmt,
-        parse_const_stmt,
-        parse_return_stmt,
-        parse_throw_stmt,
-        parse_break_stmt,
-        parse_continue_stmt,
-        parse_if_stmt,
-        parse_while_stmt,
-        parse_for_stmt,
-        parse_loop_stmt,
-        parse_switch_stmt,
-        parse_block_stmt,
-        parse_expr_or_assign_stmt,
-    ))(input)
+    match input.first().map(|t| t.kind) {
+        Some(TokenKind::Keyword(Keyword::Var)) => parse_var_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Const)) => parse_const_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Return)) => parse_return_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Throw)) => parse_throw_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Break)) => parse_break_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Continue)) => parse_continue_stmt(input),
+        Some(TokenKind::Keyword(Keyword::If)) => parse_if_stmt(input),
+        Some(TokenKind::Keyword(Keyword::While)) => parse_while_stmt(input),
+        Some(TokenKind::Keyword(Keyword::For)) => parse_for_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Loop)) => parse_loop_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Switch)) => parse_switch_stmt(input),
+        Some(TokenKind::LBrace) => parse_block_stmt(input),
+        _ => parse_expr_or_assign_stmt(input),
+    }
 }
 
 fn parse_var_stmt(input: TokenStream) -> PResult<Statement> {
@@ -280,7 +277,6 @@ fn parse_switch_stmt(input: TokenStream) -> PResult<Statement> {
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
         if check(TokenKind::RBrace)(input) {
             break;
         }
@@ -336,7 +332,6 @@ fn parse_block_stmt(input: TokenStream) -> PResult<Statement> {
 
 fn parse_expr_or_assign_stmt(input: TokenStream) -> PResult<Statement> {
     let (input, expr) = parse_expression(input)?;
-    let input = skip_trivia(input);
 
     let assign_op = match peek_token(input) {
         Some(TokenKind::Eq) => Some(AssignOp::Assign),

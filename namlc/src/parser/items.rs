@@ -5,7 +5,6 @@
 /// Handles functions, structs, enums, interfaces, exceptions, imports, and extern.
 ///
 
-use nom::branch::alt;
 use nom::multi::separated_list0;
 
 use crate::ast::*;
@@ -19,8 +18,6 @@ use super::statements::parse_statement;
 use super::types::{parse_gt, parse_type};
 
 pub fn parse_item(input: TokenStream) -> PResult<Item> {
-    let input = skip_trivia(input);
-
     let (input, platforms) = if check(TokenKind::Hash)(input) {
         parse_platforms_attr(input)?
     } else {
@@ -34,19 +31,18 @@ pub fn parse_item(input: TokenStream) -> PResult<Item> {
         (input, false)
     };
 
-    let input = skip_trivia(input);
-
-    alt((
-        |i| parse_function_item(i, is_public, platforms.clone()),
-        |i| parse_struct_item(i, is_public),
-        |i| parse_enum_item(i, is_public),
-        |i| parse_interface_item(i, is_public),
-        |i| parse_exception_item(i, is_public),
-        parse_import_item,
-        parse_use_item,
-        parse_extern_item,
-        parse_top_level_stmt,
-    ))(input)
+    match input.first().map(|t| t.kind) {
+        Some(TokenKind::Keyword(Keyword::Async)) => parse_function_item(input, is_public, platforms),
+        Some(TokenKind::Keyword(Keyword::Fn)) => parse_function_item(input, is_public, platforms),
+        Some(TokenKind::Keyword(Keyword::Struct)) => parse_struct_item(input, is_public),
+        Some(TokenKind::Keyword(Keyword::Enum)) => parse_enum_item(input, is_public),
+        Some(TokenKind::Keyword(Keyword::Interface)) => parse_interface_item(input, is_public),
+        Some(TokenKind::Keyword(Keyword::Exception)) => parse_exception_item(input, is_public),
+        Some(TokenKind::Keyword(Keyword::Import)) => parse_import_item(input),
+        Some(TokenKind::Keyword(Keyword::Use)) => parse_use_item(input),
+        Some(TokenKind::Keyword(Keyword::Extern)) => parse_extern_item(input),
+        _ => parse_top_level_stmt(input),
+    }
 }
 
 fn parse_platforms_attr(input: TokenStream) -> PResult<Option<Platforms>> {
@@ -55,11 +51,10 @@ fn parse_platforms_attr(input: TokenStream) -> PResult<Option<Platforms>> {
     let (input, _) = keyword(Keyword::Platforms)(input)?;
     let (input, _) = token(TokenKind::LParen)(input)?;
 
-    let mut platforms = Vec::new();
+    let mut platforms = Vec::with_capacity(3);
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
         if check(TokenKind::RParen)(input) {
             break;
         }
@@ -82,7 +77,6 @@ fn parse_platforms_attr(input: TokenStream) -> PResult<Option<Platforms>> {
 
         platforms.push(platform);
 
-        input = skip_trivia(input);
         if check(TokenKind::Comma)(input) {
             let (new_input, _) = token(TokenKind::Comma)(input)?;
             input = new_input;
@@ -134,8 +128,6 @@ fn parse_function_item(
     let (input, params) = separated_list0(token(TokenKind::Comma), parse_parameter)(input)?;
     let (input, _) = token(TokenKind::RParen)(input)?;
 
-    let input = skip_trivia(input);
-
     let (input, return_ty) = if check(TokenKind::Arrow)(input) {
         let (input, _) = token(TokenKind::Arrow)(input)?;
         let (input, ty) = parse_type(input)?;
@@ -144,11 +136,8 @@ fn parse_function_item(
         (input, None)
     };
 
-    let input = skip_trivia(input);
-
     let (input, throws) = if check_keyword(Keyword::Throws)(input) {
         let (input, _) = keyword(Keyword::Throws)(input)?;
-        let input = skip_trivia(input);
         if check(TokenKind::LBrace)(input) || check(TokenKind::Semicolon)(input) {
             (input, Some(NamlType::Named(Ident::new(
                 lasso::Spur::default(),
@@ -161,8 +150,6 @@ fn parse_function_item(
     } else {
         (input, None)
     };
-
-    let input = skip_trivia(input);
 
     let (input, body, end_span) = if check(TokenKind::LBrace)(input) {
         let (input, block) = parse_block(input)?;
@@ -295,12 +282,11 @@ fn parse_struct_item(input: TokenStream, is_public: bool) -> PResult<Item> {
 }
 
 fn parse_struct_fields(input: TokenStream) -> PResult<Vec<StructField>> {
-    let mut fields = Vec::new();
+    let mut fields = Vec::with_capacity(6);
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
-        if check(TokenKind::RBrace)(input) {
+                if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -323,7 +309,7 @@ fn parse_struct_fields(input: TokenStream) -> PResult<Vec<StructField>> {
             span: start_span,
         });
 
-        input = skip_trivia(new_input);
+        input = new_input;
         if check(TokenKind::Comma)(input) {
             let (new_input, _) = token(TokenKind::Comma)(input)?;
             input = new_input;
@@ -360,12 +346,11 @@ fn parse_enum_item(input: TokenStream, is_public: bool) -> PResult<Item> {
 }
 
 fn parse_enum_variants(input: TokenStream) -> PResult<Vec<EnumVariant>> {
-    let mut variants = Vec::new();
+    let mut variants = Vec::with_capacity(6);
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
-        if check(TokenKind::RBrace)(input) {
+                if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -386,7 +371,7 @@ fn parse_enum_variants(input: TokenStream) -> PResult<Vec<EnumVariant>> {
             fields,
         });
 
-        input = skip_trivia(new_input);
+        input = new_input;
         if check(TokenKind::Comma)(input) {
             let (new_input, _) = token(TokenKind::Comma)(input)?;
             input = new_input;
@@ -432,12 +417,11 @@ fn parse_interface_item(input: TokenStream, is_public: bool) -> PResult<Item> {
 }
 
 fn parse_interface_methods(input: TokenStream) -> PResult<Vec<InterfaceMethod>> {
-    let mut methods = Vec::new();
+    let mut methods = Vec::with_capacity(8);
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
-        if check(TokenKind::RBrace)(input) {
+                if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -462,7 +446,7 @@ fn parse_interface_methods(input: TokenStream) -> PResult<Vec<InterfaceMethod>> 
             separated_list0(token(TokenKind::Comma), parse_parameter)(new_input)?;
         let (new_input, _) = token(TokenKind::RParen)(new_input)?;
 
-        let new_input = skip_trivia(new_input);
+        let new_input = new_input;
 
         let (new_input, return_ty) = if check(TokenKind::Arrow)(new_input) {
             let (i, _) = token(TokenKind::Arrow)(new_input)?;
@@ -472,11 +456,10 @@ fn parse_interface_methods(input: TokenStream) -> PResult<Vec<InterfaceMethod>> 
             (new_input, None)
         };
 
-        let new_input = skip_trivia(new_input);
+        let new_input = new_input;
 
         let (new_input, throws) = if check_keyword(Keyword::Throws)(new_input) {
             let (i, _) = keyword(Keyword::Throws)(new_input)?;
-            let i = skip_trivia(i);
             if check(TokenKind::Semicolon)(i) {
                 (i, Some(NamlType::Named(Ident::new(
                     lasso::Spur::default(),
@@ -517,8 +500,7 @@ fn parse_exception_item(input: TokenStream, is_public: bool) -> PResult<Item> {
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
-        if check(TokenKind::RBrace)(input) {
+                if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -533,7 +515,7 @@ fn parse_exception_item(input: TokenStream, is_public: bool) -> PResult<Item> {
             span: start_span,
         });
 
-        input = skip_trivia(new_input);
+        input = new_input;
         if check(TokenKind::Comma)(input) {
             let (new_input, _) = token(TokenKind::Comma)(input)?;
             input = new_input;
@@ -596,7 +578,7 @@ fn parse_use_item(input: TokenStream) -> PResult<Item> {
 
     while check(TokenKind::Dot)(input) {
         let (new_input, _) = token(TokenKind::Dot)(input)?;
-        let new_input = skip_trivia(new_input);
+        let new_input = new_input;
 
         if check(TokenKind::LBrace)(new_input) || check(TokenKind::Star)(new_input) {
             input = new_input;
@@ -607,8 +589,6 @@ fn parse_use_item(input: TokenStream) -> PResult<Item> {
         path.push(segment);
         input = new_input;
     }
-
-    let input = skip_trivia(input);
 
     let (input, items) = if check(TokenKind::Star)(input) {
         let (input, _) = token(TokenKind::Star)(input)?;
@@ -645,8 +625,7 @@ fn parse_use_entries(input: TokenStream) -> PResult<Vec<UseItemEntry>> {
     let mut input = input;
 
     loop {
-        input = skip_trivia(input);
-        if check(TokenKind::RBrace)(input) {
+                if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -665,7 +644,7 @@ fn parse_use_entries(input: TokenStream) -> PResult<Vec<UseItemEntry>> {
             alias,
         });
 
-        input = skip_trivia(new_input);
+        input = new_input;
         if check(TokenKind::Comma)(input) {
             let (new_input, _) = token(TokenKind::Comma)(input)?;
             input = new_input;
@@ -684,8 +663,6 @@ fn parse_extern_item(input: TokenStream) -> PResult<Item> {
     let (input, params) = separated_list0(token(TokenKind::Comma), parse_parameter)(input)?;
     let (input, _) = token(TokenKind::RParen)(input)?;
 
-    let input = skip_trivia(input);
-
     let (input, return_ty) = if check(TokenKind::Arrow)(input) {
         let (input, _) = token(TokenKind::Arrow)(input)?;
         let (input, ty) = parse_type(input)?;
@@ -694,11 +671,8 @@ fn parse_extern_item(input: TokenStream) -> PResult<Item> {
         (input, None)
     };
 
-    let input = skip_trivia(input);
-
     let (input, throws) = if check_keyword(Keyword::Throws)(input) {
         let (input, _) = keyword(Keyword::Throws)(input)?;
-        let input = skip_trivia(input);
         if check(TokenKind::Semicolon)(input) {
             (input, Some(NamlType::Named(Ident::new(
                 lasso::Spur::default(),

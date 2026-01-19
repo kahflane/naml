@@ -91,6 +91,11 @@ insta = { version = "1.41", features = ["json"] }
 ##
 nom = "7"
 
+##
+## Small vector optimization (stack-allocated for small sizes)
+##
+smallvec = { version = "1.13", features = ["union"] }
+
 [profile.release]
 lto = true
 codegen-units = 1

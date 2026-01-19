@@ -19,17 +19,32 @@ use super::combinators::*;
 use super::input::TokenStream;
 
 pub fn parse_type(input: TokenStream) -> PResult<NamlType> {
-    alt((
-        parse_primitive,
-        parse_option_type,
-        parse_map_type,
-        parse_channel_type,
-        parse_promise_type,
-        parse_fn_type,
-        parse_array_type,
-        parse_paren_or_tuple_type,
-        parse_named_or_generic_type,
-    ))(input)
+    match input.first().map(|t| t.kind) {
+        // Primitives
+        Some(TokenKind::Keyword(Keyword::Int)) => parse_primitive(input),
+        Some(TokenKind::Keyword(Keyword::Uint)) => parse_primitive(input),
+        Some(TokenKind::Keyword(Keyword::Float)) => parse_primitive(input),
+        Some(TokenKind::Keyword(Keyword::Bool)) => parse_primitive(input),
+        Some(TokenKind::Keyword(Keyword::String)) => parse_primitive(input),
+        Some(TokenKind::Keyword(Keyword::Bytes)) => parse_primitive(input),
+        // Built-in generic types
+        Some(TokenKind::Keyword(Keyword::Option)) => parse_option_type(input),
+        Some(TokenKind::Keyword(Keyword::Map)) => parse_map_type(input),
+        Some(TokenKind::Keyword(Keyword::Channel)) => parse_channel_type(input),
+        Some(TokenKind::Keyword(Keyword::Promise)) => parse_promise_type(input),
+        // Function type
+        Some(TokenKind::Keyword(Keyword::Fn)) => parse_fn_type(input),
+        // Array type
+        Some(TokenKind::LBracket) => parse_array_type(input),
+        // Tuple or grouped type
+        Some(TokenKind::LParen) => parse_paren_or_tuple_type(input),
+        // Named or generic type (user-defined)
+        Some(TokenKind::Ident) => parse_named_or_generic_type(input),
+        _ => Err(nom::Err::Error(PError {
+            input,
+            kind: PErrorKind::ExpectedType,
+        })),
+    }
 }
 
 fn parse_primitive(input: TokenStream) -> PResult<NamlType> {
@@ -151,7 +166,6 @@ pub fn parse_gt(input: TokenStream) -> PResult<()> {
             return Ok((input, ()));
         }
 
-        let input = skip_trivia(input);
         match input.first().map(|t| t.kind) {
             Some(TokenKind::Gt) => {
                 let (rest, _) = input.take_split(1);

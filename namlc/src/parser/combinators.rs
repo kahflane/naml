@@ -46,20 +46,8 @@ impl<'a> ParseError<TokenStream<'a>> for PError<'a> {
     }
 }
 
-pub fn skip_trivia(input: TokenStream) -> TokenStream {
-    let mut i = 0;
-    while i < input.tokens.len() && input.tokens[i].is_trivia() {
-        i += 1;
-    }
-    TokenStream {
-        tokens: &input.tokens[i..],
-        start: input.start + i,
-    }
-}
-
 pub fn token(kind: TokenKind) -> impl Fn(TokenStream) -> PResult<Token> {
     move |input: TokenStream| {
-        let input = skip_trivia(input);
         match input.first() {
             Some(tok) if tok.kind == kind => {
                 let (rest, _) = input.take_split(1);
@@ -75,7 +63,6 @@ pub fn token(kind: TokenKind) -> impl Fn(TokenStream) -> PResult<Token> {
 
 pub fn keyword(kw: Keyword) -> impl Fn(TokenStream) -> PResult<Token> {
     move |input: TokenStream| {
-        let input = skip_trivia(input);
         match input.first() {
             Some(tok) if tok.kind == TokenKind::Keyword(kw) => {
                 let (rest, _) = input.take_split(1);
@@ -90,7 +77,6 @@ pub fn keyword(kw: Keyword) -> impl Fn(TokenStream) -> PResult<Token> {
 }
 
 pub fn ident(input: TokenStream) -> PResult<Ident> {
-    let input = skip_trivia(input);
     match input.first() {
         Some(tok) if tok.kind == TokenKind::Ident => {
             let (rest, _) = input.take_split(1);
@@ -105,7 +91,6 @@ pub fn ident(input: TokenStream) -> PResult<Ident> {
 }
 
 pub fn int_lit(input: TokenStream) -> PResult<(i64, Span)> {
-    let input = skip_trivia(input);
     match input.first() {
         Some(tok) if tok.kind == TokenKind::IntLit => {
             let (rest, _) = input.take_split(1);
@@ -119,7 +104,6 @@ pub fn int_lit(input: TokenStream) -> PResult<(i64, Span)> {
 }
 
 pub fn float_lit(input: TokenStream) -> PResult<(f64, Span)> {
-    let input = skip_trivia(input);
     match input.first() {
         Some(tok) if tok.kind == TokenKind::FloatLit => {
             let (rest, _) = input.take_split(1);
@@ -133,7 +117,6 @@ pub fn float_lit(input: TokenStream) -> PResult<(f64, Span)> {
 }
 
 pub fn string_lit(input: TokenStream) -> PResult<(lasso::Spur, Span)> {
-    let input = skip_trivia(input);
     match input.first() {
         Some(tok) if tok.kind == TokenKind::StringLit => {
             let (rest, _) = input.take_split(1);
@@ -148,20 +131,17 @@ pub fn string_lit(input: TokenStream) -> PResult<(lasso::Spur, Span)> {
 }
 
 pub fn peek_token(input: TokenStream) -> Option<TokenKind> {
-    let input = skip_trivia(input);
     input.first().map(|t| t.kind)
 }
 
 pub fn check(kind: TokenKind) -> impl Fn(TokenStream) -> bool {
     move |input: TokenStream| {
-        let input = skip_trivia(input);
         input.first().map(|t| t.kind == kind).unwrap_or(false)
     }
 }
 
 pub fn check_keyword(kw: Keyword) -> impl Fn(TokenStream) -> bool {
     move |input: TokenStream| {
-        let input = skip_trivia(input);
         input
             .first()
             .map(|t| t.kind == TokenKind::Keyword(kw))
@@ -170,6 +150,5 @@ pub fn check_keyword(kw: Keyword) -> impl Fn(TokenStream) -> bool {
 }
 
 pub fn is_eof(input: TokenStream) -> bool {
-    let input = skip_trivia(input);
     input.is_empty() || input.first().map(|t| t.kind == TokenKind::Eof).unwrap_or(true)
 }
