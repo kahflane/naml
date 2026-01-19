@@ -16,21 +16,22 @@
 /// - Linting: visit nodes to check for patterns
 /// - Pretty printing: visit nodes to format code
 ///
+
 use super::expressions::*;
 use super::items::*;
 use super::statements::*;
 use super::types::*;
 
-pub trait Visitor: Sized {
-    fn visit_item(&mut self, item: &Item) {
+pub trait Visitor<'ast>: Sized {
+    fn visit_item(&mut self, item: &Item<'ast>) {
         walk_item(self, item)
     }
 
-    fn visit_stmt(&mut self, stmt: &Statement) {
+    fn visit_stmt(&mut self, stmt: &Statement<'ast>) {
         walk_stmt(self, stmt)
     }
 
-    fn visit_expr(&mut self, expr: &Expression) {
+    fn visit_expr(&mut self, expr: &Expression<'ast>) {
         walk_expr(self, expr)
     }
 
@@ -41,7 +42,7 @@ pub trait Visitor: Sized {
     fn visit_ident(&mut self, _ident: &Ident) {}
 }
 
-pub fn walk_item<V: Visitor>(v: &mut V, item: &Item) {
+pub fn walk_item<'ast, V: Visitor<'ast>>(v: &mut V, item: &Item<'ast>) {
     match item {
         Item::Function(f) => {
             v.visit_ident(&f.name);
@@ -161,7 +162,7 @@ pub fn walk_item<V: Visitor>(v: &mut V, item: &Item) {
     }
 }
 
-pub fn walk_stmt<V: Visitor>(v: &mut V, stmt: &Statement) {
+pub fn walk_stmt<'ast, V: Visitor<'ast>>(v: &mut V, stmt: &Statement<'ast>) {
     match stmt {
         Statement::Var(s) => {
             v.visit_ident(&s.name);
@@ -202,7 +203,7 @@ pub fn walk_stmt<V: Visitor>(v: &mut V, stmt: &Statement) {
             if let Some(ref else_branch) = s.else_branch {
                 match else_branch {
                     ElseBranch::ElseIf(elif) => {
-                        v.visit_stmt(&Statement::If(*elif.clone()));
+                        v.visit_stmt(&Statement::If((**elif).clone()));
                     }
                     ElseBranch::Else(block) => {
                         for stmt in &block.statements {
@@ -259,7 +260,7 @@ pub fn walk_stmt<V: Visitor>(v: &mut V, stmt: &Statement) {
     }
 }
 
-pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
+pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
     match expr {
         Expression::Literal(_) => {}
         Expression::Identifier(e) => {
@@ -271,14 +272,14 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             }
         }
         Expression::Binary(e) => {
-            v.visit_expr(&e.left);
-            v.visit_expr(&e.right);
+            v.visit_expr(e.left);
+            v.visit_expr(e.right);
         }
         Expression::Unary(e) => {
-            v.visit_expr(&e.operand);
+            v.visit_expr(e.operand);
         }
         Expression::Call(e) => {
-            v.visit_expr(&e.callee);
+            v.visit_expr(e.callee);
             for ty in &e.type_args {
                 v.visit_type(ty);
             }
@@ -287,7 +288,7 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             }
         }
         Expression::MethodCall(e) => {
-            v.visit_expr(&e.receiver);
+            v.visit_expr(e.receiver);
             v.visit_ident(&e.method);
             for ty in &e.type_args {
                 v.visit_type(ty);
@@ -297,11 +298,11 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             }
         }
         Expression::Index(e) => {
-            v.visit_expr(&e.base);
-            v.visit_expr(&e.index);
+            v.visit_expr(e.base);
+            v.visit_expr(e.index);
         }
         Expression::Field(e) => {
-            v.visit_expr(&e.base);
+            v.visit_expr(e.base);
             v.visit_ident(&e.field);
         }
         Expression::Array(e) => {
@@ -323,7 +324,7 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             }
         }
         Expression::If(e) => {
-            v.visit_expr(&e.condition);
+            v.visit_expr(e.condition);
             for stmt in &e.then_branch.statements {
                 v.visit_stmt(stmt);
             }
@@ -333,7 +334,7 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             if let Some(ref else_branch) = e.else_branch {
                 match else_branch {
                     ElseExpr::ElseIf(elif) => {
-                        v.visit_expr(&Expression::If(*elif.clone()));
+                        v.visit_expr(&Expression::If((**elif).clone()));
                     }
                     ElseExpr::Else(block) => {
                         for stmt in &block.statements {
@@ -364,7 +365,7 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             if let Some(ref ret) = e.return_ty {
                 v.visit_type(ret);
             }
-            v.visit_expr(&e.body);
+            v.visit_expr(e.body);
         }
         Expression::Spawn(e) => {
             for stmt in &e.body.statements {
@@ -375,13 +376,13 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             }
         }
         Expression::Await(e) => {
-            v.visit_expr(&e.expr);
+            v.visit_expr(e.expr);
         }
         Expression::Try(e) => {
-            v.visit_expr(&e.expr);
+            v.visit_expr(e.expr);
         }
         Expression::Cast(e) => {
-            v.visit_expr(&e.expr);
+            v.visit_expr(e.expr);
             v.visit_type(&e.target_ty);
         }
         Expression::Range(e) => {
@@ -393,15 +394,15 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &Expression) {
             }
         }
         Expression::Grouped(e) => {
-            v.visit_expr(&e.inner);
+            v.visit_expr(e.inner);
         }
         Expression::Some(e) => {
-            v.visit_expr(&e.value);
+            v.visit_expr(e.value);
         }
     }
 }
 
-pub fn walk_type<V: Visitor>(v: &mut V, ty: &NamlType) {
+pub fn walk_type<'ast, V: Visitor<'ast>>(v: &mut V, ty: &NamlType) {
     match ty {
         NamlType::Array(inner) => v.visit_type(inner),
         NamlType::FixedArray(inner, _) => v.visit_type(inner),
@@ -439,7 +440,7 @@ mod tests {
         count: usize,
     }
 
-    impl Visitor for IdentCounter {
+    impl<'ast> Visitor<'ast> for IdentCounter {
         fn visit_ident(&mut self, _ident: &Ident) {
             self.count += 1;
         }

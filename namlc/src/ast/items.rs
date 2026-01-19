@@ -24,8 +24,8 @@ use super::statements::{BlockStmt, Statement};
 use super::types::{Ident, NamlType};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Item {
-    Function(FunctionItem),
+pub enum Item<'ast> {
+    Function(FunctionItem<'ast>),
     Struct(StructItem),
     Interface(InterfaceItem),
     Enum(EnumItem),
@@ -33,10 +33,10 @@ pub enum Item {
     Import(ImportItem),
     Use(UseItem),
     Extern(ExternItem),
-    TopLevelStmt(TopLevelStmtItem),
+    TopLevelStmt(TopLevelStmtItem<'ast>),
 }
 
-impl Spanned for Item {
+impl<'ast> Spanned for Item<'ast> {
     fn span(&self) -> Span {
         match self {
             Item::Function(i) => i.span,
@@ -53,8 +53,8 @@ impl Spanned for Item {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TopLevelStmtItem {
-    pub stmt: Statement,
+pub struct TopLevelStmtItem<'ast> {
+    pub stmt: Statement<'ast>,
     pub span: Span,
 }
 
@@ -95,7 +95,7 @@ pub struct Receiver {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FunctionItem {
+pub struct FunctionItem<'ast> {
     pub name: Ident,
     pub receiver: Option<Receiver>,
     pub generics: Vec<GenericParam>,
@@ -104,12 +104,12 @@ pub struct FunctionItem {
     pub throws: Option<NamlType>,
     pub is_async: bool,
     pub is_public: bool,
-    pub body: Option<BlockStmt>,
+    pub body: Option<BlockStmt<'ast>>,
     pub platforms: Option<Platforms>,
     pub span: Span,
 }
 
-impl FunctionItem {
+impl<'ast> FunctionItem<'ast> {
     pub fn is_method(&self) -> bool {
         self.receiver.is_some()
     }
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn test_function_is_method() {
         let mut rodeo = Rodeo::default();
-        let func = FunctionItem {
+        let func: FunctionItem = FunctionItem {
             name: make_ident(&mut rodeo, "foo"),
             receiver: None,
             generics: vec![],
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn test_item_span() {
         let mut rodeo = Rodeo::default();
-        let item = Item::Exception(ExceptionItem {
+        let item: Item = Item::Exception(ExceptionItem {
             name: make_ident(&mut rodeo, "MyError"),
             fields: vec![],
             is_public: true,

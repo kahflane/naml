@@ -11,7 +11,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use namlc::{check, parse, tokenize, DiagnosticReporter, SourceFile};
+use namlc::{check, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
 
 #[derive(Parser)]
 #[command(name = "naml")]
@@ -98,7 +98,8 @@ fn run_file(file: &PathBuf, cached: bool) {
     let source_file = SourceFile::new(file_name.clone(), source_text.clone());
     let (tokens, interner) = tokenize(&source_text);
 
-    let parse_result = parse(&tokens);
+    let arena = AstArena::new();
+    let parse_result = parse(&tokens, &arena);
 
     if !parse_result.errors.is_empty() {
         let reporter = DiagnosticReporter::new(&source_file);
@@ -155,7 +156,8 @@ fn check_file(path: &std::path::Path) {
     let source_file = SourceFile::new(file_name.clone(), source_text.clone());
     let (tokens, interner) = tokenize(&source_text);
 
-    let parse_result = parse(&tokens);
+    let arena = AstArena::new();
+    let parse_result = parse(&tokens, &arena);
     let mut has_errors = false;
 
     if !parse_result.errors.is_empty() {
@@ -204,7 +206,8 @@ fn check_directory(path: &std::path::Path) {
             let source_file = SourceFile::new(file_name.clone(), source_text.clone());
             let (tokens, interner) = tokenize(&source_text);
 
-            let parse_result = parse(&tokens);
+            let arena = AstArena::new();
+            let parse_result = parse(&tokens, &arena);
             let mut file_has_errors = false;
 
             if !parse_result.errors.is_empty() {

@@ -17,7 +17,10 @@ use super::input::TokenStream;
 use super::statements::parse_statement;
 use super::types::{parse_gt, parse_type};
 
-pub fn parse_item(input: TokenStream) -> PResult<Item> {
+pub fn parse_item<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Item<'ast>> {
     let (input, platforms) = if check(TokenKind::Hash)(input) {
         parse_platforms_attr(input)?
     } else {
@@ -32,8 +35,12 @@ pub fn parse_item(input: TokenStream) -> PResult<Item> {
     };
 
     match input.first().map(|t| t.kind) {
-        Some(TokenKind::Keyword(Keyword::Async)) => parse_function_item(input, is_public, platforms),
-        Some(TokenKind::Keyword(Keyword::Fn)) => parse_function_item(input, is_public, platforms),
+        Some(TokenKind::Keyword(Keyword::Async)) => {
+            parse_function_item(arena, input, is_public, platforms)
+        }
+        Some(TokenKind::Keyword(Keyword::Fn)) => {
+            parse_function_item(arena, input, is_public, platforms)
+        }
         Some(TokenKind::Keyword(Keyword::Struct)) => parse_struct_item(input, is_public),
         Some(TokenKind::Keyword(Keyword::Enum)) => parse_enum_item(input, is_public),
         Some(TokenKind::Keyword(Keyword::Interface)) => parse_interface_item(input, is_public),
@@ -41,11 +48,11 @@ pub fn parse_item(input: TokenStream) -> PResult<Item> {
         Some(TokenKind::Keyword(Keyword::Import)) => parse_import_item(input),
         Some(TokenKind::Keyword(Keyword::Use)) => parse_use_item(input),
         Some(TokenKind::Keyword(Keyword::Extern)) => parse_extern_item(input),
-        _ => parse_top_level_stmt(input),
+        _ => parse_top_level_stmt(arena, input),
     }
 }
 
-fn parse_platforms_attr(input: TokenStream) -> PResult<Option<Platforms>> {
+fn parse_platforms_attr<'a>(input: TokenStream<'a>) -> PResult<'a, Option<Platforms>> {
     let (input, start) = token(TokenKind::Hash)(input)?;
     let (input, _) = token(TokenKind::LBracket)(input)?;
     let (input, _) = keyword(Keyword::Platforms)(input)?;
@@ -95,11 +102,12 @@ fn parse_platforms_attr(input: TokenStream) -> PResult<Option<Platforms>> {
     ))
 }
 
-fn parse_function_item(
-    input: TokenStream,
+fn parse_function_item<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
     is_public: bool,
     platforms: Option<Platforms>,
-) -> PResult<Item> {
+) -> PResult<'a, Item<'ast>> {
     let (input, is_async) = if check_keyword(Keyword::Async)(input) {
         let (input, _) = keyword(Keyword::Async)(input)?;
         (input, true)
@@ -139,10 +147,13 @@ fn parse_function_item(
     let (input, throws) = if check_keyword(Keyword::Throws)(input) {
         let (input, _) = keyword(Keyword::Throws)(input)?;
         if check(TokenKind::LBrace)(input) || check(TokenKind::Semicolon)(input) {
-            (input, Some(NamlType::Named(Ident::new(
-                lasso::Spur::default(),
-                Span::dummy(),
-            ))))
+            (
+                input,
+                Some(NamlType::Named(Ident::new(
+                    lasso::Spur::default(),
+                    Span::dummy(),
+                ))),
+            )
         } else {
             let (input, ty) = parse_type(input)?;
             (input, Some(ty))
@@ -152,7 +163,7 @@ fn parse_function_item(
     };
 
     let (input, body, end_span) = if check(TokenKind::LBrace)(input) {
-        let (input, block) = parse_block(input)?;
+        let (input, block) = parse_block(arena, input)?;
         let end_span = block.span;
         (input, Some(block), end_span)
     } else if check(TokenKind::Semicolon)(input) {
@@ -183,7 +194,7 @@ fn parse_function_item(
     ))
 }
 
-fn parse_receiver(input: TokenStream) -> PResult<Receiver> {
+fn parse_receiver<'a>(input: TokenStream<'a>) -> PResult<'a, Receiver> {
     let (input, start) = token(TokenKind::LParen)(input)?;
 
     let (input, mutable) = if check_keyword(Keyword::Mut)(input) {
@@ -209,14 +220,14 @@ fn parse_receiver(input: TokenStream) -> PResult<Receiver> {
     ))
 }
 
-fn parse_generic_params(input: TokenStream) -> PResult<Vec<GenericParam>> {
+fn parse_generic_params<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<GenericParam>> {
     let (input, _) = token(TokenKind::Lt)(input)?;
     let (input, params) = separated_list0(token(TokenKind::Comma), parse_generic_param)(input)?;
     let (input, _) = parse_gt(input)?;
     Ok((input, params))
 }
 
-fn parse_generic_param(input: TokenStream) -> PResult<GenericParam> {
+fn parse_generic_param<'a>(input: TokenStream<'a>) -> PResult<'a, GenericParam> {
     let (input, name) = ident(input)?;
 
     let (input, bounds) = if check(TokenKind::Colon)(input) {
@@ -237,16 +248,26 @@ fn parse_generic_param(input: TokenStream) -> PResult<GenericParam> {
     ))
 }
 
-fn parse_parameter(input: TokenStream) -> PResult<Parameter> {
+fn parse_parameter<'a>(input: TokenStream<'a>) -> PResult<'a, Parameter> {
     let (input, name) = ident(input)?;
     let start_span = name.span;
     let (input, _) = token(TokenKind::Colon)(input)?;
     let (input, ty) = parse_type(input)?;
 
-    Ok((input, Parameter { name, ty, span: start_span }))
+    Ok((
+        input,
+        Parameter {
+            name,
+            ty,
+            span: start_span,
+        },
+    ))
 }
 
-fn parse_struct_item(input: TokenStream, is_public: bool) -> PResult<Item> {
+fn parse_struct_item<'a, 'ast>(
+    input: TokenStream<'a>,
+    is_public: bool,
+) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Struct)(input)?;
     let (input, name) = ident(input)?;
 
@@ -281,12 +302,12 @@ fn parse_struct_item(input: TokenStream, is_public: bool) -> PResult<Item> {
     ))
 }
 
-fn parse_struct_fields(input: TokenStream) -> PResult<Vec<StructField>> {
+fn parse_struct_fields<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<StructField>> {
     let mut fields = Vec::with_capacity(6);
     let mut input = input;
 
     loop {
-                if check(TokenKind::RBrace)(input) {
+        if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -319,7 +340,7 @@ fn parse_struct_fields(input: TokenStream) -> PResult<Vec<StructField>> {
     Ok((input, fields))
 }
 
-fn parse_enum_item(input: TokenStream, is_public: bool) -> PResult<Item> {
+fn parse_enum_item<'a, 'ast>(input: TokenStream<'a>, is_public: bool) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Enum)(input)?;
     let (input, name) = ident(input)?;
 
@@ -345,12 +366,12 @@ fn parse_enum_item(input: TokenStream, is_public: bool) -> PResult<Item> {
     ))
 }
 
-fn parse_enum_variants(input: TokenStream) -> PResult<Vec<EnumVariant>> {
+fn parse_enum_variants<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<EnumVariant>> {
     let mut variants = Vec::with_capacity(6);
     let mut input = input;
 
     loop {
-                if check(TokenKind::RBrace)(input) {
+        if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -381,7 +402,10 @@ fn parse_enum_variants(input: TokenStream) -> PResult<Vec<EnumVariant>> {
     Ok((input, variants))
 }
 
-fn parse_interface_item(input: TokenStream, is_public: bool) -> PResult<Item> {
+fn parse_interface_item<'a, 'ast>(
+    input: TokenStream<'a>,
+    is_public: bool,
+) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Interface)(input)?;
     let (input, name) = ident(input)?;
 
@@ -416,12 +440,12 @@ fn parse_interface_item(input: TokenStream, is_public: bool) -> PResult<Item> {
     ))
 }
 
-fn parse_interface_methods(input: TokenStream) -> PResult<Vec<InterfaceMethod>> {
+fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<InterfaceMethod>> {
     let mut methods = Vec::with_capacity(8);
     let mut input = input;
 
     loop {
-                if check(TokenKind::RBrace)(input) {
+        if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -461,10 +485,13 @@ fn parse_interface_methods(input: TokenStream) -> PResult<Vec<InterfaceMethod>> 
         let (new_input, throws) = if check_keyword(Keyword::Throws)(new_input) {
             let (i, _) = keyword(Keyword::Throws)(new_input)?;
             if check(TokenKind::Semicolon)(i) {
-                (i, Some(NamlType::Named(Ident::new(
-                    lasso::Spur::default(),
-                    Span::dummy(),
-                ))))
+                (
+                    i,
+                    Some(NamlType::Named(Ident::new(
+                        lasso::Spur::default(),
+                        Span::dummy(),
+                    ))),
+                )
             } else {
                 let (i, ty) = parse_type(i)?;
                 (i, Some(ty))
@@ -491,7 +518,10 @@ fn parse_interface_methods(input: TokenStream) -> PResult<Vec<InterfaceMethod>> 
     Ok((input, methods))
 }
 
-fn parse_exception_item(input: TokenStream, is_public: bool) -> PResult<Item> {
+fn parse_exception_item<'a, 'ast>(
+    input: TokenStream<'a>,
+    is_public: bool,
+) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Exception)(input)?;
     let (input, name) = ident(input)?;
     let (input, _) = token(TokenKind::LBrace)(input)?;
@@ -500,7 +530,7 @@ fn parse_exception_item(input: TokenStream, is_public: bool) -> PResult<Item> {
     let mut input = input;
 
     loop {
-                if check(TokenKind::RBrace)(input) {
+        if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -535,7 +565,7 @@ fn parse_exception_item(input: TokenStream, is_public: bool) -> PResult<Item> {
     ))
 }
 
-fn parse_import_item(input: TokenStream) -> PResult<Item> {
+fn parse_import_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Import)(input)?;
 
     let (input, first) = ident(input)?;
@@ -569,7 +599,7 @@ fn parse_import_item(input: TokenStream) -> PResult<Item> {
     ))
 }
 
-fn parse_use_item(input: TokenStream) -> PResult<Item> {
+fn parse_use_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Use)(input)?;
 
     let (input, first) = ident(input)?;
@@ -620,12 +650,12 @@ fn parse_use_item(input: TokenStream) -> PResult<Item> {
     ))
 }
 
-fn parse_use_entries(input: TokenStream) -> PResult<Vec<UseItemEntry>> {
+fn parse_use_entries<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<UseItemEntry>> {
     let mut entries = Vec::new();
     let mut input = input;
 
     loop {
-                if check(TokenKind::RBrace)(input) {
+        if check(TokenKind::RBrace)(input) {
             break;
         }
 
@@ -654,7 +684,7 @@ fn parse_use_entries(input: TokenStream) -> PResult<Vec<UseItemEntry>> {
     Ok((input, entries))
 }
 
-fn parse_extern_item(input: TokenStream) -> PResult<Item> {
+fn parse_extern_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Extern)(input)?;
     let (input, _) = keyword(Keyword::Fn)(input)?;
     let (input, name) = ident(input)?;
@@ -674,10 +704,13 @@ fn parse_extern_item(input: TokenStream) -> PResult<Item> {
     let (input, throws) = if check_keyword(Keyword::Throws)(input) {
         let (input, _) = keyword(Keyword::Throws)(input)?;
         if check(TokenKind::Semicolon)(input) {
-            (input, Some(NamlType::Named(Ident::new(
-                lasso::Spur::default(),
-                Span::dummy(),
-            ))))
+            (
+                input,
+                Some(NamlType::Named(Ident::new(
+                    lasso::Spur::default(),
+                    Span::dummy(),
+                ))),
+            )
         } else {
             let (input, ty) = parse_type(input)?;
             (input, Some(ty))
@@ -709,8 +742,11 @@ fn parse_extern_item(input: TokenStream) -> PResult<Item> {
     ))
 }
 
-fn parse_top_level_stmt(input: TokenStream) -> PResult<Item> {
-    let (input, stmt) = parse_statement(input)?;
+fn parse_top_level_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Item<'ast>> {
+    let (input, stmt) = parse_statement(arena, input)?;
     let span = stmt.span();
     Ok((
         input,

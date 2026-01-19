@@ -85,6 +85,11 @@ smallvec.workspace = true
 ##
 memchr.workspace = true
 
+##
+## Arena allocation for AST nodes
+##
+bumpalo.workspace = true
+
 
 [dev-dependencies]
 insta.workspace = true

@@ -17,6 +17,7 @@
 /// The root AST node is SourceFile, representing a complete naml source file.
 ///
 
+pub mod arena;
 pub mod expressions;
 pub mod items;
 pub mod literals;
@@ -25,6 +26,7 @@ pub mod statements;
 pub mod types;
 pub mod visitor;
 
+pub use arena::AstArena;
 pub use expressions::*;
 pub use items::*;
 pub use literals::*;
@@ -36,13 +38,13 @@ pub use visitor::*;
 use crate::source::Span;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SourceFile {
-    pub items: Vec<Item>,
+pub struct SourceFile<'ast> {
+    pub items: Vec<Item<'ast>>,
     pub span: Span,
 }
 
-impl SourceFile {
-    pub fn new(items: Vec<Item>, span: Span) -> Self {
+impl<'ast> SourceFile<'ast> {
+    pub fn new(items: Vec<Item<'ast>>, span: Span) -> Self {
         Self { items, span }
     }
 
@@ -53,7 +55,7 @@ impl SourceFile {
         }
     }
 
-    pub fn functions(&self) -> impl Iterator<Item = &FunctionItem> {
+    pub fn functions(&self) -> impl Iterator<Item = &FunctionItem<'ast>> {
         self.items.iter().filter_map(|item| {
             if let Item::Function(f) = item {
                 Some(f)
@@ -73,7 +75,7 @@ impl SourceFile {
         })
     }
 
-    pub fn find_main(&self) -> Option<&FunctionItem> {
+    pub fn find_main(&self) -> Option<&FunctionItem<'ast>> {
         self.functions().find(|f| {
             f.name.symbol == lasso::Spur::default()
         })
@@ -86,13 +88,13 @@ mod tests {
 
     #[test]
     fn test_source_file_empty() {
-        let file = SourceFile::empty();
+        let file: SourceFile = SourceFile::empty();
         assert!(file.items.is_empty());
     }
 
     #[test]
     fn test_source_file_iterators() {
-        let file = SourceFile::empty();
+        let file: SourceFile = SourceFile::empty();
         assert_eq!(file.functions().count(), 0);
         assert_eq!(file.structs().count(), 0);
     }

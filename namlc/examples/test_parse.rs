@@ -991,8 +991,9 @@ async fn main() {
     println!();
 
     // Parse
+    let arena = namlc::AstArena::new();
     let parse_start = Instant::now();
-    let result = namlc::parse(&tokens);
+    let result = namlc::parse(&tokens, &arena);
     let parse_time = parse_start.elapsed();
 
     if result.errors.is_empty() {

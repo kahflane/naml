@@ -101,6 +101,11 @@ smallvec = { version = "1.13", features = ["union"] }
 ##
 memchr = "2.7"
 
+##
+## Arena allocation for AST nodes
+##
+bumpalo = { version = "3.16", features = ["collections"] }
+
 [profile.release]
 lto = true
 codegen-units = 1

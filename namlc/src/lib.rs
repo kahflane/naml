@@ -25,6 +25,7 @@ pub mod parser;
 pub mod source;
 pub mod typechecker;
 
+pub use ast::AstArena;
 pub use diagnostic::DiagnosticReporter;
 pub use lexer::tokenize;
 pub use parser::parse;
@@ -93,7 +94,8 @@ printf("After move - Point distance squared: {}", p.distance_from_origin());
 "#;
 
     let (tokens, _interner) = tokenize(source);
-    let result = parse(&tokens);
+    let arena = AstArena::new();
+    let result = parse(&tokens, &arena);
     if result.errors.is_empty() {
         println!("Parsed {} items successfully", result.ast.items.len());
         assert!(result.ast.items.len() > 10, "Expected at least 10 items");

@@ -15,25 +15,31 @@ use super::expressions::{parse_block, parse_expression};
 use super::input::TokenStream;
 use super::types::parse_type;
 
-pub fn parse_statement(input: TokenStream) -> PResult<Statement> {
+pub fn parse_statement<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     match input.first().map(|t| t.kind) {
-        Some(TokenKind::Keyword(Keyword::Var)) => parse_var_stmt(input),
-        Some(TokenKind::Keyword(Keyword::Const)) => parse_const_stmt(input),
-        Some(TokenKind::Keyword(Keyword::Return)) => parse_return_stmt(input),
-        Some(TokenKind::Keyword(Keyword::Throw)) => parse_throw_stmt(input),
+        Some(TokenKind::Keyword(Keyword::Var)) => parse_var_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::Const)) => parse_const_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::Return)) => parse_return_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::Throw)) => parse_throw_stmt(arena, input),
         Some(TokenKind::Keyword(Keyword::Break)) => parse_break_stmt(input),
         Some(TokenKind::Keyword(Keyword::Continue)) => parse_continue_stmt(input),
-        Some(TokenKind::Keyword(Keyword::If)) => parse_if_stmt(input),
-        Some(TokenKind::Keyword(Keyword::While)) => parse_while_stmt(input),
-        Some(TokenKind::Keyword(Keyword::For)) => parse_for_stmt(input),
-        Some(TokenKind::Keyword(Keyword::Loop)) => parse_loop_stmt(input),
-        Some(TokenKind::Keyword(Keyword::Switch)) => parse_switch_stmt(input),
-        Some(TokenKind::LBrace) => parse_block_stmt(input),
-        _ => parse_expr_or_assign_stmt(input),
+        Some(TokenKind::Keyword(Keyword::If)) => parse_if_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::While)) => parse_while_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::For)) => parse_for_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::Loop)) => parse_loop_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::Switch)) => parse_switch_stmt(arena, input),
+        Some(TokenKind::LBrace) => parse_block_stmt(arena, input),
+        _ => parse_expr_or_assign_stmt(arena, input),
     }
 }
 
-fn parse_var_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_var_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::Var)(input)?;
 
     let (input, mutable) = if check_keyword(Keyword::Mut)(input) {
@@ -55,7 +61,7 @@ fn parse_var_stmt(input: TokenStream) -> PResult<Statement> {
 
     let (input, init) = if check(TokenKind::Eq)(input) {
         let (input, _) = token(TokenKind::Eq)(input)?;
-        let (input, expr) = parse_expression(input)?;
+        let (input, expr) = parse_expression(arena, input)?;
         (input, Some(expr))
     } else {
         (input, None)
@@ -75,7 +81,10 @@ fn parse_var_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_const_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_const_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::Const)(input)?;
     let (input, name) = ident(input)?;
 
@@ -88,7 +97,7 @@ fn parse_const_stmt(input: TokenStream) -> PResult<Statement> {
     };
 
     let (input, _) = token(TokenKind::Eq)(input)?;
-    let (input, init) = parse_expression(input)?;
+    let (input, init) = parse_expression(arena, input)?;
     let (input, _) = token(TokenKind::Semicolon)(input)?;
 
     Ok((
@@ -102,11 +111,14 @@ fn parse_const_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_return_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_return_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::Return)(input)?;
 
     let (input, value) = if !check(TokenKind::Semicolon)(input) {
-        let (input, expr) = parse_expression(input)?;
+        let (input, expr) = parse_expression(arena, input)?;
         (input, Some(expr))
     } else {
         (input, None)
@@ -123,9 +135,12 @@ fn parse_return_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_throw_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_throw_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::Throw)(input)?;
-    let (input, value) = parse_expression(input)?;
+    let (input, value) = parse_expression(arena, input)?;
     let (input, _) = token(TokenKind::Semicolon)(input)?;
 
     Ok((
@@ -137,37 +152,40 @@ fn parse_throw_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_break_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_break_stmt<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Statement<'ast>> {
     let (input, tok) = keyword(Keyword::Break)(input)?;
     let (input, _) = token(TokenKind::Semicolon)(input)?;
     Ok((input, Statement::Break(BreakStmt { span: tok.span })))
 }
 
-fn parse_continue_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_continue_stmt<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Statement<'ast>> {
     let (input, tok) = keyword(Keyword::Continue)(input)?;
     let (input, _) = token(TokenKind::Semicolon)(input)?;
     Ok((input, Statement::Continue(ContinueStmt { span: tok.span })))
 }
 
-fn parse_if_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_if_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::If)(input)?;
     let (input, _) = token(TokenKind::LParen)(input)?;
-    let (input, condition) = parse_expression(input)?;
+    let (input, condition) = parse_expression(arena, input)?;
     let (input, _) = token(TokenKind::RParen)(input)?;
 
-    let (input, then_block) = parse_block(input)?;
+    let (input, then_block) = parse_block(arena, input)?;
 
     let (input, else_branch) = if check_keyword(Keyword::Else)(input) {
         let (input, _) = keyword(Keyword::Else)(input)?;
         if check_keyword(Keyword::If)(input) {
-            let (input, else_if) = parse_if_stmt(input)?;
+            let (input, else_if) = parse_if_stmt(arena, input)?;
             if let Statement::If(if_stmt) = else_if {
                 (input, Some(ElseBranch::ElseIf(Box::new(if_stmt))))
             } else {
                 (input, None)
             }
         } else {
-            let (input, else_block) = parse_block(input)?;
+            let (input, else_block) = parse_block(arena, input)?;
             (input, Some(ElseBranch::Else(else_block)))
         }
     } else {
@@ -193,12 +211,15 @@ fn parse_if_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_while_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_while_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::While)(input)?;
     let (input, _) = token(TokenKind::LParen)(input)?;
-    let (input, condition) = parse_expression(input)?;
+    let (input, condition) = parse_expression(arena, input)?;
     let (input, _) = token(TokenKind::RParen)(input)?;
-    let (input, body) = parse_block(input)?;
+    let (input, body) = parse_block(arena, input)?;
     let body_span = body.span;
 
     Ok((
@@ -211,7 +232,10 @@ fn parse_while_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_for_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_for_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::For)(input)?;
     let (input, _) = token(TokenKind::LParen)(input)?;
 
@@ -233,9 +257,9 @@ fn parse_for_stmt(input: TokenStream) -> PResult<Statement> {
     };
 
     let (input, _) = keyword(Keyword::In)(input)?;
-    let (input, iterable) = parse_expression(input)?;
+    let (input, iterable) = parse_expression(arena, input)?;
     let (input, _) = token(TokenKind::RParen)(input)?;
-    let (input, body) = parse_block(input)?;
+    let (input, body) = parse_block(arena, input)?;
     let body_span = body.span;
 
     Ok((
@@ -251,9 +275,12 @@ fn parse_for_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_loop_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_loop_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::Loop)(input)?;
-    let (input, body) = parse_block(input)?;
+    let (input, body) = parse_block(arena, input)?;
     let body_span = body.span;
 
     Ok((
@@ -265,10 +292,13 @@ fn parse_loop_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_switch_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_switch_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     let (input, start) = keyword(Keyword::Switch)(input)?;
     let (input, _) = token(TokenKind::LParen)(input)?;
-    let (input, scrutinee) = parse_expression(input)?;
+    let (input, scrutinee) = parse_expression(arena, input)?;
     let (input, _) = token(TokenKind::RParen)(input)?;
     let (input, _) = token(TokenKind::LBrace)(input)?;
 
@@ -283,10 +313,10 @@ fn parse_switch_stmt(input: TokenStream) -> PResult<Statement> {
 
         if check_keyword(Keyword::Case)(input) {
             let (new_input, _) = keyword(Keyword::Case)(input)?;
-            let (new_input, pattern) = parse_expression(new_input)?;
+            let (new_input, pattern) = parse_expression(arena, new_input)?;
             let pattern_span = pattern.span();
             let (new_input, _) = token(TokenKind::Colon)(new_input)?;
-            let (new_input, body) = parse_block(new_input)?;
+            let (new_input, body) = parse_block(arena, new_input)?;
             let body_span = body.span;
             cases.push(SwitchCase {
                 pattern,
@@ -297,7 +327,7 @@ fn parse_switch_stmt(input: TokenStream) -> PResult<Statement> {
         } else if check_keyword(Keyword::Default)(input) {
             let (new_input, _) = keyword(Keyword::Default)(input)?;
             let (new_input, _) = token(TokenKind::Colon)(new_input)?;
-            let (new_input, body) = parse_block(new_input)?;
+            let (new_input, body) = parse_block(arena, new_input)?;
             default = Some(body);
             input = new_input;
         } else {
@@ -318,7 +348,10 @@ fn parse_switch_stmt(input: TokenStream) -> PResult<Statement> {
     ))
 }
 
-fn parse_block_stmt(input: TokenStream) -> PResult<Statement> {
+fn parse_block_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
     if !check(TokenKind::LBrace)(input) {
         return Err(nom::Err::Error(PError {
             input,
@@ -326,12 +359,15 @@ fn parse_block_stmt(input: TokenStream) -> PResult<Statement> {
         }));
     }
 
-    let (input, block) = parse_block(input)?;
+    let (input, block) = parse_block(arena, input)?;
     Ok((input, Statement::Block(block)))
 }
 
-fn parse_expr_or_assign_stmt(input: TokenStream) -> PResult<Statement> {
-    let (input, expr) = parse_expression(input)?;
+fn parse_expr_or_assign_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Statement<'ast>> {
+    let (input, expr) = parse_expression(arena, input)?;
 
     let assign_op = match peek_token(input) {
         Some(TokenKind::Eq) => Some(AssignOp::Assign),
@@ -348,7 +384,7 @@ fn parse_expr_or_assign_stmt(input: TokenStream) -> PResult<Statement> {
 
     if let Some(op) = assign_op {
         let (input, _) = input.take_split(1);
-        let (input, value) = parse_expression(input)?;
+        let (input, value) = parse_expression(arena, input)?;
         let (input, _) = token(TokenKind::Semicolon)(input)?;
         let span = expr.span().merge(value.span());
 

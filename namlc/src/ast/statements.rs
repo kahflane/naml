@@ -22,24 +22,24 @@ use super::operators::AssignOp;
 use super::types::{Ident, NamlType};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Statement {
-    Var(VarStmt),
-    Const(ConstStmt),
-    Assign(AssignStmt),
-    Expression(ExprStmt),
-    Return(ReturnStmt),
-    Throw(ThrowStmt),
-    If(IfStmt),
-    While(WhileStmt),
-    For(ForStmt),
-    Loop(LoopStmt),
-    Switch(SwitchStmt),
+pub enum Statement<'ast> {
+    Var(VarStmt<'ast>),
+    Const(ConstStmt<'ast>),
+    Assign(AssignStmt<'ast>),
+    Expression(ExprStmt<'ast>),
+    Return(ReturnStmt<'ast>),
+    Throw(ThrowStmt<'ast>),
+    If(IfStmt<'ast>),
+    While(WhileStmt<'ast>),
+    For(ForStmt<'ast>),
+    Loop(LoopStmt<'ast>),
+    Switch(SwitchStmt<'ast>),
     Break(BreakStmt),
     Continue(ContinueStmt),
-    Block(BlockStmt),
+    Block(BlockStmt<'ast>),
 }
 
-impl Spanned for Statement {
+impl<'ast> Spanned for Statement<'ast> {
     fn span(&self) -> Span {
         match self {
             Statement::Var(s) => s.span,
@@ -61,97 +61,97 @@ impl Spanned for Statement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct VarStmt {
+pub struct VarStmt<'ast> {
     pub name: Ident,
     pub mutable: bool,
     pub ty: Option<NamlType>,
-    pub init: Option<Expression>,
+    pub init: Option<Expression<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ConstStmt {
+pub struct ConstStmt<'ast> {
     pub name: Ident,
     pub ty: Option<NamlType>,
-    pub init: Expression,
+    pub init: Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AssignStmt {
-    pub target: Expression,
+pub struct AssignStmt<'ast> {
+    pub target: Expression<'ast>,
     pub op: AssignOp,
-    pub value: Expression,
+    pub value: Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExprStmt {
-    pub expr: Expression,
+pub struct ExprStmt<'ast> {
+    pub expr: Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReturnStmt {
-    pub value: Option<Expression>,
+pub struct ReturnStmt<'ast> {
+    pub value: Option<Expression<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ThrowStmt {
-    pub value: Expression,
+pub struct ThrowStmt<'ast> {
+    pub value: Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct IfStmt {
-    pub condition: Expression,
-    pub then_branch: BlockStmt,
-    pub else_branch: Option<ElseBranch>,
+pub struct IfStmt<'ast> {
+    pub condition: Expression<'ast>,
+    pub then_branch: BlockStmt<'ast>,
+    pub else_branch: Option<ElseBranch<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ElseBranch {
-    ElseIf(Box<IfStmt>),
-    Else(BlockStmt),
+pub enum ElseBranch<'ast> {
+    ElseIf(Box<IfStmt<'ast>>),
+    Else(BlockStmt<'ast>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct WhileStmt {
-    pub condition: Expression,
-    pub body: BlockStmt,
+pub struct WhileStmt<'ast> {
+    pub condition: Expression<'ast>,
+    pub body: BlockStmt<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ForStmt {
+pub struct ForStmt<'ast> {
     pub index: Option<Ident>,
     pub value: Ident,
     pub ty: Option<NamlType>,
-    pub iterable: Expression,
-    pub body: BlockStmt,
+    pub iterable: Expression<'ast>,
+    pub body: BlockStmt<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LoopStmt {
-    pub body: BlockStmt,
+pub struct LoopStmt<'ast> {
+    pub body: BlockStmt<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SwitchStmt {
-    pub scrutinee: Expression,
-    pub cases: Vec<SwitchCase>,
-    pub default: Option<BlockStmt>,
+pub struct SwitchStmt<'ast> {
+    pub scrutinee: Expression<'ast>,
+    pub cases: Vec<SwitchCase<'ast>>,
+    pub default: Option<BlockStmt<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SwitchCase {
-    pub pattern: Expression,
-    pub body: BlockStmt,
+pub struct SwitchCase<'ast> {
+    pub pattern: Expression<'ast>,
+    pub body: BlockStmt<'ast>,
     pub span: Span,
 }
 
@@ -166,13 +166,13 @@ pub struct ContinueStmt {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BlockStmt {
-    pub statements: Vec<Statement>,
+pub struct BlockStmt<'ast> {
+    pub statements: Vec<Statement<'ast>>,
     pub span: Span,
 }
 
-impl BlockStmt {
-    pub fn new(statements: Vec<Statement>, span: Span) -> Self {
+impl<'ast> BlockStmt<'ast> {
+    pub fn new(statements: Vec<Statement<'ast>>, span: Span) -> Self {
         Self { statements, span }
     }
 
@@ -184,13 +184,13 @@ impl BlockStmt {
     }
 }
 
-impl From<BlockExpr> for BlockStmt {
-    fn from(expr: BlockExpr) -> Self {
+impl<'ast> From<BlockExpr<'ast>> for BlockStmt<'ast> {
+    fn from(expr: BlockExpr<'ast>) -> Self {
         let mut statements = expr.statements;
         if let Some(tail) = expr.tail {
             statements.push(Statement::Expression(ExprStmt {
                 span: tail.span(),
-                expr: *tail,
+                expr: tail.clone(),
             }));
         }
         BlockStmt {
@@ -206,13 +206,13 @@ mod tests {
 
     #[test]
     fn test_block_stmt_empty() {
-        let block = BlockStmt::empty(Span::new(0, 2, 0));
+        let block: BlockStmt = BlockStmt::empty(Span::new(0, 2, 0));
         assert!(block.statements.is_empty());
     }
 
     #[test]
     fn test_statement_span() {
-        let stmt = Statement::Break(BreakStmt {
+        let stmt: Statement = Statement::Break(BreakStmt {
             span: Span::new(10, 15, 0),
         });
         assert_eq!(stmt.span(), Span::new(10, 15, 0));

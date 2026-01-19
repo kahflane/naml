@@ -7,7 +7,7 @@
 /// Key design decisions:
 /// - Wrapper enum with separate structs for each expression type
 /// - Each struct carries its own Span for precise error reporting
-/// - Box-based nesting for recursive structures
+/// - Arena-allocated references for recursive structures (zero Box overhead)
 /// - All types implement Spanned trait for uniform span access
 ///
 /// Expression categories:
@@ -24,32 +24,32 @@ use super::operators::{BinaryOp, UnaryOp};
 use super::types::{Ident, NamlType};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
+pub enum Expression<'ast> {
     Literal(LiteralExpr),
     Identifier(IdentExpr),
     Path(PathExpr),
-    Binary(BinaryExpr),
-    Unary(UnaryExpr),
-    Call(CallExpr),
-    MethodCall(MethodCallExpr),
-    Index(IndexExpr),
-    Field(FieldExpr),
-    Array(ArrayExpr),
-    Map(MapExpr),
-    StructLiteral(StructLiteralExpr),
-    If(IfExpr),
-    Block(BlockExpr),
-    Lambda(LambdaExpr),
-    Spawn(SpawnExpr),
-    Await(AwaitExpr),
-    Try(TryExpr),
-    Cast(CastExpr),
-    Range(RangeExpr),
-    Grouped(GroupedExpr),
-    Some(SomeExpr),
+    Binary(BinaryExpr<'ast>),
+    Unary(UnaryExpr<'ast>),
+    Call(CallExpr<'ast>),
+    MethodCall(MethodCallExpr<'ast>),
+    Index(IndexExpr<'ast>),
+    Field(FieldExpr<'ast>),
+    Array(ArrayExpr<'ast>),
+    Map(MapExpr<'ast>),
+    StructLiteral(StructLiteralExpr<'ast>),
+    If(IfExpr<'ast>),
+    Block(BlockExpr<'ast>),
+    Lambda(LambdaExpr<'ast>),
+    Spawn(SpawnExpr<'ast>),
+    Await(AwaitExpr<'ast>),
+    Try(TryExpr<'ast>),
+    Cast(CastExpr<'ast>),
+    Range(RangeExpr<'ast>),
+    Grouped(GroupedExpr<'ast>),
+    Some(SomeExpr<'ast>),
 }
 
-impl Spanned for Expression {
+impl<'ast> Spanned for Expression<'ast> {
     fn span(&self) -> Span {
         match self {
             Expression::Literal(e) => e.span,
@@ -97,102 +97,102 @@ pub struct PathExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BinaryExpr {
-    pub left: Box<Expression>,
+pub struct BinaryExpr<'ast> {
+    pub left: &'ast Expression<'ast>,
     pub op: BinaryOp,
-    pub right: Box<Expression>,
+    pub right: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct UnaryExpr {
+pub struct UnaryExpr<'ast> {
     pub op: UnaryOp,
-    pub operand: Box<Expression>,
+    pub operand: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CallExpr {
-    pub callee: Box<Expression>,
+pub struct CallExpr<'ast> {
+    pub callee: &'ast Expression<'ast>,
     pub type_args: Vec<NamlType>,
-    pub args: Vec<Expression>,
+    pub args: Vec<Expression<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MethodCallExpr {
-    pub receiver: Box<Expression>,
+pub struct MethodCallExpr<'ast> {
+    pub receiver: &'ast Expression<'ast>,
     pub method: Ident,
     pub type_args: Vec<NamlType>,
-    pub args: Vec<Expression>,
+    pub args: Vec<Expression<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct IndexExpr {
-    pub base: Box<Expression>,
-    pub index: Box<Expression>,
+pub struct IndexExpr<'ast> {
+    pub base: &'ast Expression<'ast>,
+    pub index: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FieldExpr {
-    pub base: Box<Expression>,
+pub struct FieldExpr<'ast> {
+    pub base: &'ast Expression<'ast>,
     pub field: Ident,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ArrayExpr {
-    pub elements: Vec<Expression>,
+pub struct ArrayExpr<'ast> {
+    pub elements: Vec<Expression<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MapEntry {
-    pub key: Expression,
-    pub value: Expression,
+pub struct MapEntry<'ast> {
+    pub key: Expression<'ast>,
+    pub value: Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MapExpr {
-    pub entries: Vec<MapEntry>,
+pub struct MapExpr<'ast> {
+    pub entries: Vec<MapEntry<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct StructLiteralField {
+pub struct StructLiteralField<'ast> {
     pub name: Ident,
-    pub value: Expression,
+    pub value: Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct StructLiteralExpr {
+pub struct StructLiteralExpr<'ast> {
     pub name: Ident,
-    pub fields: Vec<StructLiteralField>,
+    pub fields: Vec<StructLiteralField<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct IfExpr {
-    pub condition: Box<Expression>,
-    pub then_branch: Box<BlockExpr>,
-    pub else_branch: Option<ElseExpr>,
+pub struct IfExpr<'ast> {
+    pub condition: &'ast Expression<'ast>,
+    pub then_branch: &'ast BlockExpr<'ast>,
+    pub else_branch: Option<ElseExpr<'ast>>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ElseExpr {
-    ElseIf(Box<IfExpr>),
-    Else(Box<BlockExpr>),
+pub enum ElseExpr<'ast> {
+    ElseIf(&'ast IfExpr<'ast>),
+    Else(&'ast BlockExpr<'ast>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BlockExpr {
-    pub statements: Vec<super::statements::Statement>,
-    pub tail: Option<Box<Expression>>,
+pub struct BlockExpr<'ast> {
+    pub statements: Vec<super::statements::Statement<'ast>>,
+    pub tail: Option<&'ast Expression<'ast>>,
     pub span: Span,
 }
 
@@ -204,83 +204,61 @@ pub struct LambdaParam {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LambdaExpr {
+pub struct LambdaExpr<'ast> {
     pub params: Vec<LambdaParam>,
     pub return_ty: Option<NamlType>,
-    pub body: Box<Expression>,
+    pub body: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SpawnExpr {
-    pub body: Box<BlockExpr>,
+pub struct SpawnExpr<'ast> {
+    pub body: &'ast BlockExpr<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AwaitExpr {
-    pub expr: Box<Expression>,
+pub struct AwaitExpr<'ast> {
+    pub expr: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TryExpr {
-    pub expr: Box<Expression>,
+pub struct TryExpr<'ast> {
+    pub expr: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CastExpr {
-    pub expr: Box<Expression>,
+pub struct CastExpr<'ast> {
+    pub expr: &'ast Expression<'ast>,
     pub target_ty: NamlType,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RangeExpr {
-    pub start: Option<Box<Expression>>,
-    pub end: Option<Box<Expression>>,
+pub struct RangeExpr<'ast> {
+    pub start: Option<&'ast Expression<'ast>>,
+    pub end: Option<&'ast Expression<'ast>>,
     pub inclusive: bool,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct GroupedExpr {
-    pub inner: Box<Expression>,
+pub struct GroupedExpr<'ast> {
+    pub inner: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SomeExpr {
-    pub value: Box<Expression>,
+pub struct SomeExpr<'ast> {
+    pub value: &'ast Expression<'ast>,
     pub span: Span,
 }
 
 impl LiteralExpr {
     pub fn new(value: Literal, span: Span) -> Self {
         Self { value, span }
-    }
-}
-
-impl BinaryExpr {
-    pub fn new(left: Expression, op: BinaryOp, right: Expression) -> Self {
-        let span = left.span().merge(right.span());
-        Self {
-            left: Box::new(left),
-            op,
-            right: Box::new(right),
-            span,
-        }
-    }
-}
-
-impl UnaryExpr {
-    pub fn new(op: UnaryOp, operand: Expression, span: Span) -> Self {
-        Self {
-            op,
-            operand: Box::new(operand),
-            span,
-        }
     }
 }
 
@@ -295,19 +273,5 @@ mod tests {
             span: Span::new(0, 2, 0),
         });
         assert_eq!(lit.span(), Span::new(0, 2, 0));
-    }
-
-    #[test]
-    fn test_binary_expr_span_merge() {
-        let left = Expression::Literal(LiteralExpr {
-            value: Literal::Int(1),
-            span: Span::new(0, 1, 0),
-        });
-        let right = Expression::Literal(LiteralExpr {
-            value: Literal::Int(2),
-            span: Span::new(4, 5, 0),
-        });
-        let binary = BinaryExpr::new(left, BinaryOp::Add, right);
-        assert_eq!(binary.span, Span::new(0, 5, 0));
     }
 }

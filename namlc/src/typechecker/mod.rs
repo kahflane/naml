@@ -402,12 +402,14 @@ pub fn check(file: &SourceFile, interner: &Rodeo) -> Vec<TypeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::AstArena;
     use crate::lexer::tokenize;
     use crate::parser::parse;
 
     fn check_source(source: &str) -> Vec<TypeError> {
         let (tokens, interner) = tokenize(source);
-        let result = parse(&tokens);
+        let arena = AstArena::new();
+        let result = parse(&tokens, &arena);
         assert!(result.errors.is_empty(), "Parse errors: {:?}", result.errors);
         check(&result.ast, &interner)
     }
