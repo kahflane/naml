@@ -20,6 +20,7 @@
 
 use crate::source::Span;
 use lasso::{Rodeo, Spur};
+use memchr::{memchr, memchr2};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token {
@@ -195,6 +196,7 @@ pub fn tokenize(source: &str) -> (Vec<Token>, Rodeo) {
 
 struct Lexer<'a> {
     source: &'a str,
+    bytes: &'a [u8],
     pos: usize,
     interner: Rodeo,
     file_id: u32,
@@ -204,6 +206,7 @@ impl<'a> Lexer<'a> {
     fn new(source: &'a str) -> Self {
         Self {
             source,
+            bytes: source.as_bytes(),
             pos: 0,
             interner: Rodeo::default(),
             file_id: 0,
@@ -229,22 +232,31 @@ impl<'a> Lexer<'a> {
         tokens
     }
 
+    #[inline(always)]
     fn is_eof(&self) -> bool {
-        self.pos >= self.source.len()
+        self.pos >= self.bytes.len()
     }
 
-    fn peek(&self) -> Option<char> {
-        self.source[self.pos..].chars().next()
+    #[inline(always)]
+    fn peek_byte(&self) -> Option<u8> {
+        self.bytes.get(self.pos).copied()
     }
 
-    fn peek_next(&self) -> Option<char> {
-        let mut chars = self.source[self.pos..].chars();
-        chars.next();
-        chars.next()
+    #[inline(always)]
+    fn peek_byte2(&self) -> Option<u8> {
+        self.bytes.get(self.pos + 1).copied()
     }
 
-    fn advance(&mut self) -> Option<char> {
-        let c = self.peek()?;
+    #[inline(always)]
+    fn advance_byte(&mut self) -> Option<u8> {
+        let b = self.peek_byte()?;
+        self.pos += 1;
+        Some(b)
+    }
+
+    #[inline(always)]
+    fn advance_char(&mut self) -> Option<char> {
+        let c = self.source[self.pos..].chars().next()?;
         self.pos += c.len_utf8();
         Some(c)
     }
@@ -252,185 +264,197 @@ impl<'a> Lexer<'a> {
     fn next_token(&mut self) -> Token {
         let start = self.pos as u32;
 
-        let Some(c) = self.advance() else {
+        let Some(b) = self.advance_byte() else {
             return Token::new(TokenKind::Eof, Span::new(start, start, self.file_id));
         };
 
-        let kind = match c {
-            ' ' | '\t' | '\r' => {
-                while matches!(self.peek(), Some(' ' | '\t' | '\r')) {
-                    self.advance();
+        let kind = match b {
+            b' ' | b'\t' | b'\r' => {
+                while matches!(self.peek_byte(), Some(b' ' | b'\t' | b'\r')) {
+                    self.pos += 1;
                 }
                 TokenKind::Whitespace
             }
 
-            '\n' => TokenKind::Newline,
+            b'\n' => TokenKind::Newline,
 
-            '/' if self.peek() == Some('/') => {
-                while self.peek().is_some() && self.peek() != Some('\n') {
-                    self.advance();
+            b'/' if self.peek_byte() == Some(b'/') => {
+                // SIMD-accelerated newline search
+                if let Some(offset) = memchr(b'\n', &self.bytes[self.pos..]) {
+                    self.pos += offset;
+                } else {
+                    self.pos = self.bytes.len();
                 }
                 TokenKind::Comment
             }
 
-            '/' if self.peek() == Some('*') => {
-                self.advance();
+            b'/' if self.peek_byte() == Some(b'*') => {
+                self.pos += 1;
                 let mut depth = 1;
                 while depth > 0 && !self.is_eof() {
-                    match (self.peek(), self.peek_next()) {
-                        (Some('/'), Some('*')) => {
-                            self.advance();
-                            self.advance();
+                    match (self.peek_byte(), self.peek_byte2()) {
+                        (Some(b'/'), Some(b'*')) => {
+                            self.pos += 2;
                             depth += 1;
                         }
-                        (Some('*'), Some('/')) => {
-                            self.advance();
-                            self.advance();
+                        (Some(b'*'), Some(b'/')) => {
+                            self.pos += 2;
                             depth -= 1;
                         }
                         _ => {
-                            self.advance();
+                            self.pos += 1;
                         }
                     }
                 }
                 TokenKind::Comment
             }
 
-            '+' if self.peek() == Some('=') => {
-                self.advance();
+            b'+' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::PlusEq
             }
-            '+' => TokenKind::Plus,
+            b'+' => TokenKind::Plus,
 
-            '-' if self.peek() == Some('>') => {
-                self.advance();
+            b'-' if self.peek_byte() == Some(b'>') => {
+                self.pos += 1;
                 TokenKind::Arrow
             }
-            '-' if self.peek() == Some('=') => {
-                self.advance();
+            b'-' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::MinusEq
             }
-            '-' => TokenKind::Minus,
+            b'-' => TokenKind::Minus,
 
-            '*' if self.peek() == Some('=') => {
-                self.advance();
+            b'*' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::StarEq
             }
-            '*' => TokenKind::Star,
+            b'*' => TokenKind::Star,
 
-            '/' if self.peek() == Some('=') => {
-                self.advance();
+            b'/' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::SlashEq
             }
-            '/' => TokenKind::Slash,
+            b'/' => TokenKind::Slash,
 
-            '%' if self.peek() == Some('=') => {
-                self.advance();
+            b'%' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::PercentEq
             }
-            '%' => TokenKind::Percent,
+            b'%' => TokenKind::Percent,
 
-            '^' if self.peek() == Some('=') => {
-                self.advance();
+            b'^' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::CaretEq
             }
-            '^' => TokenKind::Caret,
+            b'^' => TokenKind::Caret,
 
-            '&' if self.peek() == Some('&') => {
-                self.advance();
+            b'&' if self.peek_byte() == Some(b'&') => {
+                self.pos += 1;
                 TokenKind::AndAnd
             }
-            '&' if self.peek() == Some('=') => {
-                self.advance();
+            b'&' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::AmpersandEq
             }
-            '&' => TokenKind::Ampersand,
+            b'&' => TokenKind::Ampersand,
 
-            '|' if self.peek() == Some('|') => {
-                self.advance();
+            b'|' if self.peek_byte() == Some(b'|') => {
+                self.pos += 1;
                 TokenKind::PipePipe
             }
-            '|' if self.peek() == Some('=') => {
-                self.advance();
+            b'|' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::PipeEq
             }
-            '|' => TokenKind::Pipe,
+            b'|' => TokenKind::Pipe,
 
-            '~' => TokenKind::Tilde,
+            b'~' => TokenKind::Tilde,
 
-            '!' if self.peek() == Some('=') => {
-                self.advance();
+            b'!' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::NotEq
             }
-            '!' => TokenKind::Bang,
+            b'!' => TokenKind::Bang,
 
-            '=' if self.peek() == Some('=') => {
-                self.advance();
+            b'=' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::EqEq
             }
-            '=' if self.peek() == Some('>') => {
-                self.advance();
+            b'=' if self.peek_byte() == Some(b'>') => {
+                self.pos += 1;
                 TokenKind::FatArrow
             }
-            '=' => TokenKind::Eq,
+            b'=' => TokenKind::Eq,
 
-            '<' if self.peek() == Some('<') => {
-                self.advance();
+            b'<' if self.peek_byte() == Some(b'<') => {
+                self.pos += 1;
                 TokenKind::LtLt
             }
-            '<' if self.peek() == Some('=') => {
-                self.advance();
+            b'<' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::LtEq
             }
-            '<' => TokenKind::Lt,
+            b'<' => TokenKind::Lt,
 
-            '>' if self.peek() == Some('>') => {
-                self.advance();
+            b'>' if self.peek_byte() == Some(b'>') => {
+                self.pos += 1;
                 TokenKind::GtGt
             }
-            '>' if self.peek() == Some('=') => {
-                self.advance();
+            b'>' if self.peek_byte() == Some(b'=') => {
+                self.pos += 1;
                 TokenKind::GtEq
             }
-            '>' => TokenKind::Gt,
+            b'>' => TokenKind::Gt,
 
-            '.' if self.peek() == Some('.') => {
-                self.advance();
-                if self.peek() == Some('=') {
-                    self.advance();
+            b'.' if self.peek_byte() == Some(b'.') => {
+                self.pos += 1;
+                if self.peek_byte() == Some(b'=') {
+                    self.pos += 1;
                     TokenKind::DotDotEq
                 } else {
                     TokenKind::DotDot
                 }
             }
-            '.' => TokenKind::Dot,
+            b'.' => TokenKind::Dot,
 
-            ',' => TokenKind::Comma,
+            b',' => TokenKind::Comma,
 
-            ':' if self.peek() == Some(':') => {
-                self.advance();
+            b':' if self.peek_byte() == Some(b':') => {
+                self.pos += 1;
                 TokenKind::ColonColon
             }
-            ':' => TokenKind::Colon,
+            b':' => TokenKind::Colon,
 
-            ';' => TokenKind::Semicolon,
-            '?' => TokenKind::Question,
+            b';' => TokenKind::Semicolon,
+            b'?' => TokenKind::Question,
 
-            '(' => TokenKind::LParen,
-            ')' => TokenKind::RParen,
-            '{' => TokenKind::LBrace,
-            '}' => TokenKind::RBrace,
-            '[' => TokenKind::LBracket,
-            ']' => TokenKind::RBracket,
+            b'(' => TokenKind::LParen,
+            b')' => TokenKind::RParen,
+            b'{' => TokenKind::LBrace,
+            b'}' => TokenKind::RBrace,
+            b'[' => TokenKind::LBracket,
+            b']' => TokenKind::RBracket,
 
-            '@' => TokenKind::At,
-            '#' => TokenKind::Hash,
+            b'@' => TokenKind::At,
+            b'#' => TokenKind::Hash,
 
-            '"' => self.scan_string(),
+            b'"' => self.scan_string(),
 
-            '0'..='9' => self.scan_number(start),
+            b'0'..=b'9' => self.scan_number(start),
 
-            c if c.is_alphabetic() || c == '_' => self.scan_ident_or_keyword(start),
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.scan_ident_or_keyword(start),
+
+            // Non-ASCII: fall back to char-based handling for Unicode identifiers
+            _ if b > 127 => {
+                self.pos -= 1; // Undo the advance_byte
+                let c = self.advance_char().unwrap();
+                if c.is_alphabetic() {
+                    self.scan_ident_or_keyword_unicode(start)
+                } else {
+                    TokenKind::Error
+                }
+            }
 
             _ => TokenKind::Error,
         };
@@ -452,45 +476,63 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_string(&mut self) -> TokenKind {
-        while let Some(c) = self.peek() {
-            match c {
-                '"' => {
-                    self.advance();
-                    return TokenKind::StringLit;
+        loop {
+            // SIMD-accelerated search for quote or backslash
+            match memchr2(b'"', b'\\', &self.bytes[self.pos..]) {
+                Some(offset) => {
+                    // Check for newline before the found character
+                    if let Some(nl_offset) = memchr(b'\n', &self.bytes[self.pos..self.pos + offset]) {
+                        self.pos += nl_offset;
+                        return TokenKind::Error; // Unterminated string
+                    }
+                    self.pos += offset;
+                    match self.bytes[self.pos] {
+                        b'"' => {
+                            self.pos += 1;
+                            return TokenKind::StringLit;
+                        }
+                        b'\\' => {
+                            self.pos += 1;
+                            if self.pos < self.bytes.len() {
+                                self.pos += 1; // Skip escaped char
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
                 }
-                '\\' => {
-                    self.advance();
-                    self.advance();
-                }
-                '\n' => return TokenKind::Error,
-                _ => {
-                    self.advance();
+                None => {
+                    // Check if there's a newline before EOF
+                    if let Some(nl_offset) = memchr(b'\n', &self.bytes[self.pos..]) {
+                        self.pos += nl_offset;
+                    } else {
+                        self.pos = self.bytes.len();
+                    }
+                    return TokenKind::Error; // Unterminated string
                 }
             }
         }
-        TokenKind::Error
     }
 
     fn scan_number(&mut self, _start: u32) -> TokenKind {
-        while matches!(self.peek(), Some('0'..='9' | '_')) {
-            self.advance();
+        while matches!(self.peek_byte(), Some(b'0'..=b'9' | b'_')) {
+            self.pos += 1;
         }
 
-        if self.peek() == Some('.') && matches!(self.peek_next(), Some('0'..='9')) {
-            self.advance();
-            while matches!(self.peek(), Some('0'..='9' | '_')) {
-                self.advance();
+        if self.peek_byte() == Some(b'.') && matches!(self.peek_byte2(), Some(b'0'..=b'9')) {
+            self.pos += 1;
+            while matches!(self.peek_byte(), Some(b'0'..=b'9' | b'_')) {
+                self.pos += 1;
             }
             return TokenKind::FloatLit;
         }
 
-        if matches!(self.peek(), Some('e' | 'E')) {
-            self.advance();
-            if matches!(self.peek(), Some('+' | '-')) {
-                self.advance();
+        if matches!(self.peek_byte(), Some(b'e' | b'E')) {
+            self.pos += 1;
+            if matches!(self.peek_byte(), Some(b'+' | b'-')) {
+                self.pos += 1;
             }
-            while matches!(self.peek(), Some('0'..='9' | '_')) {
-                self.advance();
+            while matches!(self.peek_byte(), Some(b'0'..=b'9' | b'_')) {
+                self.pos += 1;
             }
             return TokenKind::FloatLit;
         }
@@ -499,14 +541,38 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_ident_or_keyword(&mut self, start: u32) -> TokenKind {
-        while let Some(c) = self.peek() {
+        // Fast path: ASCII-only identifiers
+        while let Some(b) = self.peek_byte() {
+            match b {
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' => {
+                    self.pos += 1;
+                }
+                _ if b > 127 => {
+                    // Contains Unicode - switch to slow path
+                    return self.scan_ident_or_keyword_unicode(start);
+                }
+                _ => break,
+            }
+        }
+
+        self.match_keyword(start)
+    }
+
+    fn scan_ident_or_keyword_unicode(&mut self, start: u32) -> TokenKind {
+        // Slow path: Unicode identifiers
+        while let Some(c) = self.source[self.pos..].chars().next() {
             if c.is_alphanumeric() || c == '_' {
-                self.advance();
+                self.pos += c.len_utf8();
             } else {
                 break;
             }
         }
 
+        self.match_keyword(start)
+    }
+
+    #[inline]
+    fn match_keyword(&self, start: u32) -> TokenKind {
         let text = &self.source[start as usize..self.pos];
 
         match text {

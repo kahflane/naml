@@ -80,6 +80,11 @@ nom.workspace = true
 ##
 smallvec.workspace = true
 
+##
+## SIMD-accelerated byte searching
+##
+memchr.workspace = true
+
 
 [dev-dependencies]
 insta.workspace = true

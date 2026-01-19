@@ -96,6 +96,11 @@ nom = "7"
 ##
 smallvec = { version = "1.13", features = ["union"] }
 
+##
+## SIMD-accelerated byte searching
+##
+memchr = "2.7"
+
 [profile.release]
 lto = true
 codegen-units = 1
