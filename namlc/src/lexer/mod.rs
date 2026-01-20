@@ -388,6 +388,7 @@ pub enum Keyword {
     Throw,
     Throws,
     Try,
+    Catch,
     As,
     Is,
     Implements,
@@ -877,6 +878,7 @@ impl<'a> Lexer<'a> {
             (0x616F6C66, b't') => TokenKind::Keyword(Keyword::Float),  // "float"
             (0x65747962, b's') => TokenKind::Keyword(Keyword::Bytes),  // "bytes"
             (0x736C6166, b'e') => TokenKind::Keyword(Keyword::False),  // "false"
+            (0x63746163, b'h') => TokenKind::Keyword(Keyword::Catch),  // "catch"
             _ => TokenKind::Ident,
         }
     }

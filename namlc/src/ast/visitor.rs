@@ -381,6 +381,16 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
         Expression::Try(e) => {
             v.visit_expr(e.expr);
         }
+        Expression::Catch(e) => {
+            v.visit_expr(e.expr);
+            v.visit_ident(&e.error_binding);
+            for stmt in &e.handler.statements {
+                v.visit_stmt(stmt);
+            }
+            if let Some(ref tail) = e.handler.tail {
+                v.visit_expr(tail);
+            }
+        }
         Expression::Cast(e) => {
             v.visit_expr(e.expr);
             v.visit_type(&e.target_ty);

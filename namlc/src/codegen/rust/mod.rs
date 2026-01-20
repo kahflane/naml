@@ -120,7 +120,7 @@ impl<'a> RustGenerator<'a> {
     fn emit_struct(&mut self, s: &StructItem) -> Result<(), CodegenError> {
         let name = self.interner.resolve(&s.name.symbol);
 
-        self.writeln("#[derive(Clone, Debug, Default, PartialEq)]");
+        self.writeln("#[derive(Clone, Debug, Default, PartialEq, Eq)]");
         if s.is_public {
             self.write("pub ");
         }
@@ -389,7 +389,8 @@ impl<'a> RustGenerator<'a> {
             }
             let name = self.interner.resolve(&param.name.symbol);
             self.write(name);
-            // Note: Bounds are skipped - naml interfaces don't exist as Rust traits
+            // Add default trait bounds for generic types to support common operations
+            self.write(": Clone + Default + PartialEq + PartialOrd");
         }
         self.write(">");
         Ok(())
@@ -454,7 +455,8 @@ impl<'a> RustGenerator<'a> {
                     }
                     let name = self.interner.resolve(&param.name.symbol);
                     self.write(name);
-                    // Note: Bounds are skipped - naml interfaces don't exist as Rust traits
+                    // Add same trait bounds as struct definition
+                    self.write(": Clone + Default + PartialEq + PartialOrd");
                 }
                 self.write(">");
             }

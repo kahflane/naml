@@ -59,6 +59,7 @@ impl<'a> TypeInferrer<'a> {
             Expression::Spawn(spawn) => self.infer_spawn(spawn),
             Expression::Await(await_expr) => self.infer_await(await_expr),
             Expression::Try(try_expr) => self.infer_try(try_expr),
+            Expression::Catch(catch) => self.infer_catch(catch),
             Expression::Cast(cast) => self.infer_cast(cast),
             Expression::Range(range) => self.infer_range(range),
             Expression::Grouped(grouped) => self.infer_expr(&grouped.inner),
@@ -1028,6 +1029,26 @@ impl<'a> TypeInferrer<'a> {
 
     fn infer_try(&mut self, try_expr: &ast::TryExpr) -> Type {
         let expr_ty = self.infer_expr(&try_expr.expr);
+        expr_ty
+    }
+
+    fn infer_catch(&mut self, catch: &ast::CatchExpr) -> Type {
+        let expr_ty = self.infer_expr(&catch.expr);
+
+        self.env.push_scope();
+
+        let error_spur = catch.error_binding.symbol;
+        self.env.define(error_spur, Type::Error, true);
+
+        for stmt in &catch.handler.statements {
+            self.check_stmt(stmt);
+        }
+        if let Some(ref tail) = catch.handler.tail {
+            self.infer_expr(tail);
+        }
+
+        self.env.pop_scope();
+
         expr_ty
     }
 

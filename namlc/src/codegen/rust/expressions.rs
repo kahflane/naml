@@ -120,6 +120,11 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                             emit_expression(g, arg)?;
                         }
                         g.write(")");
+
+                        // Add ? for throws functions when in throws context
+                        if g.function_throws(&name) && g.is_in_throws_function() {
+                            g.write("?");
+                        }
                     }
                 }
             } else {
@@ -174,6 +179,12 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
 
             emit_expression(g, field.base)?;
             g.write(&format!(".{}", field_name));
+
+            // Add .clone() for non-Copy types accessed from &self in methods
+            if g.is_in_ref_method() && g.needs_clone(field.span) {
+                g.write(".clone()");
+            }
+
             Ok(())
         }
 
@@ -194,7 +205,7 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         }
 
         Expression::MethodCall(method) => {
-            let receiver_ty = g.type_of(method.receiver.span());
+            let receiver_ty = g.type_of(method.receiver.span()).cloned();
             let method_name = g.interner().resolve(&method.method.symbol).to_string();
 
             match (&receiver_ty, method_name.as_str()) {
@@ -372,6 +383,15 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                 emit_expression(g, arg)?;
             }
             g.write(")");
+
+            // Add ? for throws methods when in throws context
+            if let Some(Type::Struct(st)) = receiver_ty {
+                let type_name = g.interner().resolve(&st.name).to_string();
+                if g.method_throws(&type_name, &method_name) && g.is_in_throws_function() {
+                    g.write("?");
+                }
+            }
+
             Ok(())
         }
 
@@ -585,6 +605,22 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         Expression::Try(_) => Err(CodegenError::Unsupported(
             "Try expressions not yet supported in Rust codegen".to_string(),
         )),
+
+        Expression::Catch(catch) => {
+            emit_expression(g, catch.expr)?;
+            g.write(".unwrap_or_else(|");
+            let error_name = g.interner().resolve(&catch.error_binding.symbol).to_string();
+            g.write(&error_name);
+            g.write("| {\n");
+            g.indent += 1;
+            for stmt in &catch.handler.statements {
+                super::statements::emit_statement(g, stmt)?;
+            }
+            g.indent -= 1;
+            g.write_indent();
+            g.write("})");
+            Ok(())
+        }
 
         Expression::Path(path) => {
             for (i, segment) in path.segments.iter().enumerate() {

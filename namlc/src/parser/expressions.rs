@@ -117,6 +117,11 @@ fn parse_postfix<'a, 'ast>(
                 input = new_input;
                 expr = new_expr;
             }
+            Some(TokenKind::Keyword(Keyword::Catch)) => {
+                let (new_input, new_expr) = parse_catch(arena, input, expr)?;
+                input = new_input;
+                expr = new_expr;
+            }
             _ => break,
         }
     }
@@ -762,6 +767,33 @@ fn parse_cast<'a, 'ast>(
         Expression::Cast(CastExpr {
             expr: arena.alloc(expr),
             target_ty,
+            span,
+        }),
+    ))
+}
+
+fn parse_catch<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+    expr: Expression<'ast>,
+) -> PResult<'a, Expression<'ast>> {
+    let start_span = expr.span();
+    let (input, _) = keyword(Keyword::Catch)(input)?;
+    let (input, error_binding) = ident(input)?;
+    let (input, handler_block) = parse_block(arena, input)?;
+    let handler = BlockExpr {
+        statements: handler_block.statements,
+        tail: None,
+        span: handler_block.span,
+    };
+    let span = start_span.merge(handler.span);
+
+    Ok((
+        input,
+        Expression::Catch(CatchExpr {
+            expr: arena.alloc(expr),
+            error_binding,
+            handler: arena.alloc(handler),
             span,
         }),
     ))
