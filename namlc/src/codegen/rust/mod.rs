@@ -26,11 +26,12 @@ pub struct RustGenerator<'a> {
     annotations: &'a TypeAnnotations,
     symbols: &'a SymbolTable,
     output: String,
-    indent: usize,
+    pub(crate) indent: usize,
     enum_names: HashSet<String>,
     enum_variants: HashMap<String, String>,
     in_ref_method: bool,
     in_throws_function: bool,
+    in_await_expr: bool,
 }
 
 impl<'a> RustGenerator<'a> {
@@ -49,6 +50,7 @@ impl<'a> RustGenerator<'a> {
             enum_variants: HashMap::new(),
             in_ref_method: false,
             in_throws_function: false,
+            in_await_expr: false,
         }
     }
 
@@ -156,7 +158,7 @@ impl<'a> RustGenerator<'a> {
             return Ok(());
         }
 
-        self.writeln("#[derive(Clone, Debug, PartialEq)]");
+        self.writeln("#[derive(Clone, Debug, Default, PartialEq, Eq)]");
         if e.is_public {
             self.write("pub ");
         }
@@ -166,15 +168,20 @@ impl<'a> RustGenerator<'a> {
         self.writeln(" {");
         self.indent += 1;
 
-        for variant in &e.variants {
+        for (i, variant) in e.variants.iter().enumerate() {
             let variant_name = self.interner.resolve(&variant.name.symbol);
             self.write_indent();
+            // Mark first variant as default
+            if i == 0 {
+                self.writeln("#[default]");
+                self.write_indent();
+            }
             self.write(variant_name);
 
             if let Some(ref fields) = variant.fields {
                 self.write("(");
-                for (i, field_ty) in fields.iter().enumerate() {
-                    if i > 0 {
+                for (j, field_ty) in fields.iter().enumerate() {
+                    if j > 0 {
                         self.write(", ");
                     }
                     let rust_ty = types::naml_to_rust(field_ty, self.interner);
@@ -339,6 +346,14 @@ impl<'a> RustGenerator<'a> {
 
     pub(crate) fn is_in_throws_function(&self) -> bool {
         self.in_throws_function
+    }
+
+    pub(crate) fn is_in_await_expr(&self) -> bool {
+        self.in_await_expr
+    }
+
+    pub(crate) fn set_in_await_expr(&mut self, value: bool) {
+        self.in_await_expr = value;
     }
 
     pub(crate) fn indent_inc(&mut self) {

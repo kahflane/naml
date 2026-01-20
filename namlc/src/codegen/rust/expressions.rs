@@ -122,7 +122,11 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                         g.write(")");
 
                         // Add ? for throws functions when in throws context
-                        if g.function_throws(&name) && g.is_in_throws_function() {
+                        // Skip if inside await (await handles the ?)
+                        if g.function_throws(&name)
+                            && g.is_in_throws_function()
+                            && !g.is_in_await_expr()
+                        {
                             g.write("?");
                         }
                     }
@@ -189,18 +193,39 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         }
 
         Expression::Index(index) => {
+            let base_ty = g.type_of(index.base.span()).cloned();
             let idx_ty = g.type_of(index.index.span()).cloned();
-            let needs_usize_cast = matches!(idx_ty, Some(Type::Int) | Some(Type::Uint));
 
             emit_expression(g, index.base)?;
-            g.write("[");
-            emit_expression(g, index.index)?;
 
-            if needs_usize_cast {
-                g.write(" as usize");
+            // For Map types, use .get() with reference instead of [] to avoid borrow issues
+            // .cloned() converts Option<&V> to Option<V>
+            if matches!(base_ty, Some(Type::Map(_, _))) {
+                g.write(".get(&");
+                emit_expression(g, index.index)?;
+                g.write(").cloned()");
+            } else {
+                g.write("[");
+                emit_expression(g, index.index)?;
+
+                let needs_usize_cast = matches!(idx_ty, Some(Type::Int) | Some(Type::Uint));
+                if needs_usize_cast {
+                    g.write(" as usize");
+                }
+
+                g.write("]");
+
+                // Clone array elements of non-Copy types to avoid move errors
+                let element_is_non_copy = match &base_ty {
+                    Some(Type::Array(inner)) | Some(Type::FixedArray(inner, _)) => {
+                        !is_copy_type_ref(inner)
+                    }
+                    _ => false,
+                };
+                if element_is_non_copy {
+                    g.write(".clone()");
+                }
             }
-
-            g.write("]");
             Ok(())
         }
 
@@ -233,12 +258,46 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                 }
                 (Some(Type::Option(_)), "unwrap") => {
                     emit_expression(g, method.receiver)?;
+                    // Clone before unwrap if accessing self field in &self method
+                    if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
+                        g.write(".clone()");
+                    }
                     g.write(".unwrap()");
                     return Ok(());
                 }
                 (Some(Type::Option(_)), "unwrap_or") => {
                     emit_expression(g, method.receiver)?;
+                    // Clone before unwrap_or if accessing self field in &self method
+                    if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
+                        g.write(".clone()");
+                    }
                     g.write(".unwrap_or(");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::Option(_)), "expect") => {
+                    emit_expression(g, method.receiver)?;
+                    // Clone before expect if accessing self field in &self method
+                    if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
+                        g.write(".clone()");
+                    }
+                    g.write(".expect(");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::Option(_)), "unwrap_or_else") => {
+                    emit_expression(g, method.receiver)?;
+                    // Clone before unwrap_or_else if accessing self field in &self method
+                    if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
+                        g.write(".clone()");
+                    }
+                    g.write(".unwrap_or_else(");
                     if let Some(arg) = method.args.first() {
                         emit_expression(g, arg)?;
                     }
@@ -385,9 +444,13 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
             g.write(")");
 
             // Add ? for throws methods when in throws context
+            // Skip if inside await (await handles the ?)
             if let Some(Type::Struct(st)) = receiver_ty {
                 let type_name = g.interner().resolve(&st.name).to_string();
-                if g.method_throws(&type_name, &method_name) && g.is_in_throws_function() {
+                if g.method_throws(&type_name, &method_name)
+                    && g.is_in_throws_function()
+                    && !g.is_in_await_expr()
+                {
                     g.write("?");
                 }
             }
@@ -566,9 +629,15 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         }
 
         Expression::Await(await_expr) => {
+            // Set flag to prevent inner call from adding ? (we'll add it after .await)
+            let was_in_await = g.is_in_await_expr();
+            g.set_in_await_expr(true);
             emit_expression(g, await_expr.expr)?;
+            g.set_in_await_expr(was_in_await);
+
             g.write(".await");
 
+            // Add ? after .await if inner expression throws
             if g.is_in_throws_function() {
                 let inner_throws = match await_expr.expr {
                     Expression::Call(call) => {
@@ -740,6 +809,13 @@ fn is_copy_type_val(ty: &Option<Type>) -> bool {
     matches!(
         ty,
         Some(Type::Int) | Some(Type::Uint) | Some(Type::Float) | Some(Type::Bool) | Some(Type::Unit)
+    )
+}
+
+fn is_copy_type_ref(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Int | Type::Uint | Type::Float | Type::Bool | Type::Unit
     )
 }
 

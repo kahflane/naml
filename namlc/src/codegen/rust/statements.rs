@@ -13,6 +13,7 @@
 
 use crate::ast::{AssignOp, BlockStmt, Expression, Statement};
 use crate::codegen::CodegenError;
+use crate::source::Spanned;
 
 use super::expressions::emit_expression;
 use super::types::naml_to_rust;
@@ -82,6 +83,23 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
 
         Statement::Assign(assign_stmt) => {
             g.write_indent();
+
+            // Check if target is a map index expression - use insert instead
+            if let Expression::Index(idx) = &assign_stmt.target {
+                if let AssignOp::Assign = assign_stmt.op {
+                    let base_ty = g.type_of(idx.base.span());
+                    if matches!(base_ty, Some(crate::typechecker::Type::Map(_, _))) {
+                        emit_expression(g, idx.base)?;
+                        g.write(".insert(");
+                        emit_expression(g, idx.index)?;
+                        g.write(", ");
+                        emit_expression(g, &assign_stmt.value)?;
+                        g.write(");\n");
+                        return Ok(());
+                    }
+                }
+            }
+
             emit_expression(g, &assign_stmt.target)?;
 
             match assign_stmt.op {
