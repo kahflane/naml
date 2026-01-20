@@ -46,19 +46,6 @@ interface Serializable {
     fn to_bytes() -> bytes;
 }
 
-// =============================================================================
-// Result and Option Types
-// =============================================================================
-
-enum Result<T, E> {
-    Ok(T),
-    Err(E)
-}
-
-enum Option<T> {
-    Some(T),
-    None
-}
 
 // =============================================================================
 // Error Types
@@ -168,10 +155,10 @@ pub struct PhoneNumber {
 
 pub fn (self: PhoneNumber) format() -> string {
     var base: string = "+" + self.country_code + " (" + self.area_code + ") " + self.number;
-    if (self.extension.is_some()) {
-        return base + " ext. " + self.extension;
+    var ext: string = self.extension else {
+        return base;
     }
-    return base;
+    return base + " ext. " + ext;
 }
 
 enum UserStatus {
@@ -208,14 +195,8 @@ pub struct User implements Serializable {
 }
 
 pub fn (self: User) full_name() -> string {
-    var first: string = "";
-    var last: string = "";
-    if (self.first_name.is_some()) {
-        first = self.first_name;
-    }
-    if (self.last_name.is_some()) {
-        last = self.last_name;
-    }
+    var first: string = self.first_name.or_default("");
+    var last: string = self.last_name.or_default("");
     if (first == "" && last == "") {
         return self.username;
     }
@@ -249,7 +230,7 @@ pub fn (self: User) has_role(role: UserRole) -> bool {
 }
 
 pub fn (self: User) is_admin() -> bool {
-    return self.has_role(UserRole.Admin);
+    return self.has_role(UserRole::Admin);
 }
 
 pub fn (self: User) to_json() -> string {
@@ -289,7 +270,10 @@ pub fn (mut self: LinkedList<T>) add(item: T) {
         self.head = some(node);
         self.tail = some(node);
     } else {
-        self.tail.next = some(node);
+        var tail_node: LinkedListNode<T> = self.tail else {
+            return;
+        }
+        tail_node.next = some(node);
         self.tail = some(node);
     }
     self.length = self.length + 1;
@@ -298,10 +282,13 @@ pub fn (mut self: LinkedList<T>) add(item: T) {
 pub fn (self: LinkedList<T>) contains(item: T) -> bool {
     var current: option<LinkedListNode<T>> = self.head;
     while (current.is_some()) {
-        if (current.value == item) {
+        var node: LinkedListNode<T> = current else {
+            break;
+        }
+        if (node.value == item) {
             return true;
         }
-        current = current.next;
+        current = node.next;
     }
     return false;
 }
@@ -310,19 +297,31 @@ pub fn (mut self: LinkedList<T>) remove(item: T) -> bool {
     if (self.head.is_none()) {
         return false;
     }
-    if (self.head.value == item) {
-        self.head = self.head.next;
+    var head_node: LinkedListNode<T> = self.head else {
+        return false;
+    }
+    if (head_node.value == item) {
+        self.head = head_node.next;
         self.length = self.length - 1;
         return true;
     }
     var current: option<LinkedListNode<T>> = self.head;
-    while (current.next.is_some()) {
-        if (current.next.value == item) {
-            current.next = current.next.next;
+    while (current.is_some()) {
+        var curr_node: LinkedListNode<T> = current else {
+            break;
+        }
+        if (curr_node.next.is_none()) {
+            break;
+        }
+        var next_node: LinkedListNode<T> = curr_node.next else {
+            break;
+        }
+        if (next_node.value == item) {
+            curr_node.next = next_node.next;
             self.length = self.length - 1;
             return true;
         }
-        current = current.next;
+        current = curr_node.next;
     }
     return false;
 }
@@ -348,10 +347,16 @@ pub fn (self: TreeNode<T>) balance_factor() -> int {
     var left_height: int = 0;
     var right_height: int = 0;
     if (self.left.is_some()) {
-        left_height = self.left.height;
+        var left_node: TreeNode<T> = self.left else {
+            return 0;
+        }
+        left_height = left_node.height;
     }
     if (self.right.is_some()) {
-        right_height = self.right.height;
+        var right_node: TreeNode<T> = self.right else {
+            return left_height;
+        }
+        right_height = right_node.height;
     }
     return left_height - right_height;
 }
@@ -366,7 +371,10 @@ pub fn (mut self: BinarySearchTree<T>) insert(value: T) {
     if (self.root.is_none()) {
         self.root = some(node);
     } else {
-        self.insert_recursive(self.root, value);
+        var root_node: TreeNode<T> = self.root else {
+            return;
+        }
+        self.insert_recursive(root_node, value);
     }
     self.size = self.size + 1;
 }
@@ -377,13 +385,19 @@ fn (self: BinarySearchTree<T>) insert_recursive(current: TreeNode<T>, value: T) 
         if (current.left.is_none()) {
             current.left = some(TreeNode { value: value, left: none, right: none, height: 1 });
         } else {
-            self.insert_recursive(current.left, value);
+            var left_node: TreeNode<T> = current.left else {
+                return;
+            }
+            self.insert_recursive(left_node, value);
         }
     } else {
         if (current.right.is_none()) {
             current.right = some(TreeNode { value: value, left: none, right: none, height: 1 });
         } else {
-            self.insert_recursive(current.right, value);
+            var right_node: TreeNode<T> = current.right else {
+                return;
+            }
+            self.insert_recursive(right_node, value);
         }
     }
     self.update_height(current);
@@ -393,10 +407,16 @@ fn (self: BinarySearchTree<T>) update_height(node: TreeNode<T>) {
     var left_height: int = 0;
     var right_height: int = 0;
     if (node.left.is_some()) {
-        left_height = node.left.height;
+        var left_node: TreeNode<T> = node.left else {
+            return;
+        }
+        left_height = left_node.height;
     }
     if (node.right.is_some()) {
-        right_height = node.right.height;
+        var right_node: TreeNode<T> = node.right else {
+            return;
+        }
+        right_height = right_node.height;
     }
     if (left_height > right_height) {
         node.height = left_height + 1;
@@ -413,14 +433,17 @@ fn (self: BinarySearchTree<T>) find_recursive(current: option<TreeNode<T>>, valu
     if (current.is_none()) {
         return none;
     }
-    var cmp: int = value.compare(current.value);
+    var node: TreeNode<T> = current else {
+        return none;
+    }
+    var cmp: int = value.compare(node.value);
     if (cmp == 0) {
-        return some(current.value);
+        return some(node.value);
     }
     if (cmp < 0) {
-        return self.find_recursive(current.left, value);
+        return self.find_recursive(node.left, value);
     }
-    return self.find_recursive(current.right, value);
+    return self.find_recursive(node.right, value);
 }
 
 // =============================================================================
@@ -437,7 +460,7 @@ pub fn (mut self: HttpHeaders) set(name: string, value: string) {
 
 pub fn (self: HttpHeaders) get(name: string) -> option<string> {
     if (self.headers[name].is_some()) {
-        return some(self.headers[name]);
+        return some(self.headers[name].or_default(""));
     }
     return none;
 }
@@ -638,13 +661,15 @@ pub async fn (self: UserRepository) delete(id: UserId) -> bool throws DatabaseEr
 pub async fn (self: UserRepository) exists(id: UserId) -> bool throws DatabaseError {
     var query: string = "SELECT COUNT(*) FROM " + self.table_name + " WHERE id = ?";
     var result: [map<string, string>] = await self.execute_query(query, [id.value]);
-    return result[0]["count"] > 0;
+    var count_str: string = result[0]["count"].or_default("0");
+    return count_str > "0";
 }
 
 pub async fn (self: UserRepository) count() -> int throws DatabaseError {
     var query: string = "SELECT COUNT(*) as cnt FROM " + self.table_name;
     var result: [map<string, string>] = await self.execute_query(query, []);
-    return result[0]["cnt"] as int;
+    var cnt_str: string = result[0]["cnt"].or_default("0");
+    return cnt_str as int;
 }
 
 async fn (self: UserRepository) execute_query(query: string, params: [string]) -> [map<string, string>] throws DatabaseError {
@@ -656,17 +681,19 @@ async fn (self: UserRepository) execute_update(query: string, params: [string]) 
 }
 
 fn (self: UserRepository) map_row_to_user(row: map<string, string>) -> User {
+    var id_str: string = row["id"].or_default("");
+    var username_str: string = row["username"].or_default("");
     return User {
-        id: UserId { value: row["id"] },
+        id: UserId { value: id_str },
         email: Email { local: "user", domain: "example.com" },
-        username: row["username"],
+        username: username_str,
         password_hash: "",
         first_name: none,
         last_name: none,
         address: none,
         phone: none,
         status: UserStatus.Active,
-        roles: [UserRole.User],
+        roles: [UserRole::User],
         metadata: {},
         created_at: 0,
         updated_at: 0,
@@ -901,17 +928,17 @@ async fn main() {
 
     var user_id: UserId = UserId { value: "user-123" };
 
-    var user: option<User> = await user_repo.find_by_id(user_id);
+    var user_opt: option<User> = await user_repo.find_by_id(user_id);
 
-    if (user.is_some()) {
-        printf("Found user: {}", user.full_name());
-
-        var response: HttpResponse = await client.get("/users/" + user_id.value);
-        if (response.is_success()) {
-            printf("API call successful: {} {}", response.status_code, response.status_text);
-        }
-    } else {
+    var user: User = user_opt else {
         printf("User not found");
+        return;
+    }
+    printf("Found user: {}", user.full_name());
+
+    var response: HttpResponse = await client.get("/users/" + user_id.value);
+    if (response.is_success()) {
+        printf("API call successful: {} {}", response.status_code, response.status_text);
     }
 
     var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -937,9 +964,11 @@ async fn main() {
     tree.insert(UserId { value: "david" });
 
     var found: option<UserId> = tree.find(UserId { value: "bob" });
-    if (found.is_some()) {
-        printf("Found in tree: {}", found.value);
+    var found_id: UserId = found else {
+        printf("Not found in tree");
+        return;
     }
+    printf("Found in tree: {}", found_id.value);
 
     var tasks: [promise<HttpResponse>] = [];
     for (i in 0..10) {
@@ -968,7 +997,10 @@ async fn main() {
         if (value.is_none()) {
             break;
         }
-        printf("Received: {}", value);
+        var val: int = value else {
+            break;
+        }
+        printf("Received: {}", val);
     }
 }
 "#;

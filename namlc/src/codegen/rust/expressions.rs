@@ -256,48 +256,13 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                     g.write(".len() as i64");
                     return Ok(());
                 }
-                (Some(Type::Option(_)), "unwrap") => {
-                    emit_expression(g, method.receiver)?;
-                    // Clone before unwrap if accessing self field in &self method
-                    if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
-                        g.write(".clone()");
-                    }
-                    g.write(".unwrap()");
-                    return Ok(());
-                }
-                (Some(Type::Option(_)), "unwrap_or") => {
+                (Some(Type::Option(_)), "or_default") => {
                     emit_expression(g, method.receiver)?;
                     // Clone before unwrap_or if accessing self field in &self method
                     if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
                         g.write(".clone()");
                     }
                     g.write(".unwrap_or(");
-                    if let Some(arg) = method.args.first() {
-                        emit_expression(g, arg)?;
-                    }
-                    g.write(")");
-                    return Ok(());
-                }
-                (Some(Type::Option(_)), "expect") => {
-                    emit_expression(g, method.receiver)?;
-                    // Clone before expect if accessing self field in &self method
-                    if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
-                        g.write(".clone()");
-                    }
-                    g.write(".expect(");
-                    if let Some(arg) = method.args.first() {
-                        emit_expression(g, arg)?;
-                    }
-                    g.write(")");
-                    return Ok(());
-                }
-                (Some(Type::Option(_)), "unwrap_or_else") => {
-                    emit_expression(g, method.receiver)?;
-                    // Clone before unwrap_or_else if accessing self field in &self method
-                    if g.is_in_ref_method() && is_self_field_access(g, method.receiver) {
-                        g.write(".clone()");
-                    }
-                    g.write(".unwrap_or_else(");
                     if let Some(arg) = method.args.first() {
                         emit_expression(g, arg)?;
                     }

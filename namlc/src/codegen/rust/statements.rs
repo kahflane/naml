@@ -42,6 +42,44 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
         Statement::Var(var_stmt) => {
             let name = g.interner().resolve(&var_stmt.name.symbol).to_string();
 
+            // Handle var x = opt else { ... } pattern
+            if let Some(ref else_block) = var_stmt.else_block {
+                g.write_indent();
+                g.write("let ");
+                if var_stmt.mutable {
+                    g.write("mut ");
+                }
+                g.write(&name);
+
+                if let Some(ref ty) = var_stmt.ty {
+                    let rust_ty = naml_to_rust(ty, g.interner());
+                    g.write(&format!(": {}", rust_ty));
+                }
+
+                g.write(" = match ");
+                if let Some(ref init) = var_stmt.init {
+                    emit_expression(g, init)?;
+                }
+                g.write(" {\n");
+
+                g.indent_inc();
+                g.write_indent();
+                g.write("Some(__naml_val) => __naml_val,\n");
+                g.write_indent();
+                g.write("None => {\n");
+                g.indent_inc();
+                emit_block(g, else_block)?;
+                g.indent_dec();
+                g.write_indent();
+                g.write("}\n");
+                g.indent_dec();
+
+                g.write_indent();
+                g.write("};\n");
+                return Ok(());
+            }
+
+            // Normal var statement
             g.write_indent();
             g.write("let ");
             if var_stmt.mutable {

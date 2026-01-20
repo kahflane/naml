@@ -238,8 +238,34 @@ fn parse_ident_or_struct<'a, 'ast>(
     arena: &'ast AstArena,
     input: TokenStream<'a>,
 ) -> PResult<'a, Expression<'ast>> {
-    let (input, name) = ident(input)?;
+    let (input, first_name) = ident(input)?;
+    let start_span = first_name.span;
 
+    // Check for :: path syntax (e.g., UserRole::Admin)
+    let mut segments = vec![first_name];
+    let mut input = input;
+
+    while check(TokenKind::ColonColon)(input) {
+        let (new_input, _) = token(TokenKind::ColonColon)(input)?;
+        let (new_input, segment) = ident(new_input)?;
+        segments.push(segment);
+        input = new_input;
+    }
+
+    // If we have multiple segments, it's a path expression
+    if segments.len() > 1 {
+        let end_span = segments.last().unwrap().span;
+        return Ok((
+            input,
+            Expression::Path(PathExpr {
+                segments,
+                span: start_span.merge(end_span),
+            }),
+        ));
+    }
+
+    // Single identifier - check for struct literal
+    let name = segments.pop().unwrap();
     if check(TokenKind::LBrace)(input) {
         return parse_struct_literal(arena, input, name);
     }

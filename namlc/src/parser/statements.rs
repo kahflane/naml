@@ -70,7 +70,24 @@ fn parse_var_stmt<'a, 'ast>(
         (input, None)
     };
 
-    let (input, _) = token(TokenKind::Semicolon)(input)?;
+    let (input, else_block) = if check_keyword(Keyword::Else)(input) {
+        let (input, _) = keyword(Keyword::Else)(input)?;
+        let (input, block) = parse_block_stmt(arena, input)?;
+        if let Statement::Block(block_stmt) = block {
+            (input, Some(block_stmt))
+        } else {
+            (input, None)
+        }
+    } else {
+        (input, None)
+    };
+
+    let input = if else_block.is_none() {
+        let (input, _) = token(TokenKind::Semicolon)(input)?;
+        input
+    } else {
+        input
+    };
 
     Ok((
         input,
@@ -79,6 +96,7 @@ fn parse_var_stmt<'a, 'ast>(
             mutable,
             ty,
             init,
+            else_block,
             span: start.span,
         }),
     ))

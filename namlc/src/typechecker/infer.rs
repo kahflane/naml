@@ -508,17 +508,7 @@ impl<'a> TypeInferrer<'a> {
                     }
                     Type::Bool
                 }
-                "unwrap" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    (**inner).clone()
-                }
-                "unwrap_or" => {
+                "or_default" => {
                     if call.args.len() != 1 {
                         self.errors.push(TypeError::WrongArgCount {
                             expected: 1,
@@ -1086,26 +1076,78 @@ impl<'a> TypeInferrer<'a> {
         use ast::Statement::*;
         match stmt {
             Var(var) => {
-                let ty = if let Some(annot) = &var.ty {
-                    self.convert_ast_type(annot)
-                } else if let Some(init) = &var.init {
-                    self.infer_expr(init)
-                } else {
-                    fresh_type_var(self.next_var_id)
-                };
+                // Handle var x = opt else { ... } pattern
+                if var.else_block.is_some() {
+                    let init_ty = if let Some(init) = &var.init {
+                        self.infer_expr(init)
+                    } else {
+                        self.errors.push(TypeError::Custom {
+                            message: "else clause requires an initializer".to_string(),
+                            span: var.span,
+                        });
+                        Type::Error
+                    };
 
-                if let Some(init) = &var.init {
-                    let init_ty = self.infer_expr(init);
-                    // Allow int literals to be assigned to uint (non-negative int → uint coercion)
-                    let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, init);
-                    if should_unify {
-                        if let Err(e) = unify(&init_ty, &ty, init.span()) {
+                    let resolved = init_ty.resolve();
+                    let inner_ty = match &resolved {
+                        Type::Option(inner) => (**inner).clone(),
+                        Type::Error => Type::Error,
+                        _ => {
+                            self.errors.push(TypeError::Custom {
+                                message: format!(
+                                    "else clause can only be used with option types, found {}",
+                                    resolved
+                                ),
+                                span: var.span,
+                            });
+                            Type::Error
+                        }
+                    };
+
+                    // Type check the else block
+                    if let Some(ref else_block) = var.else_block {
+                        self.env.push_scope();
+                        for stmt in &else_block.statements {
+                            self.check_stmt(stmt);
+                        }
+                        self.env.pop_scope();
+                    }
+
+                    // Unify with annotation if present
+                    let ty = if let Some(annot) = &var.ty {
+                        let expected = self.convert_ast_type(annot);
+                        if let Err(e) = unify(&inner_ty, &expected, var.span) {
                             self.errors.push(e);
                         }
-                    }
-                }
+                        expected
+                    } else {
+                        inner_ty
+                    };
 
-                self.env.define(var.name.symbol, ty, var.mutable);
+                    self.env.define(var.name.symbol, ty, var.mutable);
+                } else {
+                    // Original logic for normal var statements
+                    let ty = if let Some(annot) = &var.ty {
+                        self.convert_ast_type(annot)
+                    } else if let Some(init) = &var.init {
+                        self.infer_expr(init)
+                    } else {
+                        fresh_type_var(self.next_var_id)
+                    };
+
+                    if let Some(init) = &var.init {
+                        let init_ty = self.infer_expr(init);
+                        // Allow int literals to be assigned to uint (non-negative int → uint coercion)
+                        let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, init);
+                        if should_unify {
+                            if let Err(e) = unify(&init_ty, &ty, init.span()) {
+                                self.errors.push(e);
+                            }
+                        }
+                    }
+
+                    self.env.define(var.name.symbol, ty, var.mutable);
+                }
             }
             Const(c) => {
                 let ty = if let Some(annot) = &c.ty {

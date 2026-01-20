@@ -66,6 +66,7 @@ pub struct VarStmt<'ast> {
     pub mutable: bool,
     pub ty: Option<NamlType>,
     pub init: Option<Expression<'ast>>,
+    pub else_block: Option<BlockStmt<'ast>>,
     pub span: Span,
 }
 
