@@ -13,6 +13,8 @@
 
 use crate::ast::{BinaryOp, Expression, Literal, LiteralExpr, UnaryOp};
 use crate::codegen::CodegenError;
+use crate::source::Spanned;
+use crate::typechecker::Type;
 
 use super::RustGenerator;
 
@@ -27,6 +29,23 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         }
 
         Expression::Binary(bin) => {
+            if bin.op == BinaryOp::Add {
+                let left_ty = g.type_of(bin.left.span());
+                let right_ty = g.type_of(bin.right.span());
+
+                let is_string_concat = matches!(left_ty, Some(Type::String))
+                    || matches!(right_ty, Some(Type::String));
+
+                if is_string_concat {
+                    g.write("format!(\"{}{}\", ");
+                    emit_expression(g, bin.left)?;
+                    g.write(", ");
+                    emit_expression(g, bin.right)?;
+                    g.write(")");
+                    return Ok(());
+                }
+            }
+
             g.write("(");
             emit_expression(g, bin.left)?;
             g.write(" ");
@@ -129,22 +148,222 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                     return Ok(());
                 }
             }
+
+            let base_ty = g.type_of(field.base.span()).cloned();
+
+            match (&base_ty, field_name.as_str()) {
+                (Some(Type::Array(_)), "length")
+                | (Some(Type::FixedArray(_, _)), "length")
+                | (Some(Type::String), "length") => {
+                    emit_expression(g, field.base)?;
+                    g.write(".len() as i64");
+                    return Ok(());
+                }
+                (Some(Type::String), "chars") => {
+                    emit_expression(g, field.base)?;
+                    g.write(".chars()");
+                    return Ok(());
+                }
+                (Some(Type::String), "bytes") => {
+                    emit_expression(g, field.base)?;
+                    g.write(".as_bytes()");
+                    return Ok(());
+                }
+                _ => {}
+            }
+
             emit_expression(g, field.base)?;
             g.write(&format!(".{}", field_name));
             Ok(())
         }
 
         Expression::Index(index) => {
+            let idx_ty = g.type_of(index.index.span()).cloned();
+            let needs_usize_cast = matches!(idx_ty, Some(Type::Int) | Some(Type::Uint));
+
             emit_expression(g, index.base)?;
             g.write("[");
             emit_expression(g, index.index)?;
+
+            if needs_usize_cast {
+                g.write(" as usize");
+            }
+
             g.write("]");
             Ok(())
         }
 
         Expression::MethodCall(method) => {
+            let receiver_ty = g.type_of(method.receiver.span());
+            let method_name = g.interner().resolve(&method.method.symbol).to_string();
+
+            match (&receiver_ty, method_name.as_str()) {
+                (Some(Type::Array(_)), "push") | (Some(Type::Array(_)), "append") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".push(");
+                    for (i, arg) in method.args.iter().enumerate() {
+                        if i > 0 {
+                            g.write(", ");
+                        }
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::Array(_)), "pop") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".pop()");
+                    return Ok(());
+                }
+                (Some(Type::Array(_)), "len") | (Some(Type::String), "len") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".len() as i64");
+                    return Ok(());
+                }
+                (Some(Type::Option(_)), "unwrap") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".unwrap()");
+                    return Ok(());
+                }
+                (Some(Type::Option(_)), "unwrap_or") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".unwrap_or(");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::Option(_)), "is_some") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".is_some()");
+                    return Ok(());
+                }
+                (Some(Type::Option(_)), "is_none") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".is_none()");
+                    return Ok(());
+                }
+                (Some(Type::Map(_, _)), "get") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".get(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(").cloned()");
+                    return Ok(());
+                }
+                (Some(Type::Map(_, _)), "insert") | (Some(Type::Map(_, _)), "set") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".insert(");
+                    for (i, arg) in method.args.iter().enumerate() {
+                        if i > 0 {
+                            g.write(", ");
+                        }
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::Map(_, _)), "contains") | (Some(Type::Map(_, _)), "contains_key") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".contains_key(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::Map(_, _)), "remove") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".remove(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::String), "contains") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".contains(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::String), "starts_with") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".starts_with(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::String), "ends_with") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".ends_with(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::String), "split") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".split(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(").map(|s| s.to_string()).collect::<Vec<_>>()");
+                    return Ok(());
+                }
+                (Some(Type::String), "trim") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".trim().to_string()");
+                    return Ok(());
+                }
+                (Some(Type::String), "to_uppercase") | (Some(Type::String), "upper") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".to_uppercase()");
+                    return Ok(());
+                }
+                (Some(Type::String), "to_lowercase") | (Some(Type::String), "lower") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".to_lowercase()");
+                    return Ok(());
+                }
+                (Some(Type::String), "replace") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".replace(&");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(", &");
+                    if let Some(arg) = method.args.get(1) {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(")");
+                    return Ok(());
+                }
+                (Some(Type::String), "substring") | (Some(Type::String), "substr") => {
+                    emit_expression(g, method.receiver)?;
+                    g.write(".chars().skip(");
+                    if let Some(arg) = method.args.first() {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(" as usize).take(");
+                    if let Some(arg) = method.args.get(1) {
+                        emit_expression(g, arg)?;
+                    }
+                    g.write(" as usize).collect::<String>()");
+                    return Ok(());
+                }
+                _ => {}
+            }
+
             emit_expression(g, method.receiver)?;
-            let method_name = g.interner().resolve(&method.method.symbol);
             g.write(&format!(".{}(", method_name));
             for (i, arg) in method.args.iter().enumerate() {
                 if i > 0 {
@@ -239,9 +458,43 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         }
 
         Expression::Cast(cast) => {
-            emit_expression(g, cast.expr)?;
-            let target_ty = super::types::naml_to_rust(&cast.target_ty, g.interner());
-            g.write(&format!(" as {}", target_ty));
+            let from_ty = g.type_of(cast.expr.span());
+            let target = &cast.target_ty;
+
+            match (from_ty, target) {
+                (Some(Type::String), crate::ast::NamlType::Bytes) => {
+                    emit_expression(g, cast.expr)?;
+                    g.write(".into_bytes()");
+                }
+                (Some(Type::Int), crate::ast::NamlType::String)
+                | (Some(Type::Uint), crate::ast::NamlType::String)
+                | (Some(Type::Float), crate::ast::NamlType::String) => {
+                    emit_expression(g, cast.expr)?;
+                    g.write(".to_string()");
+                }
+                (Some(Type::Bool), crate::ast::NamlType::String) => {
+                    emit_expression(g, cast.expr)?;
+                    g.write(".to_string()");
+                }
+                (Some(Type::Bytes), crate::ast::NamlType::String) => {
+                    g.write("String::from_utf8(");
+                    emit_expression(g, cast.expr)?;
+                    g.write(").unwrap_or_default()");
+                }
+                (Some(Type::String), crate::ast::NamlType::Int) => {
+                    emit_expression(g, cast.expr)?;
+                    g.write(".parse::<i64>().unwrap_or(0)");
+                }
+                (Some(Type::String), crate::ast::NamlType::Float) => {
+                    emit_expression(g, cast.expr)?;
+                    g.write(".parse::<f64>().unwrap_or(0.0)");
+                }
+                _ => {
+                    emit_expression(g, cast.expr)?;
+                    let target_ty = super::types::naml_to_rust(target, g.interner());
+                    g.write(&format!(" as {}", target_ty));
+                }
+            }
             Ok(())
         }
 
@@ -400,6 +653,31 @@ fn escape_string(s: &str) -> String {
         .replace('\n', "\\n")
         .replace('\r', "\\r")
         .replace('\t', "\\t")
+}
+
+fn is_self_field_access(g: &RustGenerator, expr: &Expression) -> bool {
+    match expr {
+        Expression::Identifier(ident) => {
+            let name = g.interner().resolve(&ident.ident.symbol);
+            name == "self"
+        }
+        Expression::Field(field) => is_self_field_access(g, field.base),
+        _ => false,
+    }
+}
+
+fn is_copy_type(ty: &Option<&Type>) -> bool {
+    matches!(
+        ty,
+        Some(Type::Int) | Some(Type::Uint) | Some(Type::Float) | Some(Type::Bool) | Some(Type::Unit)
+    )
+}
+
+fn is_copy_type_val(ty: &Option<Type>) -> bool {
+    matches!(
+        ty,
+        Some(Type::Int) | Some(Type::Uint) | Some(Type::Float) | Some(Type::Bool) | Some(Type::Unit)
+    )
 }
 
 #[cfg(test)]

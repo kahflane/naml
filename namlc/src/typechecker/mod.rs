@@ -20,6 +20,7 @@ pub mod error;
 pub mod generics;
 pub mod infer;
 pub mod symbols;
+pub mod typed_ast;
 pub mod types;
 pub mod unify;
 
@@ -28,13 +29,21 @@ use lasso::Rodeo;
 use crate::ast::{self, Item, SourceFile};
 
 pub use error::{TypeError, TypeResult};
+pub use symbols::SymbolTable;
+pub use typed_ast::TypeAnnotations;
 pub use types::Type;
+
+pub struct TypeCheckResult {
+    pub errors: Vec<TypeError>,
+    pub annotations: TypeAnnotations,
+    pub symbols: SymbolTable,
+}
 
 use env::TypeEnv;
 use infer::TypeInferrer;
 use symbols::{
     EnumDef, ExceptionDef, FunctionSig, InterfaceDef, InterfaceMethodDef, MethodSig, StructDef,
-    SymbolTable, TypeDef,
+    TypeDef,
 };
 use types::TypeParam;
 
@@ -43,6 +52,7 @@ pub struct TypeChecker<'a> {
     env: TypeEnv,
     interner: &'a Rodeo,
     errors: Vec<TypeError>,
+    annotations: TypeAnnotations,
     next_var_id: u32,
 }
 
@@ -53,6 +63,7 @@ impl<'a> TypeChecker<'a> {
             env: TypeEnv::new(),
             interner,
             errors: Vec::new(),
+            annotations: TypeAnnotations::new(),
             next_var_id: 0,
         };
         checker.register_builtins();
@@ -403,6 +414,7 @@ impl<'a> TypeChecker<'a> {
             interner: self.interner,
             next_var_id: &mut self.next_var_id,
             errors: &mut self.errors,
+            annotations: &mut self.annotations,
             switch_scrutinee: None,
         };
 
@@ -463,6 +475,7 @@ impl<'a> TypeChecker<'a> {
                 interner: self.interner,
                 next_var_id: &mut self.next_var_id,
                 errors: &mut self.errors,
+                annotations: &mut self.annotations,
                 switch_scrutinee: None,
             };
 
@@ -530,8 +543,19 @@ impl<'a> TypeChecker<'a> {
 }
 
 pub fn check(file: &SourceFile, interner: &Rodeo) -> Vec<TypeError> {
+    check_with_types(file, interner).errors
+}
+
+pub fn check_with_types(file: &SourceFile, interner: &Rodeo) -> TypeCheckResult {
     let mut checker = TypeChecker::new(interner);
-    checker.check(file)
+    checker.collect_definitions(file);
+    checker.check_items(file);
+
+    TypeCheckResult {
+        errors: std::mem::take(&mut checker.errors),
+        annotations: std::mem::take(&mut checker.annotations),
+        symbols: checker.symbols,
+    }
 }
 
 #[cfg(test)]

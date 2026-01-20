@@ -16,11 +16,15 @@ use lasso::Rodeo;
 
 use crate::ast::{EnumItem, ExceptionItem, FunctionItem, GenericParam, Item, NamlType, SourceFile, StructItem};
 use crate::codegen::CodegenError;
+use crate::source::Span;
+use crate::typechecker::{SymbolTable, Type, TypeAnnotations};
 
 use std::collections::{HashMap, HashSet};
 
 pub struct RustGenerator<'a> {
     interner: &'a Rodeo,
+    annotations: &'a TypeAnnotations,
+    symbols: &'a SymbolTable,
     output: String,
     indent: usize,
     enum_names: HashSet<String>,
@@ -29,15 +33,29 @@ pub struct RustGenerator<'a> {
 }
 
 impl<'a> RustGenerator<'a> {
-    pub fn new(interner: &'a Rodeo) -> Self {
+    pub fn new(
+        interner: &'a Rodeo,
+        annotations: &'a TypeAnnotations,
+        symbols: &'a SymbolTable,
+    ) -> Self {
         Self {
             interner,
+            annotations,
+            symbols,
             output: String::new(),
             indent: 0,
             enum_names: HashSet::new(),
             enum_variants: HashMap::new(),
             in_ref_method: false,
         }
+    }
+
+    pub fn type_of(&self, span: Span) -> Option<&Type> {
+        self.annotations.get_type(span)
+    }
+
+    pub fn needs_clone(&self, span: Span) -> bool {
+        self.annotations.needs_clone(span)
     }
 
     pub fn generate(mut self, ast: &SourceFile<'_>) -> Result<String, CodegenError> {
@@ -100,6 +118,7 @@ impl<'a> RustGenerator<'a> {
     fn emit_struct(&mut self, s: &StructItem) -> Result<(), CodegenError> {
         let name = self.interner.resolve(&s.name.symbol);
 
+        self.writeln("#[derive(Clone, Debug, Default, PartialEq)]");
         if s.is_public {
             self.write("pub ");
         }
@@ -135,6 +154,7 @@ impl<'a> RustGenerator<'a> {
             return Ok(());
         }
 
+        self.writeln("#[derive(Clone, Debug, PartialEq)]");
         if e.is_public {
             self.write("pub ");
         }
@@ -477,8 +497,13 @@ impl<'a> RustGenerator<'a> {
     }
 }
 
-pub fn generate(ast: &SourceFile<'_>, interner: &Rodeo) -> Result<String, CodegenError> {
-    let generator = RustGenerator::new(interner);
+pub fn generate(
+    ast: &SourceFile<'_>,
+    interner: &Rodeo,
+    annotations: &TypeAnnotations,
+    symbols: &SymbolTable,
+) -> Result<String, CodegenError> {
+    let generator = RustGenerator::new(interner, annotations, symbols);
     generator.generate(ast)
 }
 

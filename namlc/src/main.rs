@@ -11,7 +11,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use namlc::{check, compile_and_run, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
+use namlc::{check, check_with_types, compile_and_run, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
 
 #[derive(Parser)]
 #[command(name = "naml")]
@@ -107,11 +107,11 @@ fn run_file(file: &PathBuf, cached: bool) {
         std::process::exit(1);
     }
 
-    let type_errors = check(&parse_result.ast, &interner);
+    let type_result = check_with_types(&parse_result.ast, &interner);
 
-    if !type_errors.is_empty() {
+    if !type_result.errors.is_empty() {
         let reporter = DiagnosticReporter::new(&source_file);
-        reporter.report_type_errors(&type_errors);
+        reporter.report_type_errors(&type_result.errors);
         std::process::exit(1);
     }
 
@@ -119,7 +119,12 @@ fn run_file(file: &PathBuf, cached: bool) {
         eprintln!("(cached mode not yet implemented)");
     }
 
-    match compile_and_run(&parse_result.ast, &interner) {
+    match compile_and_run(
+        &parse_result.ast,
+        &interner,
+        &type_result.annotations,
+        &type_result.symbols,
+    ) {
         Ok(()) => {}
         Err(e) => {
             eprintln!("Execution error: {}", e);

@@ -22,6 +22,7 @@ use lasso::Rodeo;
 use thiserror::Error;
 
 use crate::ast::SourceFile;
+use crate::typechecker::{SymbolTable, TypeAnnotations};
 
 #[derive(Debug, Error)]
 pub enum CodegenError {
@@ -61,10 +62,15 @@ impl Default for BuildConfig {
     }
 }
 
-pub fn compile_and_run(ast: &SourceFile<'_>, interner: &Rodeo) -> Result<(), CodegenError> {
+pub fn compile_and_run(
+    ast: &SourceFile<'_>,
+    interner: &Rodeo,
+    annotations: &TypeAnnotations,
+    symbols: &SymbolTable,
+) -> Result<(), CodegenError> {
     let config = BuildConfig::default();
 
-    let rust_code = rust::generate(ast, interner)?;
+    let rust_code = rust::generate(ast, interner, annotations, symbols)?;
 
     setup_build_directory(&config)?;
 
@@ -85,9 +91,11 @@ pub fn compile_and_run(ast: &SourceFile<'_>, interner: &Rodeo) -> Result<(), Cod
 pub fn compile_only(
     ast: &SourceFile<'_>,
     interner: &Rodeo,
+    annotations: &TypeAnnotations,
+    symbols: &SymbolTable,
     config: &BuildConfig,
 ) -> Result<PathBuf, CodegenError> {
-    let rust_code = rust::generate(ast, interner)?;
+    let rust_code = rust::generate(ast, interner, annotations, symbols)?;
 
     setup_build_directory(config)?;
 

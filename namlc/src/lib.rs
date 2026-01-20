@@ -32,7 +32,7 @@ pub use diagnostic::DiagnosticReporter;
 pub use lexer::tokenize;
 pub use parser::parse;
 pub use source::SourceFile;
-pub use typechecker::check;
+pub use typechecker::{check, check_with_types};
 
 #[test]
 fn test_parse_shape_example() {

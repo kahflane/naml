@@ -23,6 +23,7 @@ use crate::source::Spanned;
 use super::env::TypeEnv;
 use super::error::TypeError;
 use super::symbols::SymbolTable;
+use super::typed_ast::{ExprTypeInfo, TypeAnnotations};
 use super::types::{FunctionType, Type};
 use super::unify::{fresh_type_var, unify};
 
@@ -32,13 +33,14 @@ pub struct TypeInferrer<'a> {
     pub interner: &'a Rodeo,
     pub next_var_id: &'a mut u32,
     pub errors: &'a mut Vec<TypeError>,
+    pub annotations: &'a mut TypeAnnotations,
     /// Current switch scrutinee type for resolving bare enum variants in case patterns
     pub switch_scrutinee: Option<Type>,
 }
 
 impl<'a> TypeInferrer<'a> {
     pub fn infer_expr(&mut self, expr: &Expression) -> Type {
-        match expr {
+        let ty = match expr {
             Expression::Literal(lit) => self.infer_literal(lit),
             Expression::Identifier(ident) => self.infer_identifier(ident),
             Expression::Path(path) => self.infer_path(path),
@@ -61,6 +63,54 @@ impl<'a> TypeInferrer<'a> {
             Expression::Range(range) => self.infer_range(range),
             Expression::Grouped(grouped) => self.infer_expr(&grouped.inner),
             Expression::Some(some) => self.infer_some(some),
+        };
+
+        let resolved_ty = ty.resolve();
+        let is_lvalue = self.is_lvalue(expr);
+        let needs_clone = self.compute_needs_clone(expr, &resolved_ty);
+        self.annotations.annotate(
+            expr.span(),
+            ExprTypeInfo::new(resolved_ty.clone())
+                .with_lvalue(is_lvalue)
+                .with_clone(needs_clone),
+        );
+
+        ty
+    }
+
+    fn is_lvalue(&self, expr: &Expression) -> bool {
+        matches!(
+            expr,
+            Expression::Identifier(_) | Expression::Field(_) | Expression::Index(_)
+        )
+    }
+
+    fn compute_needs_clone(&self, expr: &Expression, ty: &Type) -> bool {
+        if self.is_copy_type(ty) {
+            return false;
+        }
+        if self.env.current_function().is_some() && self.involves_self(expr) {
+            return true;
+        }
+        false
+    }
+
+    fn is_copy_type(&self, ty: &Type) -> bool {
+        matches!(
+            ty,
+            Type::Int | Type::Uint | Type::Float | Type::Bool | Type::Unit
+        )
+    }
+
+    fn involves_self(&self, expr: &Expression) -> bool {
+        match expr {
+            Expression::Identifier(ident) => {
+                let name = self.interner.resolve(&ident.ident.symbol);
+                name == "self"
+            }
+            Expression::Field(field) => self.involves_self(&field.base),
+            Expression::Index(idx) => self.involves_self(&idx.base),
+            _ => false,
         }
     }
 
