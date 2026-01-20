@@ -11,7 +11,7 @@
 /// - Expression statements
 ///
 
-use crate::ast::{AssignOp, BlockStmt, Statement};
+use crate::ast::{AssignOp, BlockStmt, Expression, Statement};
 use crate::codegen::CodegenError;
 
 use super::expressions::emit_expression;
@@ -23,6 +23,17 @@ pub fn emit_block(g: &mut RustGenerator, block: &BlockStmt<'_>) -> Result<(), Co
         emit_statement(g, stmt)?;
     }
     Ok(())
+}
+
+fn emit_switch_pattern(g: &mut RustGenerator, pattern: &Expression<'_>) -> Result<(), CodegenError> {
+    if let Expression::Identifier(ident) = pattern {
+        let name = g.interner().resolve(&ident.ident.symbol).to_string();
+        if let Some(enum_name) = g.get_enum_for_variant(&name) {
+            g.write(&format!("{}::{}", enum_name, name));
+            return Ok(());
+        }
+    }
+    emit_expression(g, pattern)
 }
 
 pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(), CodegenError> {
@@ -216,7 +227,7 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
 
         Statement::Switch(switch_stmt) => {
             g.write_indent();
-            g.write("match ");
+            g.write("match &");
             emit_expression(g, &switch_stmt.scrutinee)?;
             g.write(" {\n");
 
@@ -224,7 +235,7 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
 
             for case in &switch_stmt.cases {
                 g.write_indent();
-                emit_expression(g, &case.pattern)?;
+                emit_switch_pattern(g, &case.pattern)?;
                 g.write(" => {\n");
                 g.indent_inc();
                 emit_block(g, &case.body)?;

@@ -119,8 +119,17 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         }
 
         Expression::Field(field) => {
+            let field_name = g.interner().resolve(&field.field.symbol).to_string();
+
+            // Check if this is an enum variant access (EnumName.Variant)
+            if let Expression::Identifier(ident) = field.base {
+                let base_name = g.interner().resolve(&ident.ident.symbol).to_string();
+                if g.is_enum(&base_name) {
+                    g.write(&format!("{}::{}", base_name, field_name));
+                    return Ok(());
+                }
+            }
             emit_expression(g, field.base)?;
-            let field_name = g.interner().resolve(&field.field.symbol);
             g.write(&format!(".{}", field_name));
             Ok(())
         }

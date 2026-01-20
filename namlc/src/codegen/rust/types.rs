@@ -17,6 +17,22 @@ use lasso::Rodeo;
 use crate::ast::NamlType;
 
 pub fn naml_to_rust(ty: &NamlType, interner: &Rodeo) -> String {
+    naml_to_rust_in_context(ty, interner, None)
+}
+
+pub fn naml_to_rust_in_struct(ty: &NamlType, interner: &Rodeo, struct_name: &str) -> String {
+    naml_to_rust_in_context(ty, interner, Some(struct_name))
+}
+
+fn type_references_struct(ty: &NamlType, interner: &Rodeo, struct_name: &str) -> bool {
+    match ty {
+        NamlType::Named(ident) => interner.resolve(&ident.symbol) == struct_name,
+        NamlType::Generic(name, _) => interner.resolve(&name.symbol) == struct_name,
+        _ => false,
+    }
+}
+
+fn naml_to_rust_in_context(ty: &NamlType, interner: &Rodeo, current_struct: Option<&str>) -> String {
     match ty {
         NamlType::Int => "i64".to_string(),
         NamlType::Uint => "u64".to_string(),
@@ -27,34 +43,44 @@ pub fn naml_to_rust(ty: &NamlType, interner: &Rodeo) -> String {
         NamlType::Unit => "()".to_string(),
 
         NamlType::Array(elem_ty) => {
-            let elem = naml_to_rust(elem_ty, interner);
+            let elem = naml_to_rust_in_context(elem_ty, interner, current_struct);
+            if let Some(struct_name) = current_struct {
+                if type_references_struct(elem_ty, interner, struct_name) {
+                    return format!("Vec<Box<{}>>", elem);
+                }
+            }
             format!("Vec<{}>", elem)
         }
 
         NamlType::FixedArray(elem_ty, size) => {
-            let elem = naml_to_rust(elem_ty, interner);
+            let elem = naml_to_rust_in_context(elem_ty, interner, current_struct);
             format!("[{}; {}]", elem, size)
         }
 
         NamlType::Option(inner_ty) => {
-            let inner = naml_to_rust(inner_ty, interner);
+            let inner = naml_to_rust_in_context(inner_ty, interner, current_struct);
+            if let Some(struct_name) = current_struct {
+                if type_references_struct(inner_ty, interner, struct_name) {
+                    return format!("Option<Box<{}>>", inner);
+                }
+            }
             format!("Option<{}>", inner)
         }
 
         NamlType::Map(key_ty, val_ty) => {
-            let key = naml_to_rust(key_ty, interner);
-            let val = naml_to_rust(val_ty, interner);
+            let key = naml_to_rust_in_context(key_ty, interner, current_struct);
+            let val = naml_to_rust_in_context(val_ty, interner, current_struct);
             format!("std::collections::HashMap<{}, {}>", key, val)
         }
 
         NamlType::Channel(inner_ty) => {
-            let inner = naml_to_rust(inner_ty, interner);
+            let inner = naml_to_rust_in_context(inner_ty, interner, current_struct);
             format!("tokio::sync::mpsc::Sender<{}>", inner)
         }
 
         NamlType::Promise(inner_ty) => {
-            let inner = naml_to_rust(inner_ty, interner);
-            format!("impl std::future::Future<Output = {}>", inner)
+            let inner = naml_to_rust_in_context(inner_ty, interner, current_struct);
+            format!("std::pin::Pin<Box<dyn std::future::Future<Output = {}> + Send>>", inner)
         }
 
         NamlType::Named(ident) => {
@@ -65,7 +91,7 @@ pub fn naml_to_rust(ty: &NamlType, interner: &Rodeo) -> String {
             let base_name = interner.resolve(&name.symbol);
             let args: Vec<String> = type_args
                 .iter()
-                .map(|t| naml_to_rust(t, interner))
+                .map(|t| naml_to_rust_in_context(t, interner, current_struct))
                 .collect();
             format!("{}<{}>", base_name, args.join(", "))
         }
@@ -73,9 +99,9 @@ pub fn naml_to_rust(ty: &NamlType, interner: &Rodeo) -> String {
         NamlType::Function { params, returns } => {
             let param_types: Vec<String> = params
                 .iter()
-                .map(|t| naml_to_rust(t, interner))
+                .map(|t| naml_to_rust_in_context(t, interner, current_struct))
                 .collect();
-            let return_type = naml_to_rust(returns, interner);
+            let return_type = naml_to_rust_in_context(returns, interner, current_struct);
             format!("fn({}) -> {}", param_types.join(", "), return_type)
         }
 

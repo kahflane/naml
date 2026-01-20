@@ -131,6 +131,7 @@ edition = "2021"
 [workspace]
 
 [dependencies]
+tokio = {{ version = "1", features = ["full"] }}
 "#,
         name
     )

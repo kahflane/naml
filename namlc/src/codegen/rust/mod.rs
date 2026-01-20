@@ -14,13 +14,18 @@ mod types;
 
 use lasso::Rodeo;
 
-use crate::ast::{FunctionItem, Item, SourceFile, StructItem};
+use crate::ast::{EnumItem, ExceptionItem, FunctionItem, GenericParam, Item, NamlType, SourceFile, StructItem};
 use crate::codegen::CodegenError;
+
+use std::collections::{HashMap, HashSet};
 
 pub struct RustGenerator<'a> {
     interner: &'a Rodeo,
     output: String,
     indent: usize,
+    enum_names: HashSet<String>,
+    enum_variants: HashMap<String, String>,
+    in_ref_method: bool,
 }
 
 impl<'a> RustGenerator<'a> {
@@ -29,10 +34,25 @@ impl<'a> RustGenerator<'a> {
             interner,
             output: String::new(),
             indent: 0,
+            enum_names: HashSet::new(),
+            enum_variants: HashMap::new(),
+            in_ref_method: false,
         }
     }
 
     pub fn generate(mut self, ast: &SourceFile<'_>) -> Result<String, CodegenError> {
+        // Collect enum names and variants first
+        for item in &ast.items {
+            if let Item::Enum(e) = item {
+                let enum_name = self.interner.resolve(&e.name.symbol).to_string();
+                self.enum_names.insert(enum_name.clone());
+                for variant in &e.variants {
+                    let variant_name = self.interner.resolve(&variant.name.symbol).to_string();
+                    self.enum_variants.insert(variant_name, enum_name.clone());
+                }
+            }
+        }
+
         self.emit_prelude();
 
         for item in &ast.items {
@@ -44,21 +64,19 @@ impl<'a> RustGenerator<'a> {
                         "Top-level statements outside main not yet supported".to_string(),
                     ));
                 }
-                Item::Enum(_) => {
-                    // TODO: Generate Rust enums
-                }
+                Item::Enum(e) => self.emit_enum(e)?,
                 Item::Interface(_) => {
                     // Interfaces are type-level only, no runtime code needed
                 }
-                Item::Exception(_) => {
-                    // TODO: Generate exception structs
-                }
+                Item::Exception(e) => self.emit_exception(e)?,
                 Item::Import(_) | Item::Use(_) => {}
                 Item::Extern(_) => {
                     // Extern declarations are handled by the runtime
                 }
             }
         }
+
+        self.emit_impl_blocks(&ast.items)?;
 
         Ok(self.output)
     }
@@ -68,6 +86,14 @@ impl<'a> RustGenerator<'a> {
         self.writeln("#![allow(unused_variables)]");
         self.writeln("#![allow(unused_mut)]");
         self.writeln("#![allow(dead_code)]");
+        self.writeln("#![allow(unused_parens)]");
+        self.writeln("");
+        self.writeln("use tokio::task::yield_now;");
+        self.writeln("use tokio::time::{sleep as tokio_sleep, Duration};");
+        self.writeln("");
+        self.writeln("async fn sleep(ms: i64) {");
+        self.writeln("    tokio_sleep(Duration::from_millis(ms as u64)).await;");
+        self.writeln("}");
         self.writeln("");
     }
 
@@ -78,12 +104,14 @@ impl<'a> RustGenerator<'a> {
             self.write("pub ");
         }
 
-        self.writeln(&format!("struct {} {{", name));
+        self.write(&format!("struct {}", name));
+        self.emit_generic_params(&s.generics)?;
+        self.writeln(" {");
         self.indent += 1;
 
         for field in &s.fields {
             let field_name = self.interner.resolve(&field.name.symbol);
-            let field_type = types::naml_to_rust(&field.ty, self.interner);
+            let field_type = types::naml_to_rust_in_struct(&field.ty, self.interner, name);
 
             self.write_indent();
             if field.is_public {
@@ -99,11 +127,99 @@ impl<'a> RustGenerator<'a> {
         Ok(())
     }
 
+    fn emit_enum(&mut self, e: &EnumItem) -> Result<(), CodegenError> {
+        let name = self.interner.resolve(&e.name.symbol);
+
+        // Skip Option and Result - use Rust's std types
+        if name == "Option" || name == "Result" {
+            return Ok(());
+        }
+
+        if e.is_public {
+            self.write("pub ");
+        }
+
+        self.write(&format!("enum {}", name));
+        self.emit_generic_params(&e.generics)?;
+        self.writeln(" {");
+        self.indent += 1;
+
+        for variant in &e.variants {
+            let variant_name = self.interner.resolve(&variant.name.symbol);
+            self.write_indent();
+            self.write(variant_name);
+
+            if let Some(ref fields) = variant.fields {
+                self.write("(");
+                for (i, field_ty) in fields.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    let rust_ty = types::naml_to_rust(field_ty, self.interner);
+                    self.write(&rust_ty);
+                }
+                self.write(")");
+            }
+            self.writeln(",");
+        }
+
+        self.indent -= 1;
+        self.writeln("}");
+        self.writeln("");
+
+        Ok(())
+    }
+
+    fn emit_exception(&mut self, e: &ExceptionItem) -> Result<(), CodegenError> {
+        let name = self.interner.resolve(&e.name.symbol);
+
+        self.writeln("#[derive(Debug, Clone)]");
+        if e.is_public {
+            self.write("pub ");
+        }
+        self.writeln(&format!("struct {} {{", name));
+        self.indent += 1;
+
+        for field in &e.fields {
+            let field_name = self.interner.resolve(&field.name.symbol);
+            let field_type = types::naml_to_rust(&field.ty, self.interner);
+            self.write_indent();
+            self.writeln(&format!("pub {}: {},", field_name, field_type));
+        }
+
+        self.indent -= 1;
+        self.writeln("}");
+        self.writeln("");
+
+        // Implement Display trait
+        self.writeln(&format!("impl std::fmt::Display for {} {{", name));
+        self.indent += 1;
+        self.writeln("fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {");
+        self.indent += 1;
+        self.writeln("write!(f, \"{:?}\", self)");
+        self.indent -= 1;
+        self.writeln("}");
+        self.indent -= 1;
+        self.writeln("}");
+        self.writeln("");
+
+        // Implement Error trait
+        self.writeln(&format!("impl std::error::Error for {} {{}}", name));
+        self.writeln("");
+
+        Ok(())
+    }
+
     fn emit_function(&mut self, f: &FunctionItem<'_>) -> Result<(), CodegenError> {
         let name = self.interner.resolve(&f.name.symbol);
 
         if f.receiver.is_some() {
             return Ok(());
+        }
+
+        // Add #[tokio::main] for async main function
+        if name == "main" && f.is_async {
+            self.writeln("#[tokio::main]");
         }
 
         if f.is_public {
@@ -114,7 +230,9 @@ impl<'a> RustGenerator<'a> {
             self.write("async ");
         }
 
-        self.write(&format!("fn {}(", name));
+        self.write(&format!("fn {}", name));
+        self.emit_generic_params(&f.generics)?;
+        self.write("(");
 
         for (i, param) in f.params.iter().enumerate() {
             if i > 0 {
@@ -169,12 +287,193 @@ impl<'a> RustGenerator<'a> {
         self.interner
     }
 
+    pub(crate) fn is_enum(&self, name: &str) -> bool {
+        self.enum_names.contains(name)
+    }
+
+    pub(crate) fn get_enum_for_variant(&self, variant: &str) -> Option<&String> {
+        self.enum_variants.get(variant)
+    }
+
+    pub(crate) fn is_in_ref_method(&self) -> bool {
+        self.in_ref_method
+    }
+
     pub(crate) fn indent_inc(&mut self) {
         self.indent += 1;
     }
 
     pub(crate) fn indent_dec(&mut self) {
         self.indent -= 1;
+    }
+
+    fn emit_generic_params(&mut self, params: &[GenericParam]) -> Result<(), CodegenError> {
+        if params.is_empty() {
+            return Ok(());
+        }
+
+        self.write("<");
+        for (i, param) in params.iter().enumerate() {
+            if i > 0 {
+                self.write(", ");
+            }
+            let name = self.interner.resolve(&param.name.symbol);
+            self.write(name);
+            // Note: Bounds are skipped - naml interfaces don't exist as Rust traits
+        }
+        self.write(">");
+        Ok(())
+    }
+
+    fn collect_methods<'b>(
+        &self,
+        items: &'b [Item<'b>],
+    ) -> HashMap<String, Vec<&'b FunctionItem<'b>>> {
+        let mut methods: HashMap<String, Vec<&FunctionItem>> = HashMap::new();
+
+        for item in items {
+            if let Item::Function(f) = item {
+                if let Some(ref receiver) = f.receiver {
+                    let type_name = self.get_receiver_type_name(&receiver.ty);
+                    methods.entry(type_name).or_default().push(f);
+                }
+            }
+        }
+        methods
+    }
+
+    fn get_receiver_type_name(&self, ty: &NamlType) -> String {
+        match ty {
+            NamlType::Named(ident) => self.interner.resolve(&ident.symbol).to_string(),
+            NamlType::Generic(name, _) => self.interner.resolve(&name.symbol).to_string(),
+            _ => "Unknown".to_string(),
+        }
+    }
+
+    fn find_struct_generics<'b>(
+        &self,
+        type_name: &str,
+        items: &'b [Item<'b>],
+    ) -> Vec<&'b GenericParam> {
+        for item in items {
+            if let Item::Struct(s) = item {
+                let name = self.interner.resolve(&s.name.symbol);
+                if name == type_name {
+                    return s.generics.iter().collect();
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    fn emit_impl_blocks<'b>(
+        &mut self,
+        items: &'b [Item<'b>],
+    ) -> Result<(), CodegenError> {
+        let methods = self.collect_methods(items);
+
+        for (type_name, type_methods) in &methods {
+            let struct_generics = self.find_struct_generics(type_name, items);
+
+            self.write("impl");
+            if !struct_generics.is_empty() {
+                self.write("<");
+                for (i, param) in struct_generics.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    let name = self.interner.resolve(&param.name.symbol);
+                    self.write(name);
+                    // Note: Bounds are skipped - naml interfaces don't exist as Rust traits
+                }
+                self.write(">");
+            }
+
+            self.write(&format!(" {}", type_name));
+            if !struct_generics.is_empty() {
+                self.write("<");
+                for (i, param) in struct_generics.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    let name = self.interner.resolve(&param.name.symbol);
+                    self.write(name);
+                }
+                self.write(">");
+            }
+            self.writeln(" {");
+            self.indent += 1;
+
+            for method in type_methods {
+                self.emit_method(method)?;
+            }
+
+            self.indent -= 1;
+            self.writeln("}");
+            self.writeln("");
+        }
+
+        Ok(())
+    }
+
+    fn emit_method(&mut self, f: &FunctionItem<'_>) -> Result<(), CodegenError> {
+        let name = self.interner.resolve(&f.name.symbol);
+        let receiver = f.receiver.as_ref().unwrap();
+
+        self.write_indent();
+        if f.is_public {
+            self.write("pub ");
+        }
+
+        if f.is_async {
+            self.write("async ");
+        }
+
+        self.write(&format!("fn {}", name));
+        self.emit_generic_params(&f.generics)?;
+        self.write("(");
+
+        if receiver.mutable {
+            self.write("&mut self");
+        } else {
+            self.write("&self");
+        }
+
+        for param in &f.params {
+            self.write(", ");
+            let param_name = self.interner.resolve(&param.name.symbol);
+            let param_type = types::naml_to_rust(&param.ty, self.interner);
+            self.write(&format!("{}: {}", param_name, param_type));
+        }
+
+        self.write(")");
+
+        if let Some(ref return_ty) = f.return_ty {
+            let rust_ty = types::naml_to_rust(return_ty, self.interner);
+            self.write(&format!(" -> {}", rust_ty));
+        }
+
+        if let Some(ref body) = f.body {
+            self.output.push_str(" {\n");
+            self.indent += 1;
+
+            let was_in_ref_method = self.in_ref_method;
+            if !receiver.mutable {
+                self.in_ref_method = true;
+            }
+
+            statements::emit_block(self, body)?;
+
+            self.in_ref_method = was_in_ref_method;
+            self.indent -= 1;
+            self.writeln("}");
+        } else {
+            self.output.push_str(";\n");
+        }
+
+        self.writeln("");
+
+        Ok(())
     }
 }
 
