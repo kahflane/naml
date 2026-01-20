@@ -30,6 +30,7 @@ pub struct RustGenerator<'a> {
     enum_names: HashSet<String>,
     enum_variants: HashMap<String, String>,
     in_ref_method: bool,
+    in_throws_function: bool,
 }
 
 impl<'a> RustGenerator<'a> {
@@ -47,6 +48,7 @@ impl<'a> RustGenerator<'a> {
             enum_names: HashSet::new(),
             enum_variants: HashMap::new(),
             in_ref_method: false,
+            in_throws_function: false,
         }
     }
 
@@ -265,17 +267,33 @@ impl<'a> RustGenerator<'a> {
 
         self.write(")");
 
-        if let Some(ref return_ty) = f.return_ty {
-            let rust_ty = types::naml_to_rust(return_ty, self.interner);
-            self.write(&format!(" -> {}", rust_ty));
+        match (&f.return_ty, &f.throws) {
+            (Some(return_ty), Some(throws_ty)) => {
+                let rust_ret = types::naml_to_rust(return_ty, self.interner);
+                let rust_err = types::naml_to_rust(throws_ty, self.interner);
+                self.write(&format!(" -> Result<{}, {}>", rust_ret, rust_err));
+            }
+            (None, Some(throws_ty)) => {
+                let rust_err = types::naml_to_rust(throws_ty, self.interner);
+                self.write(&format!(" -> Result<(), {}>", rust_err));
+            }
+            (Some(return_ty), None) => {
+                let rust_ty = types::naml_to_rust(return_ty, self.interner);
+                self.write(&format!(" -> {}", rust_ty));
+            }
+            (None, None) => {}
         }
 
         if let Some(ref body) = f.body {
             self.writeln(" {");
             self.indent += 1;
 
+            let was_in_throws = self.in_throws_function;
+            self.in_throws_function = f.throws.is_some();
+
             statements::emit_block(self, body)?;
 
+            self.in_throws_function = was_in_throws;
             self.indent -= 1;
             self.writeln("}");
         } else {
@@ -319,12 +337,44 @@ impl<'a> RustGenerator<'a> {
         self.in_ref_method
     }
 
+    pub(crate) fn is_in_throws_function(&self) -> bool {
+        self.in_throws_function
+    }
+
     pub(crate) fn indent_inc(&mut self) {
         self.indent += 1;
     }
 
     pub(crate) fn indent_dec(&mut self) {
         self.indent -= 1;
+    }
+
+    pub(crate) fn function_throws(&self, name: &str) -> bool {
+        if let Some(spur) = self.interner.get(name) {
+            if let Some(sig) = self.symbols.get_function(spur) {
+                return sig.throws.is_some();
+            }
+        }
+        false
+    }
+
+    pub(crate) fn method_throws(&self, type_name: &str, method_name: &str) -> bool {
+        let type_spur = match self.interner.get(type_name) {
+            Some(s) => s,
+            None => return false,
+        };
+        let method_spur = match self.interner.get(method_name) {
+            Some(s) => s,
+            None => return false,
+        };
+        if let Some(sig) = self.symbols.get_method(type_spur, method_spur) {
+            return sig.throws.is_some();
+        }
+        false
+    }
+
+    pub(crate) fn symbols(&self) -> &SymbolTable {
+        self.symbols
     }
 
     fn emit_generic_params(&mut self, params: &[GenericParam]) -> Result<(), CodegenError> {
@@ -468,9 +518,21 @@ impl<'a> RustGenerator<'a> {
 
         self.write(")");
 
-        if let Some(ref return_ty) = f.return_ty {
-            let rust_ty = types::naml_to_rust(return_ty, self.interner);
-            self.write(&format!(" -> {}", rust_ty));
+        match (&f.return_ty, &f.throws) {
+            (Some(return_ty), Some(throws_ty)) => {
+                let rust_ret = types::naml_to_rust(return_ty, self.interner);
+                let rust_err = types::naml_to_rust(throws_ty, self.interner);
+                self.write(&format!(" -> Result<{}, {}>", rust_ret, rust_err));
+            }
+            (None, Some(throws_ty)) => {
+                let rust_err = types::naml_to_rust(throws_ty, self.interner);
+                self.write(&format!(" -> Result<(), {}>", rust_err));
+            }
+            (Some(return_ty), None) => {
+                let rust_ty = types::naml_to_rust(return_ty, self.interner);
+                self.write(&format!(" -> {}", rust_ty));
+            }
+            (None, None) => {}
         }
 
         if let Some(ref body) = f.body {
@@ -478,13 +540,16 @@ impl<'a> RustGenerator<'a> {
             self.indent += 1;
 
             let was_in_ref_method = self.in_ref_method;
+            let was_in_throws = self.in_throws_function;
             if !receiver.mutable {
                 self.in_ref_method = true;
             }
+            self.in_throws_function = f.throws.is_some();
 
             statements::emit_block(self, body)?;
 
             self.in_ref_method = was_in_ref_method;
+            self.in_throws_function = was_in_throws;
             self.indent -= 1;
             self.writeln("}");
         } else {

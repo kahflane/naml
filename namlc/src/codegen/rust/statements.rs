@@ -110,12 +110,22 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
 
         Statement::Return(return_stmt) => {
             g.write_indent();
-            g.write("return");
-            if let Some(ref value) = return_stmt.value {
-                g.write(" ");
-                emit_expression(g, value)?;
+            if g.is_in_throws_function() {
+                if let Some(ref value) = return_stmt.value {
+                    g.write("return Ok(");
+                    emit_expression(g, value)?;
+                    g.write(");\n");
+                } else {
+                    g.write("return Ok(());\n");
+                }
+            } else {
+                g.write("return");
+                if let Some(ref value) = return_stmt.value {
+                    g.write(" ");
+                    emit_expression(g, value)?;
+                }
+                g.write(";\n");
             }
-            g.write(";\n");
             Ok(())
         }
 

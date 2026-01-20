@@ -548,6 +548,33 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         Expression::Await(await_expr) => {
             emit_expression(g, await_expr.expr)?;
             g.write(".await");
+
+            if g.is_in_throws_function() {
+                let inner_throws = match await_expr.expr {
+                    Expression::Call(call) => {
+                        if let Expression::Identifier(ident) = call.callee {
+                            let name = g.interner().resolve(&ident.ident.symbol).to_string();
+                            g.function_throws(&name)
+                        } else {
+                            false
+                        }
+                    }
+                    Expression::MethodCall(method) => {
+                        let receiver_ty = g.type_of(method.receiver.span());
+                        let method_name = g.interner().resolve(&method.method.symbol).to_string();
+                        if let Some(Type::Struct(st)) = receiver_ty {
+                            let type_name = g.interner().resolve(&st.name);
+                            g.method_throws(type_name, &method_name)
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                };
+                if inner_throws {
+                    g.write("?");
+                }
+            }
             Ok(())
         }
 

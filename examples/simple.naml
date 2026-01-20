@@ -38,11 +38,6 @@ interface Serializable {
 // Result and Option Types
 // =============================================================================
 
-enum Result<T, E> {
-    Ok(T),
-    Err(E)
-}
-
 enum Option<T> {
     Some(T),
     None
