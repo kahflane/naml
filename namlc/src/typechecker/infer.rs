@@ -431,6 +431,66 @@ impl<'a> TypeInferrer<'a> {
             };
         }
 
+        // Handle built-in array methods
+        if let Type::Array(elem) = &resolved {
+            let method_name = self.interner.resolve(&call.method.symbol);
+            return match method_name {
+                "push" => {
+                    if call.args.len() != 1 {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 1,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return Type::Unit;
+                    }
+                    let arg_ty = self.infer_expr(&call.args[0]);
+                    if let Err(e) = unify(&arg_ty, elem, call.args[0].span()) {
+                        self.errors.push(e);
+                    }
+                    Type::Unit
+                }
+                "pop" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Option(elem.clone())
+                }
+                "clear" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Unit
+                }
+                "len" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Int
+                }
+                _ => {
+                    self.errors.push(TypeError::UndefinedMethod {
+                        ty: resolved.to_string(),
+                        method: method_name.to_string(),
+                        span: call.span,
+                    });
+                    Type::Error
+                }
+            };
+        }
+
         let type_name = match &resolved {
             Type::Struct(s) => s.name,
             Type::Enum(e) => e.name,
@@ -492,7 +552,8 @@ impl<'a> TypeInferrer<'a> {
                 if let Err(e) = unify(&index_ty, &key, idx.index.span()) {
                     self.errors.push(e);
                 }
-                (*val).clone()
+                // Map indexing returns option<V> since key might not exist
+                Type::Option(val.clone())
             }
             Type::String => {
                 if let Err(e) = unify(&index_ty, &Type::Int, idx.index.span()) {
@@ -516,6 +577,18 @@ impl<'a> TypeInferrer<'a> {
         let resolved = base_ty.resolve();
 
         match resolved {
+            Type::Array(_) | Type::FixedArray(_, _) => {
+                let field_name = self.interner.resolve(&field.field.symbol);
+                if field_name == "length" {
+                    return Type::Int;
+                }
+                self.errors.push(TypeError::UndefinedField {
+                    ty: resolved.to_string(),
+                    field: field_name.to_string(),
+                    span: field.span,
+                });
+                return Type::Error;
+            }
             Type::Struct(s) => {
                 for f in &s.fields {
                     if f.name == field.field.symbol {
@@ -653,7 +726,39 @@ impl<'a> TypeInferrer<'a> {
                         }
                     }
 
-                    Type::Struct(struct_ty)
+                    // If struct has type parameters, return Generic type instead of Struct
+                    if !struct_ty.type_params.is_empty() {
+                        // Create fresh type variables for each type param
+                        let type_args: Vec<Type> = struct_ty
+                            .type_params
+                            .iter()
+                            .map(|_| fresh_type_var(self.next_var_id))
+                            .collect();
+                        Type::Generic(lit.name.symbol, type_args)
+                    } else {
+                        Type::Struct(struct_ty)
+                    }
+                }
+                TypeDef::Exception(exc) => {
+                    // Handle exception types like struct literals
+                    for field_lit in &lit.fields {
+                        let field_def = exc.fields.iter().find(|(name, _)| *name == field_lit.name.symbol);
+                        if let Some((_, field_ty)) = field_def {
+                            let value_ty = self.infer_expr(&field_lit.value);
+                            if let Err(e) = unify(&value_ty, field_ty, field_lit.span) {
+                                self.errors.push(e);
+                            }
+                        } else {
+                            let field_name = self.interner.resolve(&field_lit.name.symbol).to_string();
+                            self.errors.push(TypeError::UndefinedField {
+                                ty: format!("{:?}", lit.name.symbol),
+                                field: field_name,
+                                span: field_lit.span,
+                            });
+                        }
+                    }
+                    // Return struct-like type for exception
+                    Type::Generic(lit.name.symbol, vec![])
                 }
                 _ => {
                     let name = self.interner.resolve(&lit.name.symbol).to_string();
@@ -751,8 +856,8 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_spawn(&mut self, spawn: &ast::SpawnExpr) -> Type {
-        self.infer_block(&spawn.body);
-        Type::Promise(Box::new(Type::Unit))
+        let body_ty = self.infer_block(&spawn.body);
+        Type::Promise(Box::new(body_ty))
     }
 
     fn infer_await(&mut self, await_expr: &ast::AwaitExpr) -> Type {
@@ -857,6 +962,25 @@ impl<'a> TypeInferrer<'a> {
                 self.env.define(c.name.symbol, ty, false);
             }
             Assign(assign) => {
+                // Special case for map index assignment: map[key] = value
+                // The value should be of type V, not option<V>
+                if let ast::Expression::Index(idx) = &assign.target {
+                    let base_ty = self.infer_expr(&idx.base);
+                    let index_ty = self.infer_expr(&idx.index);
+                    let resolved = base_ty.resolve();
+
+                    if let Type::Map(key, val) = resolved {
+                        if let Err(e) = unify(&index_ty, &key, idx.index.span()) {
+                            self.errors.push(e);
+                        }
+                        let value_ty = self.infer_expr(&assign.value);
+                        if let Err(e) = unify(&value_ty, &val, assign.value.span()) {
+                            self.errors.push(e);
+                        }
+                        return;
+                    }
+                }
+
                 let target_ty = self.infer_expr(&assign.target);
                 let value_ty = self.infer_expr(&assign.value);
                 if let Err(e) = unify(&value_ty, &target_ty, assign.span) {

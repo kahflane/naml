@@ -19,3 +19,5 @@ Cargo.lock
 rust-project.json
 
 
+.naml_build/
+settings.local.json

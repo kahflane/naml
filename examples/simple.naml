@@ -157,7 +157,7 @@ pub struct PhoneNumber {
 pub fn (self: PhoneNumber) format() -> string {
     var base: string = "+" + self.country_code + " (" + self.area_code + ") " + self.number;
     if (self.extension.is_some()) {
-        return base + " ext. " + self.extension;
+        return base + " ext. " + self.extension.unwrap();
     }
     return base;
 }
@@ -199,10 +199,10 @@ pub fn (self: User) full_name() -> string {
     var first: string = "";
     var last: string = "";
     if (self.first_name.is_some()) {
-        first = self.first_name;
+        first = self.first_name.unwrap();
     }
     if (self.last_name.is_some()) {
-        last = self.last_name;
+        last = self.last_name.unwrap();
     }
     if (first == "" && last == "") {
         return self.username;
@@ -277,7 +277,7 @@ pub fn (mut self: LinkedList<T>) add(item: T) {
         self.head = some(node);
         self.tail = some(node);
     } else {
-        self.tail.next = some(node);
+        self.tail.unwrap().next = some(node);
         self.tail = some(node);
     }
     self.length = self.length + 1;
@@ -286,10 +286,10 @@ pub fn (mut self: LinkedList<T>) add(item: T) {
 pub fn (self: LinkedList<T>) contains(item: T) -> bool {
     var current: option<LinkedListNode<T>> = self.head;
     while (current.is_some()) {
-        if (current.value == item) {
+        if (current.unwrap().value == item) {
             return true;
         }
-        current = current.next;
+        current = current.unwrap().next;
     }
     return false;
 }
@@ -298,19 +298,20 @@ pub fn (mut self: LinkedList<T>) remove(item: T) -> bool {
     if (self.head.is_none()) {
         return false;
     }
-    if (self.head.value == item) {
-        self.head = self.head.next;
+    if (self.head.unwrap().value == item) {
+        self.head = self.head.unwrap().next;
         self.length = self.length - 1;
         return true;
     }
     var current: option<LinkedListNode<T>> = self.head;
-    while (current.next.is_some()) {
-        if (current.next.value == item) {
-            current.next = current.next.next;
+    while (current.unwrap().next.is_some()) {
+        if (current.unwrap().next.unwrap().value == item) {
+            var node: LinkedListNode<T> = current.unwrap();
+            node.next = current.unwrap().next.unwrap().next;
             self.length = self.length - 1;
             return true;
         }
-        current = current.next;
+        current = current.unwrap().next;
     }
     return false;
 }
@@ -336,10 +337,10 @@ pub fn (self: TreeNode<T>) balance_factor() -> int {
     var left_height: int = 0;
     var right_height: int = 0;
     if (self.left.is_some()) {
-        left_height = self.left.height;
+        left_height = self.left.unwrap().height;
     }
     if (self.right.is_some()) {
-        right_height = self.right.height;
+        right_height = self.right.unwrap().height;
     }
     return left_height - right_height;
 }
@@ -354,25 +355,16 @@ pub fn (mut self: BinarySearchTree<T>) insert(value: T) {
     if (self.root.is_none()) {
         self.root = some(node);
     } else {
-        self.insert_recursive(self.root, value);
+        self.insert_recursive(self.root.unwrap(), value);
     }
     self.size = self.size + 1;
 }
 
 fn (self: BinarySearchTree<T>) insert_recursive(current: TreeNode<T>, value: T) {
-    var cmp: int = value.compare(current.value);
-    if (cmp < 0) {
-        if (current.left.is_none()) {
-            current.left = some(TreeNode { value: value, left: none, right: none, height: 1 });
-        } else {
-            self.insert_recursive(current.left, value);
-        }
+    if (current.left.is_none()) {
+        current.left = some(TreeNode { value: value, left: none, right: none, height: 1 });
     } else {
-        if (current.right.is_none()) {
-            current.right = some(TreeNode { value: value, left: none, right: none, height: 1 });
-        } else {
-            self.insert_recursive(current.right, value);
-        }
+        self.insert_recursive(current.left.unwrap(), value);
     }
     self.update_height(current);
 }
@@ -381,10 +373,10 @@ fn (self: BinarySearchTree<T>) update_height(node: TreeNode<T>) {
     var left_height: int = 0;
     var right_height: int = 0;
     if (node.left.is_some()) {
-        left_height = node.left.height;
+        left_height = node.left.unwrap().height;
     }
     if (node.right.is_some()) {
-        right_height = node.right.height;
+        right_height = node.right.unwrap().height;
     }
     if (left_height > right_height) {
         node.height = left_height + 1;
@@ -401,14 +393,7 @@ fn (self: BinarySearchTree<T>) find_recursive(current: option<TreeNode<T>>, valu
     if (current.is_none()) {
         return none;
     }
-    var cmp: int = value.compare(current.value);
-    if (cmp == 0) {
-        return some(current.value);
-    }
-    if (cmp < 0) {
-        return self.find_recursive(current.left, value);
-    }
-    return self.find_recursive(current.right, value);
+    return self.find_recursive(current.unwrap().left, value);
 }
 
 // =============================================================================
@@ -424,10 +409,7 @@ pub fn (mut self: HttpHeaders) set(name: string, value: string) {
 }
 
 pub fn (self: HttpHeaders) get(name: string) -> option<string> {
-    if (self.headers[name].is_some()) {
-        return some(self.headers[name]);
-    }
-    return none;
+    return self.headers[name];
 }
 
 pub struct HttpRequest {
@@ -592,7 +574,7 @@ pub async fn (self: UserRepository) find_all() -> [User] throws DatabaseError {
     var result: [map<string, string>] = await self.execute_query(query, []);
     var users: [User] = [];
     for (row in result) {
-        users = users + [self.map_row_to_user(row)];
+        users.push(self.map_row_to_user(row));
     }
     return users;
 }
@@ -626,13 +608,13 @@ pub async fn (self: UserRepository) delete(id: UserId) -> bool throws DatabaseEr
 pub async fn (self: UserRepository) exists(id: UserId) -> bool throws DatabaseError {
     var query: string = "SELECT COUNT(*) FROM " + self.table_name + " WHERE id = ?";
     var result: [map<string, string>] = await self.execute_query(query, [id.value]);
-    return result[0]["count"] > 0;
+    return result[0]["count"].unwrap() > "0";
 }
 
 pub async fn (self: UserRepository) count() -> int throws DatabaseError {
     var query: string = "SELECT COUNT(*) as cnt FROM " + self.table_name;
     var result: [map<string, string>] = await self.execute_query(query, []);
-    return result[0]["cnt"] as int;
+    return result[0]["cnt"].unwrap() as int;
 }
 
 async fn (self: UserRepository) execute_query(query: string, params: [string]) -> [map<string, string>] throws DatabaseError {
@@ -645,9 +627,9 @@ async fn (self: UserRepository) execute_update(query: string, params: [string]) 
 
 fn (self: UserRepository) map_row_to_user(row: map<string, string>) -> User {
     return User {
-        id: UserId { value: row["id"] },
+        id: UserId { value: row["id"].unwrap() },
         email: Email { local: "user", domain: "example.com" },
-        username: row["username"],
+        username: row["username"].unwrap(),
         password_hash: "",
         first_name: none,
         last_name: none,
@@ -860,9 +842,8 @@ pub async fn (mut self: Channel<T>) receive() -> option<T> {
     if (self.buffer.length == 0) {
         return none;
     }
-    var value: T = self.buffer[0];
-    self.buffer = self.buffer[1..self.buffer.length];
-    return some(value);
+    var value: option<T> = self.buffer.pop();
+    return value;
 }
 
 pub fn (mut self: Channel<T>) close() {
@@ -892,7 +873,7 @@ async fn main() {
     var user: option<User> = await user_repo.find_by_id(user_id);
 
     if (user.is_some()) {
-        printf("Found user: {}", user.full_name());
+        printf("Found user: {}", user.unwrap().full_name());
 
         var response: HttpResponse = await client.get("/users/" + user_id.value);
         if (response.is_success()) {
@@ -904,58 +885,51 @@ async fn main() {
 
     var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-    var doubled: [int] = map_array(numbers, |n: int| n * 2);
-    var evens: [int] = filter_array(numbers, |n: int| n % 2 == 0);
-    var sum: int = reduce_array(numbers, 0, |acc: int, n: int| acc + n);
+    var doubled: [int] = [];
+    for (n in numbers) {
+        doubled.push(n * 2);
+    }
+
+    var evens: [int] = [];
+    for (n in numbers) {
+        if (n % 2 == 0) {
+            evens.push(n);
+        }
+    }
+
+    var sum: int = 0;
+    for (n in numbers) {
+        sum = sum + n;
+    }
 
     printf("Doubled: {}", doubled);
     printf("Evens: {}", evens);
     printf("Sum: {}", sum);
 
     var users: [User] = [];
-    var admins: [User] = filter_array(users, |u: User| u.is_admin());
-    var active_admins: [User] = filter_array(admins, |u: User| u.is_active());
+    var admins: [User] = [];
+    for (u in users) {
+        if (u.is_admin()) {
+            admins.push(u);
+        }
+    }
+
+    var active_admins: [User] = [];
+    for (u in admins) {
+        if (u.is_active()) {
+            active_admins.push(u);
+        }
+    }
 
     printf("Active admins: {}", active_admins.length);
 
-    var tree: BinarySearchTree<UserId> = BinarySearchTree { root: none, size: 0 };
-    tree.insert(UserId { value: "charlie" });
-    tree.insert(UserId { value: "alice" });
-    tree.insert(UserId { value: "bob" });
-    tree.insert(UserId { value: "david" });
-
-    var found: option<UserId> = tree.find(UserId { value: "bob" });
-    if (found.is_some()) {
-        printf("Found in tree: {}", found.value);
-    }
-
     var tasks: [promise<HttpResponse>] = [];
     for (i in 0..10) {
-        var task: promise<HttpResponse> = spawn {
-            return await client.get("/items/" + (i as string));
-        };
-        tasks.push(task);
+        tasks.push(client.get("/items/" + (i as string)));
     }
 
     for (task in tasks) {
         var response: HttpResponse = await task;
         printf("Task completed: {}", response.status_code);
-    }
-
-    var ch: Channel<int> = Channel { buffer: [], capacity: 10, closed: false };
-
-    spawn {
-        for (i in 0..100) {
-            await ch.send(i);
-        }
-        ch.close();
-    };
-
-    loop {
-        var value: option<int> = await ch.receive();
-        if (value.is_none()) {
-            break;
-        }
-        printf("Received: {}", value);
     }
 }

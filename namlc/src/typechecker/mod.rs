@@ -129,6 +129,13 @@ impl<'a> TypeChecker<'a> {
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
 
+        // Wrap async function return types in promise<T>
+        let return_ty = if func.is_async {
+            Type::Promise(Box::new(return_ty))
+        } else {
+            return_ty
+        };
+
         let throws = func.throws.as_ref().map(|t| self.convert_type(t));
 
         self.symbols.define_function(FunctionSig {
@@ -199,6 +206,13 @@ impl<'a> TypeChecker<'a> {
             .as_ref()
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
+
+        // Wrap async method return types in promise<T>
+        let return_ty = if func.is_async {
+            Type::Promise(Box::new(return_ty))
+        } else {
+            return_ty
+        };
 
         let throws = func.throws.as_ref().map(|t| self.convert_type(t));
 

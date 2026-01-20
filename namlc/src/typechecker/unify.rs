@@ -188,6 +188,32 @@ pub fn unify(a: &Type, b: &Type, span: Span) -> TypeResult<()> {
             Ok(())
         }
 
+        // Allow Type::Struct to unify with Type::Generic of the same name
+        (Type::Struct(s), Type::Generic(name, args)) | (Type::Generic(name, args), Type::Struct(s)) => {
+            if s.name != *name {
+                return Err(TypeError::type_mismatch(
+                    format!("struct:{:?}", s.name),
+                    format!("{:?}", name),
+                    span,
+                ));
+            }
+
+            // Unify type arguments
+            if s.type_args.len() != args.len() && !s.type_params.is_empty() {
+                return Err(TypeError::WrongTypeArgCount {
+                    expected: s.type_params.len(),
+                    found: args.len(),
+                    span,
+                });
+            }
+
+            for (s_arg, g_arg) in s.type_args.iter().zip(args.iter()) {
+                unify(s_arg, g_arg, span)?;
+            }
+
+            Ok(())
+        }
+
         _ => Err(TypeError::type_mismatch(a.to_string(), b.to_string(), span)),
     }
 }
