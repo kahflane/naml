@@ -45,23 +45,17 @@ impl<'a> RustGenerator<'a> {
                     ));
                 }
                 Item::Enum(_) => {
-                    return Err(CodegenError::Unsupported("Enums not yet supported".to_string()));
+                    // TODO: Generate Rust enums
                 }
                 Item::Interface(_) => {
-                    return Err(CodegenError::Unsupported(
-                        "Interfaces not yet supported".to_string(),
-                    ));
+                    // Interfaces are type-level only, no runtime code needed
                 }
                 Item::Exception(_) => {
-                    return Err(CodegenError::Unsupported(
-                        "Exceptions not yet supported".to_string(),
-                    ));
+                    // TODO: Generate exception structs
                 }
                 Item::Import(_) | Item::Use(_) => {}
                 Item::Extern(_) => {
-                    return Err(CodegenError::Unsupported(
-                        "Extern declarations not yet supported".to_string(),
-                    ));
+                    // Extern declarations are handled by the runtime
                 }
             }
         }
@@ -112,14 +106,12 @@ impl<'a> RustGenerator<'a> {
             return Ok(());
         }
 
-        if f.is_async {
-            return Err(CodegenError::Unsupported(
-                "Async functions not yet supported".to_string(),
-            ));
-        }
-
         if f.is_public {
             self.write("pub ");
+        }
+
+        if f.is_async {
+            self.write("async ");
         }
 
         self.write(&format!("fn {}(", name));

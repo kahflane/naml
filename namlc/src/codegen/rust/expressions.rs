@@ -236,10 +236,77 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
             Ok(())
         }
 
-        _ => Err(CodegenError::Unsupported(format!(
-            "Expression type not yet supported: {:?}",
-            std::mem::discriminant(expr)
-        ))),
+        Expression::Lambda(lambda) => {
+            g.write("|");
+            for (i, param) in lambda.params.iter().enumerate() {
+                if i > 0 {
+                    g.write(", ");
+                }
+                let param_name = g.interner().resolve(&param.name.symbol).to_string();
+                g.write(&param_name);
+                if let Some(ref ty) = param.ty {
+                    g.write(": ");
+                    let param_ty = super::types::naml_to_rust(ty, g.interner());
+                    g.write(&param_ty);
+                }
+            }
+            g.write("| ");
+            emit_expression(g, lambda.body)?;
+            Ok(())
+        }
+
+        Expression::Map(map) => {
+            g.write("std::collections::HashMap::from([");
+            for (i, entry) in map.entries.iter().enumerate() {
+                if i > 0 {
+                    g.write(", ");
+                }
+                g.write("(");
+                emit_expression(g, &entry.key)?;
+                g.write(", ");
+                emit_expression(g, &entry.value)?;
+                g.write(")");
+            }
+            g.write("])");
+            Ok(())
+        }
+
+        Expression::Block(block) => {
+            g.write("{ ");
+            for stmt in &block.statements {
+                super::statements::emit_statement(g, stmt)?;
+            }
+            if let Some(tail) = block.tail {
+                emit_expression(g, tail)?;
+            }
+            g.write(" }");
+            Ok(())
+        }
+
+        Expression::Await(await_expr) => {
+            emit_expression(g, await_expr.expr)?;
+            g.write(".await");
+            Ok(())
+        }
+
+        Expression::Spawn(_) => Err(CodegenError::Unsupported(
+            "Spawn expressions not yet supported in Rust codegen".to_string(),
+        )),
+
+        Expression::Try(_) => Err(CodegenError::Unsupported(
+            "Try expressions not yet supported in Rust codegen".to_string(),
+        )),
+
+        Expression::Path(path) => {
+            for (i, segment) in path.segments.iter().enumerate() {
+                if i > 0 {
+                    g.write("::");
+                }
+                let name = g.interner().resolve(&segment.symbol).to_string();
+                g.write(&name);
+            }
+            Ok(())
+        }
     }
 }
 
