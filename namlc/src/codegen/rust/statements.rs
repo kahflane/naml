@@ -14,10 +14,80 @@
 use crate::ast::{AssignOp, BlockStmt, Expression, Statement};
 use crate::codegen::CodegenError;
 use crate::source::Spanned;
+use crate::typechecker::Type;
 
 use super::expressions::emit_expression;
 use super::types::naml_to_rust;
 use super::RustGenerator;
+
+/// Check if a return expression needs cloning in a method context.
+/// Returns true if returning a self field from any method (&self or &mut self).
+fn needs_return_clone(g: &RustGenerator, expr: &Expression<'_>) -> bool {
+    if !g.is_in_any_method() {
+        return false;
+    }
+
+    // Check if this is a field access on self
+    if let Expression::Field(field) = expr {
+        if is_self_expression(g, field.base) {
+            // Check if the field type is non-Copy
+            if let Some(ty) = g.type_of(expr.span()) {
+                return !is_copy_type(ty);
+            }
+        }
+    }
+
+    false
+}
+
+fn is_self_expression(g: &RustGenerator, expr: &Expression<'_>) -> bool {
+    match expr {
+        Expression::Identifier(ident) => {
+            let name = g.interner().resolve(&ident.ident.symbol);
+            name == "self"
+        }
+        Expression::Field(field) => is_self_expression(g, field.base),
+        _ => false,
+    }
+}
+
+fn is_copy_type(ty: &Type) -> bool {
+    matches!(ty, Type::Int | Type::Uint | Type::Float | Type::Bool | Type::Unit)
+}
+
+/// Check if an expression is a field access on a recursive field
+/// (i.e., a field whose type references its containing struct, which gets Box wrapped)
+fn is_recursive_field_access(g: &RustGenerator, expr: &Expression<'_>) -> bool {
+    if let Expression::Field(field) = expr {
+        // Get the receiver's struct type
+        if let Some(receiver_ty) = g.type_of(field.base.span()) {
+            let receiver_struct_name = match receiver_ty {
+                Type::Struct(st) => Some(g.interner().resolve(&st.name).to_string()),
+                Type::Generic(name, _) => Some(g.interner().resolve(name).to_string()),
+                _ => None,
+            };
+
+            if let Some(receiver_name) = receiver_struct_name {
+                // Get the field's type (should be Option<T> for var...else pattern)
+                if let Some(field_ty) = g.type_of(expr.span()) {
+                    if let Type::Option(inner) = field_ty {
+                        // Check if the inner type matches the receiver's struct type
+                        let inner_name = match inner.as_ref() {
+                            Type::Struct(st) => Some(g.interner().resolve(&st.name).to_string()),
+                            Type::Generic(name, _) => Some(g.interner().resolve(name).to_string()),
+                            _ => None,
+                        };
+
+                        if let Some(inner) = inner_name {
+                            return inner == receiver_name;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
 
 pub fn emit_block(g: &mut RustGenerator, block: &BlockStmt<'_>) -> Result<(), CodegenError> {
     for stmt in &block.statements {
@@ -56,15 +126,47 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
                     g.write(&format!(": {}", rust_ty));
                 }
 
+                // Check if init is a self field access (requires borrowing to avoid E0507)
+                let is_self_field = if let Some(ref init) = var_stmt.init {
+                    is_self_expression(g, init)
+                } else {
+                    false
+                };
+
                 g.write(" = match ");
+                if is_self_field {
+                    g.write("&");
+                }
                 if let Some(ref init) = var_stmt.init {
                     emit_expression(g, init)?;
                 }
                 g.write(" {\n");
 
+                // Check if we need to dereference Box (for recursive struct fields)
+                // Box wrapping only happens when a struct field references itself
+                // E.g., TreeNode.left: Option<TreeNode> becomes Option<Box<TreeNode>>
+                let needs_deref = {
+                    // Check if init is a field access where the field type matches the receiver's struct type
+                    if let Some(ref init) = var_stmt.init {
+                        is_recursive_field_access(g, init)
+                    } else {
+                        false
+                    }
+                };
+
                 g.indent_inc();
                 g.write_indent();
-                g.write("Some(__naml_val) => __naml_val,\n");
+                if needs_deref && is_self_field {
+                    // Both borrowed and boxed - dereference and clone
+                    g.write("Some(__naml_val) => (**__naml_val).clone(),\n");
+                } else if needs_deref {
+                    g.write("Some(__naml_val) => *__naml_val,\n");
+                } else if is_self_field {
+                    // Clone when borrowing self field
+                    g.write("Some(__naml_val) => __naml_val.clone(),\n");
+                } else {
+                    g.write("Some(__naml_val) => __naml_val,\n");
+                }
                 g.write_indent();
                 g.write("None => {\n");
                 g.indent_inc();
@@ -170,6 +272,10 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
                 if let Some(ref value) = return_stmt.value {
                     g.write("return Ok(");
                     emit_expression(g, value)?;
+                    // Clone self fields in method context to avoid move errors
+                    if needs_return_clone(g, value) {
+                        g.write(".clone()");
+                    }
                     g.write(");\n");
                 } else {
                     g.write("return Ok(());\n");
@@ -179,6 +285,10 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
                 if let Some(ref value) = return_stmt.value {
                     g.write(" ");
                     emit_expression(g, value)?;
+                    // Clone self fields in method context to avoid move errors
+                    if needs_return_clone(g, value) {
+                        g.write(".clone()");
+                    }
                 }
                 g.write(";\n");
             }
@@ -238,15 +348,27 @@ pub fn emit_statement(g: &mut RustGenerator, stmt: &Statement<'_>) -> Result<(),
             g.write_indent();
 
             let var_name = g.interner().resolve(&for_stmt.value.symbol);
+            let iterable_ty = g.type_of(for_stmt.iterable.span()).cloned();
+
+            // Check if iterable is a string (needs .chars())
+            let is_string = matches!(&iterable_ty, Some(Type::String));
 
             if let Some(ref index_var) = for_stmt.index {
                 let index_name = g.interner().resolve(&index_var.symbol);
                 g.write(&format!("for ({}, {}) in ", index_name, var_name));
                 emit_expression(g, &for_stmt.iterable)?;
-                g.write(".iter().enumerate()");
+                if is_string {
+                    g.write(".chars().enumerate()");
+                } else {
+                    g.write(".iter().enumerate()");
+                }
             } else {
                 g.write(&format!("for {} in ", var_name));
                 emit_expression(g, &for_stmt.iterable)?;
+                if is_string {
+                    g.write(".chars()");
+                }
+                // Don't add .iter() - let Rust's IntoIterator handle it
             }
 
             g.write(" {\n");

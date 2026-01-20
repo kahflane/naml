@@ -68,7 +68,8 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
 
                 match name.as_str() {
                     "print" => {
-                        g.write("print!(\"{}\"");
+                        // Use {:?} to support both Display and Debug types
+                        g.write("print!(\"{:?}\"");
                         for arg in &call.args {
                             g.write(", ");
                             emit_expression(g, arg)?;
@@ -79,7 +80,8 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                         if call.args.is_empty() {
                             g.write("println!()");
                         } else {
-                            g.write("println!(\"{}\"");
+                            // Use {:?} to support both Display and Debug types (Vec, structs, etc.)
+                            g.write("println!(\"{:?}\"");
                             for arg in &call.args {
                                 g.write(", ");
                                 emit_expression(g, arg)?;
@@ -94,7 +96,8 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                         })) = call.args.first()
                         {
                             let fmt = g.interner().resolve(fmt_spur);
-                            let rust_fmt = fmt.replace("{}", "{}");
+                            // Use {:?} to support both Display and Debug types (Vec, structs, etc.)
+                            let rust_fmt = fmt.replace("{}", "{:?}");
                             g.write(&format!("println!(\"{}\"", rust_fmt));
                             for arg in call.args.iter().skip(1) {
                                 g.write(", ");
@@ -102,7 +105,7 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                             }
                             g.write(")");
                         } else {
-                            g.write("println!(\"{}\"");
+                            g.write("println!(\"{:?}\"");
                             for arg in &call.args {
                                 g.write(", ");
                                 emit_expression(g, arg)?;
@@ -117,7 +120,7 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                             if i > 0 {
                                 g.write(", ");
                             }
-                            emit_expression(g, arg)?;
+                            emit_function_arg(g, arg)?;
                         }
                         g.write(")");
 
@@ -395,6 +398,15 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                     g.write(" as usize).collect::<String>()");
                     return Ok(());
                 }
+                // Handle compare() method - transform to partial_cmp for Rust compatibility
+                (_, "compare") if method.args.len() == 1 => {
+                    g.write("match ");
+                    emit_expression(g, method.receiver)?;
+                    g.write(".partial_cmp(&");
+                    emit_expression(g, &method.args[0])?;
+                    g.write(") { Some(std::cmp::Ordering::Greater) => 1, Some(std::cmp::Ordering::Less) => -1, _ => 0 }");
+                    return Ok(());
+                }
                 _ => {}
             }
 
@@ -404,14 +416,14 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                 if i > 0 {
                     g.write(", ");
                 }
-                emit_expression(g, arg)?;
+                // Clone arguments to avoid move errors when value is used again
+                emit_function_arg(g, arg)?;
             }
             g.write(")");
 
             // Add ? for throws methods when in throws context
             // Skip if inside await (await handles the ?)
-            if let Some(Type::Struct(st)) = receiver_ty {
-                let type_name = g.interner().resolve(&st.name).to_string();
+            if let Some(type_name) = resolve_receiver_type_name(g, method.receiver) {
                 if g.method_throws(&type_name, &method_name)
                     && g.is_in_throws_function()
                     && !g.is_in_await_expr()
@@ -462,7 +474,8 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                 if i > 0 {
                     g.write(", ");
                 }
-                emit_expression(g, elem)?;
+                // Clone elements to avoid partial moves
+                emit_function_arg(g, elem)?;
             }
             g.write("]");
             Ok(())
@@ -477,7 +490,8 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
                 }
                 let name = g.interner().resolve(&field.name.symbol);
                 g.write(&format!("{}: ", name));
-                emit_expression(g, &field.value)?;
+                // Clone field values to avoid move errors when the value is used elsewhere
+                emit_function_arg(g, &field.value)?;
             }
             g.write(" }");
             Ok(())
@@ -499,9 +513,46 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
         }
 
         Expression::Some(some_expr) => {
-            g.write("Some(");
-            emit_expression(g, some_expr.value)?;
-            g.write(")");
+            // Check if this is a recursive type that needs Box wrapping
+            let needs_box = if let Some(current_struct) = g.current_struct() {
+                // Check if the inner value is a struct literal of the same type
+                match some_expr.value {
+                    Expression::StructLiteral(lit) => {
+                        let inner_struct = g.interner().resolve(&lit.name.symbol);
+                        inner_struct == current_struct
+                    }
+                    _ => {
+                        // Check if the inner type matches the current struct
+                        if let Some(ty) = g.type_of(some_expr.value.span()) {
+                            match ty {
+                                Type::Struct(st) => {
+                                    let type_name = g.interner().resolve(&st.name);
+                                    type_name == current_struct
+                                }
+                                Type::Generic(name, _) => {
+                                    let type_name = g.interner().resolve(name);
+                                    type_name == current_struct
+                                }
+                                _ => false,
+                            }
+                        } else {
+                            false
+                        }
+                    }
+                }
+            } else {
+                false
+            };
+
+            if needs_box {
+                g.write("Some(Box::new(");
+                emit_expression(g, some_expr.value)?;
+                g.write("))");
+            } else {
+                g.write("Some(");
+                emit_expression(g, some_expr.value)?;
+                g.write(")");
+            }
             Ok(())
         }
 
@@ -602,31 +653,34 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
 
             g.write(".await");
 
-            // Add ? after .await if inner expression throws
-            if g.is_in_throws_function() {
-                let inner_throws = match await_expr.expr {
-                    Expression::Call(call) => {
-                        if let Expression::Identifier(ident) = call.callee {
-                            let name = g.interner().resolve(&ident.ident.symbol).to_string();
-                            g.function_throws(&name)
-                        } else {
-                            false
-                        }
+            // Check if inner expression throws
+            let inner_throws = match await_expr.expr {
+                Expression::Call(call) => {
+                    if let Expression::Identifier(ident) = call.callee {
+                        let name = g.interner().resolve(&ident.ident.symbol).to_string();
+                        g.function_throws(&name)
+                    } else {
+                        false
                     }
-                    Expression::MethodCall(method) => {
-                        let receiver_ty = g.type_of(method.receiver.span());
-                        let method_name = g.interner().resolve(&method.method.symbol).to_string();
-                        if let Some(Type::Struct(st)) = receiver_ty {
-                            let type_name = g.interner().resolve(&st.name);
-                            g.method_throws(type_name, &method_name)
-                        } else {
-                            false
-                        }
+                }
+                Expression::MethodCall(method) => {
+                    let method_name = g.interner().resolve(&method.method.symbol).to_string();
+                    if let Some(type_name) = resolve_receiver_type_name(g, method.receiver) {
+                        g.method_throws(&type_name, &method_name)
+                    } else {
+                        false
                     }
-                    _ => false,
-                };
-                if inner_throws {
+                }
+                _ => false,
+            };
+
+            if inner_throws {
+                if g.is_in_throws_function() {
+                    // In throws context: propagate error with ?
                     g.write("?");
+                } else {
+                    // In non-throws context: unwrap the result
+                    g.write(".unwrap()");
                 }
             }
             Ok(())
@@ -669,13 +723,50 @@ pub fn emit_expression(g: &mut RustGenerator, expr: &Expression<'_>) -> Result<(
     }
 }
 
+/// Emit a function argument, adding .clone() for identifiers with non-Copy types
+/// to prevent move errors when the value is used again later
+fn emit_function_arg(g: &mut RustGenerator, arg: &Expression<'_>) -> Result<(), CodegenError> {
+    // For simple identifiers, check if the type needs cloning
+    if let Expression::Identifier(_) = arg {
+        let arg_ty = g.type_of(arg.span());
+        let needs_clone = match arg_ty {
+            Some(Type::String) | Some(Type::Array(_)) | Some(Type::Struct(_))
+            | Some(Type::Generic(_, _)) | Some(Type::Map(_, _)) => true,
+            _ => false,
+        };
+        emit_expression(g, arg)?;
+        if needs_clone {
+            g.write(".clone()");
+        }
+        return Ok(());
+    }
+    // For field access, also consider cloning
+    if let Expression::Field(_) = arg {
+        let arg_ty = g.type_of(arg.span());
+        let needs_clone = match arg_ty {
+            Some(Type::String) | Some(Type::Array(_)) | Some(Type::Struct(_))
+            | Some(Type::Generic(_, _)) | Some(Type::Map(_, _)) => true,
+            _ => false,
+        };
+        emit_expression(g, arg)?;
+        if needs_clone {
+            g.write(".clone()");
+        }
+        return Ok(());
+    }
+    // For other expressions, emit as-is
+    emit_expression(g, arg)
+}
+
 fn emit_literal(g: &mut RustGenerator, lit: &LiteralExpr) -> Result<(), CodegenError> {
     match &lit.value {
         Literal::Int(n) => {
+            // Don't suffix small integers - let Rust infer the type from context
+            // This allows them to work with both i64 and u64
             g.write(&n.to_string());
-            g.write("_i64");
         }
         Literal::UInt(n) => {
+            // Explicit unsigned - always suffix
             g.write(&n.to_string());
             g.write("_u64");
         }
@@ -782,6 +873,26 @@ fn is_copy_type_ref(ty: &Type) -> bool {
         ty,
         Type::Int | Type::Uint | Type::Float | Type::Bool | Type::Unit
     )
+}
+
+/// Resolves the type name for a receiver expression to look up method signatures.
+/// Handles multiple type variants that can be receivers (Struct, Generic, etc.)
+fn resolve_receiver_type_name(g: &RustGenerator, receiver: &Expression<'_>) -> Option<String> {
+    // Try getting type from annotations first
+    if let Some(ty) = g.type_of(receiver.span()) {
+        return type_to_name(g, ty);
+    }
+    None
+}
+
+/// Converts a Type to its name string for method lookup
+fn type_to_name(g: &RustGenerator, ty: &Type) -> Option<String> {
+    match ty {
+        Type::Struct(st) => Some(g.interner().resolve(&st.name).to_string()),
+        Type::Generic(name, _) => Some(g.interner().resolve(name).to_string()),
+        Type::Enum(e) => Some(g.interner().resolve(&e.name).to_string()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

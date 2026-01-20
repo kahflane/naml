@@ -29,9 +29,12 @@ pub struct RustGenerator<'a> {
     pub(crate) indent: usize,
     enum_names: HashSet<String>,
     enum_variants: HashMap<String, String>,
+    recursive_structs: HashSet<String>,
     in_ref_method: bool,
     in_throws_function: bool,
     in_await_expr: bool,
+    in_any_method: bool,
+    current_impl_struct: Option<String>,
 }
 
 impl<'a> RustGenerator<'a> {
@@ -48,9 +51,12 @@ impl<'a> RustGenerator<'a> {
             indent: 0,
             enum_names: HashSet::new(),
             enum_variants: HashMap::new(),
+            recursive_structs: HashSet::new(),
             in_ref_method: false,
             in_throws_function: false,
             in_await_expr: false,
+            in_any_method: false,
+            current_impl_struct: None,
         }
     }
 
@@ -122,6 +128,14 @@ impl<'a> RustGenerator<'a> {
     fn emit_struct(&mut self, s: &StructItem) -> Result<(), CodegenError> {
         let name = self.interner.resolve(&s.name.symbol);
 
+        // Check if this struct has recursive fields and register it
+        for field in &s.fields {
+            if self.type_references_struct(&field.ty, name) {
+                self.recursive_structs.insert(name.to_string());
+                break;
+            }
+        }
+
         self.writeln("#[derive(Clone, Debug, Default, PartialEq, Eq)]");
         if s.is_public {
             self.write("pub ");
@@ -148,6 +162,20 @@ impl<'a> RustGenerator<'a> {
         self.writeln("");
 
         Ok(())
+    }
+
+    fn type_references_struct(&self, ty: &NamlType, struct_name: &str) -> bool {
+        match ty {
+            NamlType::Named(ident) => self.interner.resolve(&ident.symbol) == struct_name,
+            NamlType::Generic(name, _) => self.interner.resolve(&name.symbol) == struct_name,
+            NamlType::Option(inner) => self.type_references_struct(inner, struct_name),
+            NamlType::Array(inner) => self.type_references_struct(inner, struct_name),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn is_recursive_struct(&self, name: &str) -> bool {
+        self.recursive_structs.contains(name)
     }
 
     fn emit_enum(&mut self, e: &EnumItem) -> Result<(), CodegenError> {
@@ -356,6 +384,14 @@ impl<'a> RustGenerator<'a> {
         self.in_await_expr = value;
     }
 
+    pub(crate) fn is_in_any_method(&self) -> bool {
+        self.in_any_method
+    }
+
+    pub(crate) fn current_struct(&self) -> Option<&str> {
+        self.current_impl_struct.as_deref()
+    }
+
     pub(crate) fn indent_inc(&mut self) {
         self.indent += 1;
     }
@@ -491,10 +527,14 @@ impl<'a> RustGenerator<'a> {
             self.writeln(" {");
             self.indent += 1;
 
+            // Track current impl struct for recursive type handling
+            self.current_impl_struct = Some(type_name.clone());
+
             for method in type_methods {
                 self.emit_method(method)?;
             }
 
+            self.current_impl_struct = None;
             self.indent -= 1;
             self.writeln("}");
             self.writeln("");
@@ -558,15 +598,18 @@ impl<'a> RustGenerator<'a> {
 
             let was_in_ref_method = self.in_ref_method;
             let was_in_throws = self.in_throws_function;
+            let was_in_any_method = self.in_any_method;
             if !receiver.mutable {
                 self.in_ref_method = true;
             }
             self.in_throws_function = f.throws.is_some();
+            self.in_any_method = true;
 
             statements::emit_block(self, body)?;
 
             self.in_ref_method = was_in_ref_method;
             self.in_throws_function = was_in_throws;
+            self.in_any_method = was_in_any_method;
             self.indent -= 1;
             self.writeln("}");
         } else {
