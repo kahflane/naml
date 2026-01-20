@@ -331,6 +331,15 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_call(&mut self, call: &ast::CallExpr) -> Type {
+        // Check if callee is an identifier referring to a generic function
+        if let ast::Expression::Identifier(ident) = call.callee {
+            if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
+                if !func_sig.type_params.is_empty() {
+                    return self.infer_generic_call(call, func_sig);
+                }
+            }
+        }
+
         let callee_ty = self.infer_expr(&call.callee);
         let resolved = callee_ty.resolve();
 
@@ -375,6 +384,59 @@ impl<'a> TypeInferrer<'a> {
                 Type::Error
             }
         }
+    }
+
+    fn infer_generic_call(
+        &mut self,
+        call: &ast::CallExpr,
+        func_sig: &super::symbols::FunctionSig,
+    ) -> Type {
+        use super::generics::{build_substitution, instantiate_generic_function};
+
+        // Build substitution map
+        let substitution = if !call.type_args.is_empty() {
+            // Explicit type arguments provided
+            if call.type_args.len() != func_sig.type_params.len() {
+                self.errors.push(TypeError::WrongTypeArgCount {
+                    expected: func_sig.type_params.len(),
+                    found: call.type_args.len(),
+                    span: call.span,
+                });
+                return Type::Error;
+            }
+            let type_args: Vec<Type> = call
+                .type_args
+                .iter()
+                .map(|t| self.convert_ast_type(t))
+                .collect();
+            build_substitution(&func_sig.type_params, &type_args)
+        } else {
+            // Infer type arguments - create fresh type vars
+            let (_, subst) = instantiate_generic_function(&func_sig.type_params, self.next_var_id);
+            subst
+        };
+
+        // Check argument count
+        if call.args.len() != func_sig.params.len() {
+            self.errors.push(TypeError::WrongArgCount {
+                expected: func_sig.params.len(),
+                found: call.args.len(),
+                span: call.span,
+            });
+            return Type::Error;
+        }
+
+        // Check argument types with substitution applied
+        for (arg, (_, param_ty)) in call.args.iter().zip(func_sig.params.iter()) {
+            let arg_ty = self.infer_expr(arg);
+            let substituted_param_ty = param_ty.substitute(&substitution);
+            if let Err(e) = unify(&arg_ty, &substituted_param_ty, arg.span()) {
+                self.errors.push(e);
+            }
+        }
+
+        // Return substituted return type
+        func_sig.return_ty.substitute(&substitution)
     }
 
     fn infer_method_call(&mut self, call: &ast::MethodCallExpr) -> Type {
@@ -489,6 +551,37 @@ impl<'a> TypeInferrer<'a> {
                     Type::Error
                 }
             };
+        }
+
+        // Check if receiver is a bare type parameter (T with no type args)
+        // If so, look up methods from its bounds
+        if let Type::Generic(param_name, type_args) = &resolved {
+            if type_args.is_empty() {
+                // This might be a type parameter - check if it has bounds with this method
+                if let Some(method_type) =
+                    super::generics::find_method_from_bounds(*param_name, call.method.symbol, self.env, self.symbols)
+                {
+                    // Check argument count
+                    if call.args.len() != method_type.params.len() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: method_type.params.len(),
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return Type::Error;
+                    }
+
+                    // Check argument types
+                    for (arg, param_ty) in call.args.iter().zip(method_type.params.iter()) {
+                        let arg_ty = self.infer_expr(arg);
+                        if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
+                            self.errors.push(e);
+                        }
+                    }
+
+                    return method_type.returns;
+                }
+            }
         }
 
         let type_name = match &resolved {

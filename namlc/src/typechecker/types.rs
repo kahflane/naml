@@ -22,6 +22,12 @@ use lasso::Spur;
 pub type TypeId = u32;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TypeParam {
+    pub name: Spur,
+    pub bounds: Vec<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
     Uint,
@@ -65,7 +71,7 @@ pub struct FunctionType {
 pub struct StructType {
     pub name: Spur,
     pub fields: Vec<FieldType>,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub type_args: Vec<Type>,
 }
 
@@ -80,7 +86,7 @@ pub struct FieldType {
 pub struct EnumType {
     pub name: Spur,
     pub variants: Vec<VariantType>,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub type_args: Vec<Type>,
 }
 
@@ -94,7 +100,7 @@ pub struct VariantType {
 pub struct InterfaceType {
     pub name: Spur,
     pub methods: Vec<MethodType>,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

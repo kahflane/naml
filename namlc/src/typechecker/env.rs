@@ -17,7 +17,13 @@ use std::collections::HashMap;
 
 use lasso::Spur;
 
-use super::types::Type;
+use super::types::{Type, TypeParam};
+
+#[derive(Debug, Clone)]
+pub struct TypeParamBinding {
+    pub bounds: Vec<Type>,
+    pub concrete: Option<Type>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Binding {
@@ -80,6 +86,7 @@ pub struct FunctionContext {
     pub return_ty: Type,
     pub throws: Option<Type>,
     pub is_async: bool,
+    pub type_params: HashMap<Spur, TypeParamBinding>,
 }
 
 #[derive(Debug)]
@@ -158,16 +165,58 @@ impl TypeEnv {
         self.loop_depth > 0
     }
 
-    pub fn enter_function(&mut self, return_ty: Type, throws: Option<Type>, is_async: bool) {
+    pub fn enter_function(
+        &mut self,
+        return_ty: Type,
+        throws: Option<Type>,
+        is_async: bool,
+        type_params: &[TypeParam],
+    ) {
+        let type_param_map = type_params
+            .iter()
+            .map(|tp| {
+                (
+                    tp.name,
+                    TypeParamBinding {
+                        bounds: tp.bounds.clone(),
+                        concrete: None,
+                    },
+                )
+            })
+            .collect();
+
         self.function_stack.push(FunctionContext {
             return_ty,
             throws,
             is_async,
+            type_params: type_param_map,
         });
     }
 
     pub fn exit_function(&mut self) {
         self.function_stack.pop();
+    }
+
+    pub fn get_type_param_bounds(&self, name: Spur) -> Option<&Vec<Type>> {
+        self.function_stack
+            .last()
+            .and_then(|f| f.type_params.get(&name))
+            .map(|b| &b.bounds)
+    }
+
+    pub fn bind_type_param(&mut self, name: Spur, concrete: Type) {
+        if let Some(func) = self.function_stack.last_mut() {
+            if let Some(binding) = func.type_params.get_mut(&name) {
+                binding.concrete = Some(concrete);
+            }
+        }
+    }
+
+    pub fn get_type_param_binding(&self, name: Spur) -> Option<&Type> {
+        self.function_stack
+            .last()
+            .and_then(|f| f.type_params.get(&name))
+            .and_then(|b| b.concrete.as_ref())
     }
 
     pub fn current_function(&self) -> Option<&FunctionContext> {
@@ -268,7 +317,7 @@ mod tests {
         let mut env = TypeEnv::new();
         assert!(!env.is_async());
 
-        env.enter_function(Type::Int, None, true);
+        env.enter_function(Type::Int, None, true, &[]);
         assert!(env.is_async());
         assert_eq!(env.expected_return_type(), Some(&Type::Int));
 

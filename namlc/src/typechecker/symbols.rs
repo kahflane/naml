@@ -16,14 +16,15 @@ use std::collections::HashMap;
 use lasso::Spur;
 
 use super::types::{
-    EnumType, FieldType, FunctionType, InterfaceType, MethodType, StructType, Type, VariantType,
+    EnumType, FieldType, FunctionType, InterfaceType, MethodType, StructType, Type, TypeParam,
+    VariantType,
 };
 use crate::source::Span;
 
 #[derive(Debug, Clone)]
 pub struct FunctionSig {
     pub name: Spur,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
     pub throws: Option<Type>,
@@ -38,7 +39,7 @@ pub struct MethodSig {
     pub name: Spur,
     pub receiver_ty: Type,
     pub receiver_mutable: bool,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
     pub throws: Option<Type>,
@@ -58,7 +59,7 @@ pub enum TypeDef {
 #[derive(Debug, Clone)]
 pub struct StructDef {
     pub name: Spur,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub fields: Vec<(Spur, Type, bool)>,
     pub implements: Vec<Type>,
     pub is_public: bool,
@@ -68,7 +69,7 @@ pub struct StructDef {
 #[derive(Debug, Clone)]
 pub struct EnumDef {
     pub name: Spur,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub variants: Vec<(Spur, Option<Vec<Type>>)>,
     pub is_public: bool,
     pub span: Span,
@@ -77,7 +78,7 @@ pub struct EnumDef {
 #[derive(Debug, Clone)]
 pub struct InterfaceDef {
     pub name: Spur,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub extends: Vec<Type>,
     pub methods: Vec<InterfaceMethodDef>,
     pub is_public: bool,
@@ -87,7 +88,7 @@ pub struct InterfaceDef {
 #[derive(Debug, Clone)]
 pub struct InterfaceMethodDef {
     pub name: Spur,
-    pub type_params: Vec<Spur>,
+    pub type_params: Vec<TypeParam>,
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
     pub throws: Option<Type>,

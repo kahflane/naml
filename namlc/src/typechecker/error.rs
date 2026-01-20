@@ -120,6 +120,20 @@ pub enum TypeError {
     #[error("await outside of async function")]
     AwaitOutsideAsync { span: Span },
 
+    #[error("type '{ty}' does not satisfy bound '{bound}'")]
+    BoundNotSatisfied {
+        ty: String,
+        bound: String,
+        span: Span,
+    },
+
+    #[error("no bound provides method '{method}' for type parameter '{param}'")]
+    NoBoundForMethod {
+        param: String,
+        method: String,
+        span: Span,
+    },
+
     #[error("{message}")]
     Custom { message: String, span: Span },
 }
@@ -149,6 +163,8 @@ impl TypeError {
             TypeError::BreakOutsideLoop { span } => *span,
             TypeError::ContinueOutsideLoop { span } => *span,
             TypeError::AwaitOutsideAsync { span } => *span,
+            TypeError::BoundNotSatisfied { span, .. } => *span,
+            TypeError::NoBoundForMethod { span, .. } => *span,
             TypeError::Custom { span, .. } => *span,
         }
     }

@@ -787,6 +787,22 @@ pub fn flatten<T>(nested: [[T]]) -> [T] {
     return result;
 }
 
+// Generic function with trait bound - uses compare from Comparable
+pub fn max_value<T: Comparable<T>>(a: T, b: T) -> T {
+    if (a.compare(b) > 0) {
+        return a;
+    }
+    return b;
+}
+
+// Generic function with trait bound - uses compare from Comparable
+pub fn min_value<T: Comparable<T>>(a: T, b: T) -> T {
+    if (a.compare(b) < 0) {
+        return a;
+    }
+    return b;
+}
+
 pub fn compose<A, B, C>(f: fn(B) -> C, g: fn(A) -> B) -> fn(A) -> C {
     return |a: A| f(g(a));
 }

@@ -187,6 +187,22 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             format!("not on {}", platform),
             None,
         ),
+        TypeError::BoundNotSatisfied { ty, bound, .. } => (
+            format!("type '{}' does not satisfy bound '{}'", ty, bound),
+            format!("does not implement {}", bound),
+            Some(format!("implement {} for {}", bound, ty)),
+        ),
+        TypeError::NoBoundForMethod { param, method, .. } => (
+            format!(
+                "no bound provides method '{}' for type parameter '{}'",
+                method, param
+            ),
+            format!("method '{}' not found", method),
+            Some(format!(
+                "add a bound like '{}: SomeTrait' that provides '{}'",
+                param, method
+            )),
+        ),
         TypeError::Custom { message, .. } => (
             message.clone(),
             "error".to_string(),

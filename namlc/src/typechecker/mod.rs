@@ -17,6 +17,7 @@
 
 pub mod env;
 pub mod error;
+pub mod generics;
 pub mod infer;
 pub mod symbols;
 pub mod types;
@@ -35,6 +36,7 @@ use symbols::{
     EnumDef, ExceptionDef, FunctionSig, InterfaceDef, InterfaceMethodDef, MethodSig, StructDef,
     SymbolTable, TypeDef,
 };
+use types::TypeParam;
 
 pub struct TypeChecker<'a> {
     symbols: SymbolTable,
@@ -114,7 +116,10 @@ impl<'a> TypeChecker<'a> {
         let type_params = func
             .generics
             .iter()
-            .map(|g| g.name.symbol)
+            .map(|g| TypeParam {
+                name: g.name.symbol,
+                bounds: g.bounds.iter().map(|b| self.convert_type(b)).collect(),
+            })
             .collect();
 
         let params = func
@@ -192,7 +197,10 @@ impl<'a> TypeChecker<'a> {
         let type_params = func
             .generics
             .iter()
-            .map(|g| g.name.symbol)
+            .map(|g| TypeParam {
+                name: g.name.symbol,
+                bounds: g.bounds.iter().map(|b| self.convert_type(b)).collect(),
+            })
             .collect();
 
         let params = func
@@ -234,7 +242,14 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn collect_struct(&mut self, s: &ast::StructItem) {
-        let type_params = s.generics.iter().map(|g| g.name.symbol).collect();
+        let type_params = s
+            .generics
+            .iter()
+            .map(|g| TypeParam {
+                name: g.name.symbol,
+                bounds: g.bounds.iter().map(|b| self.convert_type(b)).collect(),
+            })
+            .collect();
 
         let fields = s
             .fields
@@ -258,7 +273,14 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn collect_enum(&mut self, e: &ast::EnumItem) {
-        let type_params = e.generics.iter().map(|g| g.name.symbol).collect();
+        let type_params = e
+            .generics
+            .iter()
+            .map(|g| TypeParam {
+                name: g.name.symbol,
+                bounds: g.bounds.iter().map(|b| self.convert_type(b)).collect(),
+            })
+            .collect();
 
         let variants = e
             .variants
@@ -285,7 +307,14 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn collect_interface(&mut self, i: &ast::InterfaceItem) {
-        let type_params = i.generics.iter().map(|g| g.name.symbol).collect();
+        let type_params = i
+            .generics
+            .iter()
+            .map(|g| TypeParam {
+                name: g.name.symbol,
+                bounds: g.bounds.iter().map(|b| self.convert_type(b)).collect(),
+            })
+            .collect();
 
         let extends = i.extends.iter().map(|t| self.convert_type(t)).collect();
 
@@ -293,7 +322,14 @@ impl<'a> TypeChecker<'a> {
             .methods
             .iter()
             .map(|m| {
-                let method_type_params = m.generics.iter().map(|g| g.name.symbol).collect();
+                let method_type_params = m
+                    .generics
+                    .iter()
+                    .map(|g| TypeParam {
+                        name: g.name.symbol,
+                        bounds: g.bounds.iter().map(|b| self.convert_type(b)).collect(),
+                    })
+                    .collect();
                 let params = m
                     .params
                     .iter()
@@ -384,7 +420,30 @@ impl<'a> TypeChecker<'a> {
 
         let throws = func.throws.as_ref().map(|t| self.convert_type(t));
 
-        self.env.enter_function(return_ty, throws, func.is_async);
+        // Get type params from the function signature (if it was collected)
+        let type_params = if func.receiver.is_some() {
+            // Method: look up in method signature
+            let recv = func.receiver.as_ref().unwrap();
+            let recv_ty = self.convert_type(&recv.ty);
+            let type_name = match &recv_ty {
+                Type::Generic(name, _) => Some(*name),
+                Type::Struct(s) => Some(s.name),
+                _ => None,
+            };
+            type_name
+                .and_then(|tn| self.symbols.get_method(tn, func.name.symbol))
+                .map(|m| m.type_params.clone())
+                .unwrap_or_default()
+        } else {
+            // Function: look up in function signature
+            self.symbols
+                .get_function(func.name.symbol)
+                .map(|f| f.type_params.clone())
+                .unwrap_or_default()
+        };
+
+        self.env
+            .enter_function(return_ty, throws, func.is_async, &type_params);
         self.env.push_scope();
 
         if let Some(recv) = &func.receiver {
