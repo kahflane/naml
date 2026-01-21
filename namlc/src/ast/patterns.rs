@@ -11,10 +11,10 @@
 /// - WildcardPattern: Match anything (the `_` pattern)
 ///
 /// Design decisions:
-/// - Patterns are Copy-free to avoid allocation overhead
 /// - Each pattern carries its own Span for error reporting
 /// - VariantPattern supports both simple (Active) and destructuring (Suspended(reason)) forms
 /// - The path in VariantPattern allows qualified names like EnumType.Variant
+/// - VariantPattern uses Vec for path and bindings, which allocates on the heap
 ///
 
 use crate::source::{Span, Spanned};
@@ -22,7 +22,7 @@ use super::types::Ident;
 use super::literals::Literal;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Pattern {
+pub enum Pattern<'ast> {
     /// Match a literal value (int, string, etc)
     Literal(LiteralPattern),
     /// Match an identifier (binds or compares)
@@ -31,15 +31,19 @@ pub enum Pattern {
     Variant(VariantPattern),
     /// Wildcard pattern: _
     Wildcard(WildcardPattern),
+    /// PhantomData to use the lifetime (for future extensibility)
+    #[doc(hidden)]
+    _Phantom(std::marker::PhantomData<&'ast ()>),
 }
 
-impl Spanned for Pattern {
+impl<'ast> Spanned for Pattern<'ast> {
     fn span(&self) -> Span {
         match self {
             Pattern::Literal(p) => p.span,
             Pattern::Identifier(p) => p.span,
             Pattern::Variant(p) => p.span,
             Pattern::Wildcard(p) => p.span,
+            Pattern::_Phantom(_) => unreachable!(),
         }
     }
 }

@@ -19,6 +19,7 @@
 use crate::source::{Span, Spanned};
 use super::expressions::{BlockExpr, Expression};
 use super::operators::AssignOp;
+use super::patterns::Pattern;
 use super::types::{Ident, NamlType};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -151,7 +152,7 @@ pub struct SwitchStmt<'ast> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchCase<'ast> {
-    pub pattern: crate::ast::Pattern,
+    pub pattern: Pattern<'ast>,
     pub body: BlockStmt<'ast>,
     pub span: Span,
 }
