@@ -18,11 +18,13 @@ pub mod value;
 pub mod array;
 pub mod scheduler;
 pub mod channel;
+pub mod map;
 
 pub use value::*;
 pub use array::*;
 pub use scheduler::*;
 pub use channel::*;
+pub use map::*;
 
 use std::io::Write;
 
