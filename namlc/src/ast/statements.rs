@@ -151,7 +151,7 @@ pub struct SwitchStmt<'ast> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchCase<'ast> {
-    pub pattern: Expression<'ast>,
+    pub pattern: crate::ast::Pattern,
     pub body: BlockStmt<'ast>,
     pub span: Span,
 }
