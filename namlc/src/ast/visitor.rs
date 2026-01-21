@@ -1,21 +1,21 @@
-///
-/// AST Visitor Pattern
-///
-/// This module provides a visitor trait for traversing the AST. The visitor
-/// pattern allows implementing different operations over the AST without
-/// modifying the AST node types.
-///
-/// Usage:
-/// - Implement the Visitor trait
-/// - Override only the methods you need
-/// - Default implementations call walk_* functions for recursive traversal
-///
-/// Common use cases:
-/// - Type checking: visit expressions and statements to check types
-/// - Code generation: visit items to emit code
-/// - Linting: visit nodes to check for patterns
-/// - Pretty printing: visit nodes to format code
-///
+//!
+//! AST Visitor Pattern
+//!
+//! This module provides a visitor trait for traversing the AST. The visitor
+//! pattern allows implementing different operations over the AST without
+//! modifying the AST node types.
+//!
+//! Usage:
+//! - Implement the Visitor trait
+//! - Override only the methods you need
+//! - Default implementations call walk_* functions for recursive traversal
+//!
+//! Common use cases:
+//! - Type checking: visit expressions and statements to check types
+//! - Code generation: visit items to emit code
+//! - Linting: visit nodes to check for patterns
+//! - Pretty printing: visit nodes to format code
+//!
 
 use super::expressions::*;
 use super::items::*;

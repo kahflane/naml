@@ -1,19 +1,19 @@
-///
-/// Type Inference for Expressions
-///
-/// This module infers types for expressions. Each expression form has
-/// specific typing rules:
-///
-/// - Literals: Type is determined by literal form
-/// - Identifiers: Look up in environment
-/// - Binary/Unary: Check operand types, return result type
-/// - Calls: Unify arguments with parameters, return result type
-/// - Field access: Look up field type on struct
-/// - Index: Check indexable type, return element type
-///
-/// Type variables are created for unknown types and unified during
-/// inference to discover concrete types.
-///
+//!
+//! Type Inference for Expressions
+//!
+//! This module infers types for expressions. Each expression form has
+//! specific typing rules:
+//!
+//! - Literals: Type is determined by literal form
+//! - Identifiers: Look up in environment
+//! - Binary/Unary: Check operand types, return result type
+//! - Calls: Unify arguments with parameters, return result type
+//! - Field access: Look up field type on struct
+//! - Index: Check indexable type, return element type
+//!
+//! Type variables are created for unknown types and unified during
+//! inference to discover concrete types.
+//!
 
 use lasso::Rodeo;
 
@@ -34,7 +34,6 @@ pub struct TypeInferrer<'a> {
     pub next_var_id: &'a mut u32,
     pub errors: &'a mut Vec<TypeError>,
     pub annotations: &'a mut TypeAnnotations,
-    /// Current switch scrutinee type for resolving bare enum variants in case patterns
     pub switch_scrutinee: Option<Type>,
 }
 
@@ -1152,8 +1151,6 @@ impl<'a> TypeInferrer<'a> {
         Type::Array(Box::new(elem_ty.resolve()))
     }
 
-    /// Infer the type of a pattern and bind any variables it introduces.
-    /// Returns the type that the pattern matches.
     pub fn infer_pattern(&mut self, pattern: &Pattern, scrutinee_ty: &Type) -> Type {
         match pattern {
             Pattern::Literal(lit) => {
@@ -1586,21 +1583,16 @@ impl<'a> TypeInferrer<'a> {
         }
     }
 
-    /// Check if this is an int literal being assigned to a uint type (allowed coercion)
     fn is_int_to_uint_coercion(&self, init_ty: &Type, target_ty: &Type, init: &Expression) -> bool {
         let init_resolved = init_ty.resolve();
         let target_resolved = target_ty.resolve();
 
-        // Check if target is uint and init type is int
         if target_resolved != Type::Uint || init_resolved != Type::Int {
             return false;
         }
-
-        // Check if the expression is an integer literal
         matches!(init, Expression::Literal(lit) if matches!(lit.value, Literal::Int(_)))
     }
 
-    /// Coerce int/uint operations: if one operand is uint and the other is an int literal, result is uint
     fn coerce_int_uint(
         &self,
         left_ty: &Type,

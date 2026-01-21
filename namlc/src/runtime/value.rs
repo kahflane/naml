@@ -1,18 +1,18 @@
-///
-/// Runtime Value Representation
-///
-/// naml values at runtime are represented as 64-bit values that can be either:
-/// - Inline primitives (int, float, bool) stored directly
-/// - Heap pointers to reference-counted objects (strings, arrays, structs)
-///
-/// We use NaN-boxing for efficient representation:
-/// - If the high bits indicate NaN, the low bits contain a pointer or tag
-/// - Otherwise, the value is a valid f64
-///
-/// For simplicity in Phase 2, we use a simpler tagged pointer scheme:
-/// - Bit 0: 0 = pointer, 1 = immediate
-/// - For immediates, bits 1-3 encode the type
-///
+//!
+//! Runtime Value Representation
+//!
+//! naml values at runtime are represented as 64-bit values that can be either:
+//! - Inline primitives (int, float, bool) stored directly
+//! - Heap pointers to reference-counted objects (strings, arrays, structs)
+//!
+//! We use NaN-boxing for efficient representation:
+//! - If the high bits indicate NaN, the low bits contain a pointer or tag
+//! - Otherwise, the value is a valid f64
+//!
+//! For simplicity in Phase 2, we use a simpler tagged pointer scheme:
+//! - Bit 0: 0 = pointer, 1 = immediate
+//! - For immediates, bits 1-3 encode the type
+//!
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::alloc::{alloc, dealloc, Layout};

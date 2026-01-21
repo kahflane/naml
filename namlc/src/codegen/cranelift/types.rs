@@ -1,13 +1,13 @@
-///
-/// Type Mappings (naml -> Cranelift)
-///
-/// Maps naml types to Cranelift IR types:
-/// - int -> I64
-/// - uint -> I64
-/// - float -> F64
-/// - bool -> I64 (0 or 1)
-/// - string -> I64 (pointer)
-///
+//!
+//! Type Mappings (naml -> Cranelift)
+//!
+//! Maps naml types to Cranelift IR types:
+//! - int -> I64
+//! - uint -> I64
+//! - float -> F64
+//! - bool -> I64 (0 or 1)
+//! - string -> I64 (pointer)
+//!
 
 use cranelift::prelude::types;
 use cranelift::prelude::Type;

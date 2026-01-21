@@ -1,10 +1,10 @@
-///
-/// Channels for naml
-///
-/// Provides bounded channels for communication between tasks.
-/// Channels are typed at the naml level but at runtime store i64 values
-/// (like all naml values).
-///
+//!
+//! Channels for naml
+//!
+//! Provides bounded channels for communication between tasks.
+//! Channels are typed at the naml level but at runtime store i64 values
+//! (like all naml values).
+//!
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::VecDeque;

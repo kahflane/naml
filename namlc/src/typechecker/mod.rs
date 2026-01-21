@@ -1,19 +1,19 @@
-///
-/// Type Checker Module
-///
-/// This module provides type checking for naml programs. The type checker:
-///
-/// 1. Collects all type and function definitions (first pass)
-/// 2. Validates type definitions and builds the symbol table
-/// 3. Type checks all function bodies and expressions
-/// 4. Reports type errors with source locations
-///
-/// The type checker uses Hindley-Milner style type inference with
-/// unification. Type variables are created for unknown types and bound
-/// during inference.
-///
-/// Entry point: `check()` function takes an AST and returns errors
-///
+//!
+//! Type Checker Module
+//!
+//! This module provides type checking for naml programs. The type checker:
+//!
+//! 1. Collects all type and function definitions (first pass)
+//! 2. Validates type definitions and builds the symbol table
+//! 3. Type checks all function bodies and expressions
+//! 4. Reports type errors with source locations
+//!
+//! The type checker uses Hindley-Milner style type inference with
+//! unification. Type variables are created for unknown types and bound
+//! during inference.
+//!
+//! Entry point: `check()` function takes an AST and returns errors
+//!
 
 pub mod env;
 pub mod error;

@@ -1,8 +1,8 @@
-///
-/// Statement Parser
-///
-/// Parses statements using nom combinators.
-///
+//!
+//! Statement Parser
+//!
+//! Parses statements using nom combinators.
+//!
 
 use nom::InputTake;
 

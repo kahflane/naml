@@ -1,21 +1,21 @@
-///
-/// Typed AST Annotations
-///
-/// This module provides a structure to store resolved type information for
-/// expressions during type checking. The TypeAnnotations map allows the code
-/// generator to look up the type of any expression by its source span.
-///
-/// Design decisions:
-/// - Uses Span as key (Copy, Hash) for zero-copy lookup without AST modification
-/// - Stores resolved types (TypeVar bindings followed) for codegen use
-/// - Tracks additional metadata like lvalue status and clone requirements
-/// - Separate from AST to maintain clean separation between parse and check phases
-///
-/// Usage flow:
-/// 1. TypeInferrer records annotations during inference via annotate()
-/// 2. TypeChecker returns TypeAnnotations alongside errors
-/// 3. Codegen uses get_type() and needs_clone() for type-aware generation
-///
+//!
+//! Typed AST Annotations
+//!
+//! This module provides a structure to store resolved type information for
+//! expressions during type checking. The TypeAnnotations map allows the code
+//! generator to look up the type of any expression by its source span.
+//!
+//! Design decisions:
+//! - Uses Span as key (Copy, Hash) for zero-copy lookup without AST modification
+//! - Stores resolved types (TypeVar bindings followed) for codegen use
+//! - Tracks additional metadata like lvalue status and clone requirements
+//! - Separate from AST to maintain clean separation between parse and check phases
+//!
+//! Usage flow:
+//! 1. TypeInferrer records annotations during inference via annotate()
+//! 2. TypeChecker returns TypeAnnotations alongside errors
+//! 3. Codegen uses get_type() and needs_clone() for type-aware generation
+//!
 
 use std::collections::HashMap;
 

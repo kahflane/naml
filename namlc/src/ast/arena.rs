@@ -1,24 +1,24 @@
-///
-/// AST Arena Allocator
-///
-/// This module provides bump allocation for AST nodes, significantly reducing
-/// allocation overhead during parsing. Instead of individual Box<T> allocations
-/// for each expression node, all AST nodes are allocated from a single arena.
-///
-/// Key benefits:
-/// - Reduced allocator pressure (single large allocation vs many small ones)
-/// - Better cache locality (nodes allocated sequentially in memory)
-/// - Faster deallocation (drop entire arena at once)
-/// - No individual Box overhead per node
-///
-/// Usage:
-/// ```ignore
-/// let arena = AstArena::new();
-/// let left = arena.alloc(expr1);
-/// let right = arena.alloc(expr2);
-/// // left and right are &'arena Expression references
-/// ```
-///
+//!
+//! AST Arena Allocator
+//!
+//! This module provides bump allocation for AST nodes, significantly reducing
+//! allocation overhead during parsing. Instead of individual Box<T> allocations
+//! for each expression node, all AST nodes are allocated from a single arena.
+//!
+//! Key benefits:
+//! - Reduced allocator pressure (single large allocation vs many small ones)
+//! - Better cache locality (nodes allocated sequentially in memory)
+//! - Faster deallocation (drop entire arena at once)
+//! - No individual Box overhead per node
+//!
+//! Usage:
+//! ```ignore
+//! let arena = AstArena::new();
+//! let left = arena.alloc(expr1);
+//! let right = arena.alloc(expr2);
+//! // left and right are &'arena Expression references
+//! ```
+//!
 
 use bumpalo::Bump;
 

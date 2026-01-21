@@ -1,9 +1,9 @@
-///
-/// Map Runtime
-///
-/// Hash map implementation for naml map<K, V> type.
-/// Uses string keys with FNV-1a hashing and linear probing.
-///
+//!
+//! Map Runtime
+//!
+//! Hash map implementation for naml map<K, V> type.
+//! Uses string keys with FNV-1a hashing and linear probing.
+//!
 
 use std::alloc::{alloc, alloc_zeroed, dealloc, Layout};
 use super::value::{HeapHeader, HeapTag, NamlString, naml_string_decref};

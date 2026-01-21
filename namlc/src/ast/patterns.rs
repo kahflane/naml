@@ -1,21 +1,21 @@
-///
-/// Pattern AST Nodes
-///
-/// Patterns are used in switch cases and destructuring bindings.
-/// They can match literals, enum variants, and bind variables.
-///
-/// Key pattern types:
-/// - LiteralPattern: Match a literal value (int, string, etc.)
-/// - IdentPattern: Match an identifier (binds or compares)
-/// - VariantPattern: Match an enum variant with optional bindings
-/// - WildcardPattern: Match anything (the `_` pattern)
-///
-/// Design decisions:
-/// - Each pattern carries its own Span for error reporting
-/// - VariantPattern supports both simple (Active) and destructuring (Suspended(reason)) forms
-/// - The path in VariantPattern allows qualified names like EnumType.Variant
-/// - VariantPattern uses Vec for path and bindings, which allocates on the heap
-///
+//!
+//! Pattern AST Nodes
+//!
+//! Patterns are used in switch cases and destructuring bindings.
+//! They can match literals, enum variants, and bind variables.
+//!
+//! Key pattern types:
+//! - LiteralPattern: Match a literal value (int, string, etc.)
+//! - IdentPattern: Match an identifier (binds or compares)
+//! - VariantPattern: Match an enum variant with optional bindings
+//! - WildcardPattern: Match anything (the `_` pattern)
+//!
+//! Design decisions:
+//! - Each pattern carries its own Span for error reporting
+//! - VariantPattern supports both simple (Active) and destructuring (Suspended(reason)) forms
+//! - The path in VariantPattern allows qualified names like EnumType.Variant
+//! - VariantPattern uses Vec for path and bindings, which allocates on the heap
+//!
 
 use crate::source::{Span, Spanned};
 use super::types::Ident;
@@ -23,15 +23,10 @@ use super::literals::Literal;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern<'ast> {
-    /// Match a literal value (int, string, etc)
     Literal(LiteralPattern),
-    /// Match an identifier (binds or compares)
     Identifier(IdentPattern),
-    /// Match an enum variant: Variant or Variant(a, b)
     Variant(VariantPattern),
-    /// Wildcard pattern: _
     Wildcard(WildcardPattern),
-    /// PhantomData to use the lifetime (for future extensibility)
     #[doc(hidden)]
     _Phantom(std::marker::PhantomData<&'ast ()>),
 }
@@ -62,9 +57,7 @@ pub struct IdentPattern {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VariantPattern {
-    /// The enum type path: e.g., [UserStatus, Suspended]
     pub path: Vec<Ident>,
-    /// Bindings for variant data: (reason) binds `reason`
     pub bindings: Vec<Ident>,
     pub span: Span,
 }

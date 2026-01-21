@@ -1,19 +1,19 @@
-///
-/// Parser Module - nom-based Token Parsing
-///
-/// This module provides the parser for the naml programming language.
-/// It uses nom parser combinators to parse a stream of tokens into an AST.
-///
-/// The parser is structured as follows:
-/// - input: TokenStream type for nom integration
-/// - combinators: Reusable token-matching combinators
-/// - types: Type annotation parsing
-/// - expressions: Expression parsing with Pratt precedence
-/// - statements: Statement parsing
-/// - items: Top-level item parsing
-///
-/// Entry point: parse() function takes tokens and returns a SourceFile AST.
-///
+//!
+//! Parser Module - nom-based Token Parsing
+//!
+//! This module provides the parser for the naml programming language.
+//! It uses nom parser combinators to parse a stream of tokens into an AST.
+//!
+//! The parser is structured as follows:
+//! - input: TokenStream type for nom integration
+//! - combinators: Reusable token-matching combinators
+//! - types: Type annotation parsing
+//! - expressions: Expression parsing with Pratt precedence
+//! - statements: Statement parsing
+//! - items: Top-level item parsing
+//!
+//! Entry point: parse() function takes tokens and returns a SourceFile AST.
+//!
 
 mod combinators;
 mod expressions;

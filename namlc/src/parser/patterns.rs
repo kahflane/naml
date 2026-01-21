@@ -1,22 +1,22 @@
-///
-/// Pattern Parser
-///
-/// Parses patterns for switch cases and destructuring.
-/// Supports: literals, identifiers, enum variants with bindings, wildcards.
-///
-/// Pattern types:
-/// - Literal: Match against a literal value (int, float, string, bool, none)
-/// - Identifier: Bind a value to a name or match against a constant
-/// - Variant: Match an enum variant, optionally with bindings (e.g., Some(x))
-/// - Wildcard: Match anything and discard (_)
-///
-/// The parser determines pattern type by examining the token:
-/// - An identifier "_" is the wildcard pattern
-/// - An identifier followed by :: is a path (enum variant)
-/// - An identifier followed by ( is a variant pattern with bindings
-/// - Other identifiers are identifier patterns (bindings or constants)
-/// - Literals (int, float, string, true/false, none) become literal patterns
-///
+//!
+//! Pattern Parser
+//!
+//! Parses patterns for switch cases and destructuring.
+//! Supports: literals, identifiers, enum variants with bindings, wildcards.
+//!
+//! Pattern types:
+//! - Literal: Match against a literal value (int, float, string, bool, none)
+//! - Identifier: Bind a value to a name or match against a constant
+//! - Variant: Match an enum variant, optionally with bindings (e.g., Some(x))
+//! - Wildcard: Match anything and discard (_)
+//!
+//! The parser determines pattern type by examining the token:
+//! - An identifier "_" is the wildcard pattern
+//! - An identifier followed by :: is a path (enum variant)
+//! - An identifier followed by ( is a variant pattern with bindings
+//! - Other identifiers are identifier patterns (bindings or constants)
+//! - Literals (int, float, string, true/false, none) become literal patterns
+//!
 
 use nom::InputTake;
 

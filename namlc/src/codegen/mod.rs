@@ -1,14 +1,14 @@
-///
-/// Code Generation Module
-///
-/// This module handles JIT compilation of naml AST using Cranelift.
-/// The generated machine code is executed directly without transpilation.
-///
-/// Pipeline:
-/// 1. Convert AST to Cranelift IR
-/// 2. JIT compile to native machine code
-/// 3. Execute directly
-///
+//!
+//! Code Generation Module
+//!
+//! This module handles JIT compilation of naml AST using Cranelift.
+//! The generated machine code is executed directly without transpilation.
+//!
+//! Pipeline:
+//! 1. Convert AST to Cranelift IR
+//! 2. JIT compile to native machine code
+//! 3. Execute directly
+//!
 
 pub mod cranelift;
 

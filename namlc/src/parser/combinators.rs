@@ -1,8 +1,8 @@
-///
-/// Base Combinators for Token Parsing
-///
-/// Reusable nom combinators for matching tokens, keywords, and identifiers.
-///
+//!
+//! Base Combinators for Token Parsing
+//!
+//! Reusable nom combinators for matching tokens, keywords, and identifiers.
+//!
 
 use nom::error::{ErrorKind, ParseError};
 use nom::{IResult, InputTake};

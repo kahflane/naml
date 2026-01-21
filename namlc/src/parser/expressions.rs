@@ -1,9 +1,9 @@
-///
-/// Expression Parser
-///
-/// Parses expressions using nom combinators with Pratt-style precedence.
-/// Uses arena allocation for all nested expression nodes.
-///
+//!
+//! Expression Parser
+//!
+//! Parses expressions using nom combinators with Pratt-style precedence.
+//! Uses arena allocation for all nested expression nodes.
+//!
 
 use nom::branch::alt;
 use nom::combinator::map;

@@ -1,10 +1,10 @@
-///
-/// Runtime Array Operations
-///
-/// Provides heap-allocated, reference-counted arrays for naml.
-/// Arrays are generic over element type at the naml level, but at runtime
-/// we store elements as 64-bit values (either primitives or pointers).
-///
+//!
+//! Runtime Array Operations
+//!
+//! Provides heap-allocated, reference-counted arrays for naml.
+//! Arrays are generic over element type at the naml level, but at runtime
+//! we store elements as 64-bit values (either primitives or pointers).
+//!
 
 use std::alloc::{alloc, dealloc, realloc, Layout};
 

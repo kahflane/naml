@@ -1,16 +1,16 @@
-///
-/// Generics Module - Type Substitution and Bound Checking
-///
-/// This module handles generic type operations:
-///
-/// - Building substitution maps from type params to concrete types
-/// - Finding methods on type parameters by checking their bounds
-/// - Instantiating generic functions with fresh type variables
-/// - Checking that concrete types satisfy their bounds
-///
-/// These operations enable proper generic type inference and trait method
-/// resolution for code like `T: Comparable<T>` where `T.compare()` is called.
-///
+//!
+//! Generics Module - Type Substitution and Bound Checking
+//!
+//! This module handles generic type operations:
+//!
+//! - Building substitution maps from type params to concrete types
+//! - Finding methods on type parameters by checking their bounds
+//! - Instantiating generic functions with fresh type variables
+//! - Checking that concrete types satisfy their bounds
+//!
+//! These operations enable proper generic type inference and trait method
+//! resolution for code like `T: Comparable<T>` where `T.compare()` is called.
+//!
 
 use std::collections::HashMap;
 

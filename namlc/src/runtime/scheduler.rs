@@ -1,14 +1,14 @@
-///
-/// M:N Task Scheduler for naml
-///
-/// Implements an M:N threading model where M user-space tasks (goroutines)
-/// are multiplexed onto N OS threads. Features:
-///
-/// - Thread pool with configurable worker count (defaults to CPU cores)
-/// - Work-stealing queue for load balancing
-/// - Closure support for captured variables
-/// - Efficient task scheduling
-///
+//!
+//! M:N Task Scheduler for naml
+//!
+//! Implements an M:N threading model where M user-space tasks (goroutines)
+//! are multiplexed onto N OS threads. Features:
+//!
+//! - Thread pool with configurable worker count (defaults to CPU cores)
+//! - Work-stealing queue for load balancing
+//! - Closure support for captured variables
+//! - Efficient task scheduling
+//!
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::VecDeque;

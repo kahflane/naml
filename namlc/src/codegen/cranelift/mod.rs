@@ -1,10 +1,10 @@
-///
-/// Cranelift JIT Compiler
-///
-/// Compiles naml AST directly to machine code using Cranelift.
-/// This eliminates the Rust transpilation step and gives full control
-/// over memory management and runtime semantics.
-///
+//!
+//! Cranelift JIT Compiler
+//!
+//! Compiles naml AST directly to machine code using Cranelift.
+//! This eliminates the Rust transpilation step and gives full control
+//! over memory management and runtime semantics.
+//!
 
 mod types;
 
@@ -23,21 +23,17 @@ use crate::codegen::CodegenError;
 use crate::source::Spanned;
 use crate::typechecker::{SymbolTable, Type, TypeAnnotations};
 
-/// Struct definition with type_id, field names, and field heap types for cleanup
 #[derive(Clone)]
 pub struct StructDef {
     pub type_id: u32,
     pub fields: Vec<String>,
-    /// Heap type for each field (None if primitive), used for nested cleanup
     pub(crate) field_heap_types: Vec<Option<HeapType>>,
 }
 
-/// Enum definition with variant info for codegen
 #[derive(Clone)]
 pub struct EnumDef {
     pub name: String,
     pub variants: Vec<EnumVariantDef>,
-    /// Size in bytes (8 + max_data_size, aligned)
     pub size: usize,
 }
 
@@ -45,13 +41,10 @@ pub struct EnumDef {
 pub struct EnumVariantDef {
     pub name: String,
     pub tag: u32,
-    /// Types of data fields (empty for unit variants)
     pub field_types: Vec<crate::ast::NamlType>,
-    /// Offset of data within enum (always 8 for now)
     pub data_offset: usize,
 }
 
-/// External function declaration info
 #[derive(Clone)]
 pub struct ExternFn {
     pub link_name: String,
@@ -59,18 +52,14 @@ pub struct ExternFn {
     pub return_type: Option<crate::ast::NamlType>,
 }
 
-/// Information about a spawn block for closure compilation
 #[derive(Clone)]
 pub struct SpawnBlockInfo {
     pub id: u32,
     pub func_name: String,
     pub captured_vars: Vec<String>,
-    /// Raw pointer to the spawn block body for deferred compilation
-    /// Safety: Only valid during the same compile() call
     pub body_ptr: *const crate::ast::BlockExpr<'static>,
 }
 
-/// Explicitly implement Send since body_ptr is only used within compile()
 unsafe impl Send for SpawnBlockInfo {}
 
 pub struct JitCompiler<'a> {
@@ -330,10 +319,6 @@ impl<'a> JitCompiler<'a> {
         Ok(())
     }
 
-    /// Generate per-struct decref functions for structs that have heap-allocated fields.
-    /// These functions decrement the struct's refcount, and if it reaches zero, they:
-    /// 1. Decref each heap-allocated field
-    /// 2. Free the struct memory
     fn generate_struct_decref_functions(&mut self) -> Result<(), CodegenError> {
         // Collect structs that need specialized decref functions
         let structs_with_heap_fields: Vec<(String, StructDef)> = self.struct_defs.iter()
@@ -348,7 +333,6 @@ impl<'a> JitCompiler<'a> {
         Ok(())
     }
 
-    /// Generate a specialized decref function for a single struct type
     fn generate_struct_decref(&mut self, struct_name: &str, struct_def: &StructDef) -> Result<(), CodegenError> {
         let ptr_type = self.module.target_config().pointer_type();
         let func_name = format!("naml_struct_decref_{}", struct_name);
@@ -1008,26 +992,19 @@ impl<'a> JitCompiler<'a> {
     }
 }
 
-/// Types of heap-allocated objects that need cleanup
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum HeapType {
     String,
-    /// Array with optional element heap type for nested cleanup
     Array(Option<Box<HeapType>>),
-    /// Map with optional value heap type for nested cleanup
     Map(Option<Box<HeapType>>),
-    /// Struct with optional type name for specialized decref (when it has heap fields)
     Struct(Option<String>),
 }
 
-/// Determine if an AST type is heap-allocated and return its HeapType
-/// String variables now always hold NamlString* pointers (string literals are boxed at assignment)
 fn get_heap_type(naml_ty: &crate::ast::NamlType) -> Option<HeapType> {
     use crate::ast::NamlType;
     match naml_ty {
         NamlType::String => Some(HeapType::String),
         NamlType::Array(elem_ty) => {
-            // Get the element's heap type for nested cleanup
             let elem_heap_type = get_heap_type(elem_ty).map(Box::new);
             Some(HeapType::Array(elem_heap_type))
         }
@@ -1036,17 +1013,15 @@ fn get_heap_type(naml_ty: &crate::ast::NamlType) -> Option<HeapType> {
             Some(HeapType::Array(elem_heap_type))
         }
         NamlType::Map(_, val_ty) => {
-            // Get the value's heap type for nested cleanup (keys are always strings)
             let val_heap_type = get_heap_type(val_ty).map(Box::new);
             Some(HeapType::Map(val_heap_type))
         }
         NamlType::Named(_) => Some(HeapType::Struct(None)),
         NamlType::Generic(_, _) => Some(HeapType::Struct(None)),
-        _ => None, // Primitives don't need cleanup
+        _ => None,
     }
 }
 
-/// Determine heap type from typechecker Type (for future use with type inference)
 #[allow(dead_code)]
 fn get_heap_type_from_type(ty: &Type) -> Option<HeapType> {
     match ty {
@@ -1077,16 +1052,13 @@ struct CompileContext<'a> {
     enum_defs: &'a HashMap<String, EnumDef>,
     extern_fns: &'a HashMap<String, ExternFn>,
     variables: HashMap<String, Variable>,
-    /// Track which variables hold heap-allocated objects for cleanup
     var_heap_types: HashMap<String, HeapType>,
     var_counter: usize,
     block_terminated: bool,
     loop_exit_block: Option<Block>,
     loop_header_block: Option<Block>,
     spawn_blocks: &'a HashMap<u32, SpawnBlockInfo>,
-    /// Counter for tracking which spawn block we're currently at
     current_spawn_id: u32,
-    /// Type annotations from type checker for type-aware codegen
     annotations: &'a TypeAnnotations,
 }
 
@@ -1540,7 +1512,6 @@ fn compile_statement(
     Ok(())
 }
 
-/// Compile a pattern match, returning a boolean value indicating if the pattern matches.
 fn compile_pattern_match(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -1556,22 +1527,14 @@ fn compile_pattern_match(
         }
 
         Pattern::Identifier(ident) => {
-            // Check if this is an enum variant name by checking switch_scrutinee context
-            // For now, identifier patterns always match (they bind the value)
-            // If it's a bare variant name, we need to compare tags
             let name = ctx.interner.resolve(&ident.ident.symbol).to_string();
-
-            // Check all enum definitions for a matching variant
             for enum_def in ctx.enum_defs.values() {
                 if let Some(variant) = enum_def.variants.iter().find(|v| v.name == name) {
-                    // This is a variant name - compare tags
                     let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), scrutinee, 0);
                     let expected_tag = builder.ins().iconst(cranelift::prelude::types::I32, variant.tag as i64);
                     return Ok(builder.ins().icmp(IntCC::Equal, tag, expected_tag));
                 }
             }
-
-            // Not a variant name - identifier pattern always matches (it's a binding)
             Ok(builder.ins().iconst(cranelift::prelude::types::I8, 1))
         }
 
@@ -1579,13 +1542,8 @@ fn compile_pattern_match(
             if variant.path.is_empty() {
                 return Err(CodegenError::JitCompile("Empty variant path".to_string()));
             }
-
-            // Handle both bare variant (Active) and qualified (Status::Active)
             let (enum_name, variant_name) = if variant.path.len() == 1 {
-                // Bare variant - need to find the enum from context
                 let var_name = ctx.interner.resolve(&variant.path[0].symbol).to_string();
-
-                // Search all enum definitions for this variant
                 let mut found = None;
                 for (e_name, enum_def) in ctx.enum_defs.iter() {
                     if enum_def.variants.iter().any(|v| v.name == var_name) {
@@ -1610,7 +1568,6 @@ fn compile_pattern_match(
 
             if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
                 if let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
-                    // Get enum tag from scrutinee (scrutinee is pointer to enum)
                     let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), scrutinee, 0);
                     let expected_tag = builder.ins().iconst(cranelift::prelude::types::I32, var_def.tag as i64);
                     return Ok(builder.ins().icmp(IntCC::Equal, tag, expected_tag));
@@ -1624,7 +1581,6 @@ fn compile_pattern_match(
         }
 
         Pattern::Wildcard(_) => {
-            // Wildcard always matches
             Ok(builder.ins().iconst(cranelift::prelude::types::I8, 1))
         }
 
@@ -1634,7 +1590,6 @@ fn compile_pattern_match(
     }
 }
 
-/// Bind pattern variables to the matched value.
 fn bind_pattern_vars(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -2274,7 +2229,6 @@ fn compile_print_call(
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
 }
 
-/// Emit incref call for a heap-allocated value
 fn emit_incref(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -2285,7 +2239,6 @@ fn emit_incref(
     let mut sig = ctx.module.make_signature();
     sig.params.push(AbiParam::new(ptr_type));
 
-    // Incref functions are the same regardless of element type
     let func_name = match heap_type {
         HeapType::String => "naml_string_incref",
         HeapType::Array(_) => "naml_array_incref",
@@ -2298,8 +2251,6 @@ fn emit_incref(
         .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
 
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
-
-    // Only call incref if value is non-null
     let zero = builder.ins().iconst(ptr_type, 0);
     let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
 
@@ -2319,7 +2270,6 @@ fn emit_incref(
     Ok(())
 }
 
-/// Check if a struct has any heap-allocated fields
 fn struct_has_heap_fields(struct_defs: &HashMap<String, StructDef>, struct_name: &str) -> bool {
     if let Some(def) = struct_defs.get(struct_name) {
         def.field_heap_types.iter().any(|ht| ht.is_some())
@@ -2328,8 +2278,6 @@ fn struct_has_heap_fields(struct_defs: &HashMap<String, StructDef>, struct_name:
     }
 }
 
-/// Emit decref call for a heap-allocated value
-/// Uses specialized decref functions for arrays/maps/structs to handle nested cleanup
 fn emit_decref(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -2379,8 +2327,6 @@ fn emit_decref(
         .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
 
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
-
-    // Only call decref if value is non-null
     let zero = builder.ins().iconst(ptr_type, 0);
     let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
 
@@ -2400,8 +2346,6 @@ fn emit_decref(
     Ok(())
 }
 
-/// Emit cleanup for all tracked heap variables, optionally excluding one variable
-/// The excluded variable is typically the return value that transfers ownership to caller
 fn emit_cleanup_all_vars(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -2429,7 +2373,6 @@ fn emit_cleanup_all_vars(
     Ok(())
 }
 
-/// Helper to extract variable name from a simple identifier expression
 fn get_returned_var_name(expr: &Expression, interner: &Rodeo) -> Option<String> {
     match expr {
         Expression::Identifier(ident) => {

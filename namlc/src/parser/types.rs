@@ -1,9 +1,9 @@
-///
-/// Type Annotation Parser
-///
-/// Parses type annotations using nom combinators.
-/// Supports primitives, arrays, generics, tuples, and function types.
-///
+//!
+//! Type Annotation Parser
+//!
+//! Parses type annotations using nom combinators.
+//! Supports primitives, arrays, generics, tuples, and function types.
+//!
 
 use nom::branch::alt;
 use nom::combinator::{map, opt};

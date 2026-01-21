@@ -1,18 +1,18 @@
-///
-/// naml Runtime
-///
-/// This module provides the runtime support for naml programs compiled with
-/// Cranelift JIT. It includes:
-///
-/// - Value representation (tagged union for dynamic typing at runtime boundaries)
-/// - Reference-counted memory management
-/// - Array operations
-/// - String operations
-/// - Struct field access
-///
-/// Design: All heap objects use atomic reference counting for thread safety.
-/// Values are passed as 64-bit tagged pointers or inline primitives.
-///
+//!
+//! naml Runtime
+//!
+//! This module provides the runtime support for naml programs compiled with
+//! Cranelift JIT. It includes:
+//!
+//! - Value representation (tagged union for dynamic typing at runtime boundaries)
+//! - Reference-counted memory management
+//! - Array operations
+//! - String operations
+//! - Struct field access
+//!
+//! Design: All heap objects use atomic reference counting for thread safety.
+//! Values are passed as 64-bit tagged pointers or inline primitives.
+//!
 
 pub mod value;
 pub mod array;

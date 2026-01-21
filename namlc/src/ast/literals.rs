@@ -1,15 +1,15 @@
-///
-/// Literal Value Definitions
-///
-/// This module defines literal values that can appear in naml source code.
-/// Literals are the atomic values like numbers, strings, and booleans.
-///
-/// Design decisions:
-/// - No Nil literal - use option<T> with None instead
-/// - String content is interned via Spur for zero-allocation
-/// - Bytes stored as Vec<u8> for raw byte data
-/// - Separate Int (signed) and UInt (unsigned) for type safety
-///
+//!
+//! Literal Value Definitions
+//!
+//! This module defines literal values that can appear in naml source code.
+//! Literals are the atomic values like numbers, strings, and booleans.
+//!
+//! Design decisions:
+//! - No Nil literal - use option<T> with None instead
+//! - String content is interned via Spur for zero-allocation
+//! - Bytes stored as Vec<u8> for raw byte data
+//! - Separate Int (signed) and UInt (unsigned) for type safety
+//!
 
 use lasso::Spur;
 

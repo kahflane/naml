@@ -1,12 +1,12 @@
-///
-/// naml CLI - The naml programming language command-line interface
-///
-/// Provides commands for running, building, and checking naml code:
-/// - naml run <file>: Transpile to Rust and execute
-/// - naml build: Compile to native binary or WASM
-/// - naml check: Type check without building
-/// - naml init: Create a new project
-///
+//!
+//! naml CLI - The naml programming language command-line interface
+//!
+//! Provides commands for running, building, and checking naml code:
+//! - naml run <file>: Transpile to Rust and execute
+//! - naml build: Compile to native binary or WASM
+//! - naml check: Type check without building
+//! - naml init: Create a new project
+//!
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -23,42 +23,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Execute a naml file (transpile to Rust and run)
     Run {
-        /// The file to run
         file: PathBuf,
-
-        /// Use cached compilation for faster startup
         #[arg(long)]
         cached: bool,
     },
-
-    /// Build a naml project
     Build {
-        /// Target platform (native, server, browser)
         #[arg(long, default_value = "native")]
         target: String,
-
-        /// Build in release mode
         #[arg(long)]
         release: bool,
     },
-
-    /// Type check without building
     Check {
-        /// File or directory to check
         path: Option<PathBuf>,
     },
-
-    /// Initialize a new naml project
     Init {
-        /// Project name
         name: Option<String>,
     },
-
-    /// Run tests
     Test {
-        /// Filter tests by name
         filter: Option<String>,
     },
 }

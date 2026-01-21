@@ -1,17 +1,17 @@
-///
-/// Type Environment - Scope Management
-///
-/// This module manages the type environment during type checking. It tracks:
-///
-/// - Variable bindings and their types in nested scopes
-/// - Whether variables are mutable
-/// - The current function's return type (for return statement checking)
-/// - Loop nesting (for break/continue validation)
-/// - Async context (for await validation)
-///
-/// Scopes are managed as a stack, pushed when entering blocks and popped
-/// when leaving them.
-///
+//!
+//! Type Environment - Scope Management
+//!
+//! This module manages the type environment during type checking. It tracks:
+//!
+//! - Variable bindings and their types in nested scopes
+//! - Whether variables are mutable
+//! - The current function's return type (for return statement checking)
+//! - Loop nesting (for break/continue validation)
+//! - Async context (for await validation)
+//!
+//! Scopes are managed as a stack, pushed when entering blocks and popped
+//! when leaving them.
+//!
 
 use std::collections::HashMap;
 

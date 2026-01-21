@@ -1,14 +1,14 @@
-///
-/// Diagnostic Module - Rich Error Reporting
-///
-/// This module provides error reporting with source context using miette.
-/// Errors display line numbers, column positions, and source code snippets.
-///
-/// Usage:
-///   let reporter = DiagnosticReporter::new(&source_file);
-///   reporter.report_parse_errors(&errors);
-///   reporter.report_type_errors(&errors);
-///
+//!
+//! Diagnostic Module - Rich Error Reporting
+//!
+//! This module provides error reporting with source context using miette.
+//! Errors display line numbers, column positions, and source code snippets.
+//!
+//! Usage:
+//!   let reporter = DiagnosticReporter::new(&source_file);
+//!   reporter.report_parse_errors(&errors);
+//!   reporter.report_type_errors(&errors);
+//!
 
 use miette::{Diagnostic, LabeledSpan, NamedSource, Report, SourceSpan};
 use thiserror::Error;

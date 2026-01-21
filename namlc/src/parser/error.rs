@@ -1,16 +1,16 @@
-///
-/// Parser Error Types
-///
-/// This module defines error types for the parser. Errors carry source
-/// location information (Span) for precise error reporting.
-///
-/// Error categories:
-/// - Expected: A specific token or construct was expected but not found
-/// - Unexpected: An unexpected token was encountered
-/// - InvalidSyntax: The syntax is malformed
-///
-/// Errors integrate with miette for rich error display.
-///
+//!
+//! Parser Error Types
+//!
+//! This module defines error types for the parser. Errors carry source
+//! location information (Span) for precise error reporting.
+//!
+//! Error categories:
+//! - Expected: A specific token or construct was expected but not found
+//! - Unexpected: An unexpected token was encountered
+//! - InvalidSyntax: The syntax is malformed
+//!
+//! Errors integrate with miette for rich error display.
+//!
 
 use crate::lexer::{Keyword, TokenKind};
 use crate::source::Span;
