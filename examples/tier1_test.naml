@@ -1,0 +1,427 @@
+///
+/// Tier 1 Integration Test
+///
+/// Tests the core features implemented in Tier 1:
+/// - Enums with unit variants
+/// - Enum pattern matching with switch
+/// - Option type (some, none, is_some, is_none, or_default)
+/// - Maps (creation, indexing, assignment)
+/// - Structs (definition, instantiation, field access)
+/// - Arrays (creation, len, iteration with for)
+/// - Control flow (if, while, for)
+///
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Priority {
+    Low,
+    Medium,
+    High,
+    Critical
+}
+
+struct Point {
+    x: int,
+    y: int
+}
+
+struct Rectangle {
+    width: int,
+    height: int
+}
+
+fn test_enums() {
+    println("=== Enum Tests ===");
+
+    var c1: Color = Color::Red;
+    var c2: Color = Color::Green;
+    var c3: Color = Color::Blue;
+
+    print("Testing Color::Red: ");
+    switch (c1) {
+        case Red: {
+            println("PASS - Red");
+        }
+        case Green: {
+            println("FAIL");
+        }
+        case Blue: {
+            println("FAIL");
+        }
+    }
+
+    print("Testing Color::Green: ");
+    switch (c2) {
+        case Red: {
+            println("FAIL");
+        }
+        case Green: {
+            println("PASS - Green");
+        }
+        case Blue: {
+            println("FAIL");
+        }
+    }
+
+    print("Testing Color::Blue: ");
+    switch (c3) {
+        case Red: {
+            println("FAIL");
+        }
+        case Green: {
+            println("FAIL");
+        }
+        case Blue: {
+            println("PASS - Blue");
+        }
+    }
+
+    var p: Priority = Priority::High;
+    print("Testing Priority with default: ");
+    switch (p) {
+        case Low: {
+            println("FAIL");
+        }
+        case High: {
+            println("PASS - High");
+        }
+        default: {
+            println("FAIL - default");
+        }
+    }
+
+    var p2: Priority = Priority::Medium;
+    print("Testing default branch: ");
+    switch (p2) {
+        case Low: {
+            println("FAIL");
+        }
+        case High: {
+            println("FAIL");
+        }
+        default: {
+            println("PASS - default matched Medium");
+        }
+    }
+}
+
+fn test_options() {
+    println("=== Option Tests ===");
+
+    var opt_some: option<int> = some(42);
+    var opt_none: option<int> = none;
+
+    print("Testing is_some on some(42): ");
+    if (opt_some.is_some()) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing is_none on none: ");
+    if (opt_none.is_none()) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing or_default on some(42): ");
+    var val1: int = opt_some.or_default(0);
+    if (val1 == 42) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing or_default on none with default 100: ");
+    var val2: int = opt_none.or_default(100);
+    if (val2 == 100) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing is_none on some: ");
+    if (opt_some.is_none()) {
+        println("FAIL");
+    } else {
+        println("PASS");
+    }
+
+    print("Testing is_some on none: ");
+    if (opt_none.is_some()) {
+        println("FAIL");
+    } else {
+        println("PASS");
+    }
+
+    var opt_point: option<Point> = some(Point { x: 10, y: 20 });
+    print("Testing option<struct>: ");
+    if (opt_point.is_some()) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+}
+
+fn test_maps() {
+    println("=== Map Tests ===");
+
+    var scores: map<string, int> = {};
+    scores["alice"] = 100;
+    scores["bob"] = 85;
+    scores["charlie"] = 92;
+
+    print("Testing map set and get alice: ");
+    println(scores["alice"]);
+
+    print("Testing map set and get bob: ");
+    println(scores["bob"]);
+
+    print("Testing map set and get charlie: ");
+    println(scores["charlie"]);
+
+    scores["alice"] = 95;
+    print("Testing map update alice: ");
+    println(scores["alice"]);
+
+    var counts: map<string, int> = {};
+    counts["a"] = 1;
+    counts["b"] = 2;
+    counts["c"] = 3;
+    print("Testing counts a: ");
+    println(counts["a"]);
+    print("Testing counts b: ");
+    println(counts["b"]);
+    print("Testing counts c: ");
+    println(counts["c"]);
+}
+
+fn test_arrays() {
+    println("=== Array Tests ===");
+
+    var numbers: [int] = [10, 20, 30, 40, 50];
+
+    print("Testing array length: ");
+    if (numbers.len() == 5) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing for loop iteration: ");
+    var sum: int = 0;
+    for (n in numbers) {
+        sum = sum + n;
+    }
+    if (sum == 150) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing indexed for loop: ");
+    var idx_sum: int = 0;
+    for (i, n in numbers) {
+        idx_sum = idx_sum + i;
+    }
+    if (idx_sum == 10) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    var empty: [int] = [];
+    print("Testing empty array length: ");
+    if (empty.len() == 0) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+}
+
+fn test_structs() {
+    println("=== Struct Tests ===");
+
+    var p: Point = Point { x: 5, y: 10 };
+
+    print("Testing struct field x: ");
+    if (p.x == 5) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing struct field y: ");
+    if (p.y == 10) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    var rect: Rectangle = Rectangle { width: 100, height: 50 };
+
+    print("Testing rectangle area: ");
+    var area: int = rect.width * rect.height;
+    if (area == 5000) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    var nested: Point = Point { x: 15, y: 25 };
+
+    print("Testing nested struct access: ");
+    if (nested.x == 15) {
+        if (nested.y == 25) {
+            println("PASS");
+        } else {
+            println("FAIL");
+        }
+    } else {
+        println("FAIL");
+    }
+}
+
+fn test_control_flow() {
+    println("=== Control Flow Tests ===");
+
+    print("Testing if-else: ");
+    var x: int = 42;
+    if (x == 42) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing while loop: ");
+    var count: int = 0;
+    var i: int = 0;
+    while (i < 5) {
+        count = count + 1;
+        i = i + 1;
+    }
+    if (count == 5) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing nested if: ");
+    var a: int = 10;
+    var b: int = 20;
+    if (a < b) {
+        if (b > 15) {
+            println("PASS");
+        } else {
+            println("FAIL");
+        }
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing switch with int: ");
+    var day: int = 3;
+    switch (day) {
+        case 1: {
+            println("FAIL");
+        }
+        case 2: {
+            println("FAIL");
+        }
+        case 3: {
+            println("PASS");
+        }
+        default: {
+            println("FAIL");
+        }
+    }
+}
+
+fn test_combined() {
+    println("=== Combined Feature Tests ===");
+
+    print("Testing enum in loop: ");
+    var colors: [Color] = [Color::Red, Color::Green, Color::Blue];
+    var count: int = 0;
+    for (c in colors) {
+        count = count + 1;
+    }
+    if (count == 3) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing option with arithmetic: ");
+    var opt1: option<int> = some(10);
+    var opt2: option<int> = some(20);
+    var v1: int = opt1.or_default(0);
+    var v2: int = opt2.or_default(0);
+    if (v1 + v2 == 30) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing map with computed values x: ");
+    var data: map<string, int> = {};
+    var base: int = 10;
+    data["x"] = base * 2;
+    data["y"] = base * 3;
+    println(data["x"]);
+    print("Testing map with computed values y: ");
+    println(data["y"]);
+
+    print("Testing struct in array: ");
+    var points: [Point] = [
+        Point { x: 1, y: 2 },
+        Point { x: 3, y: 4 },
+        Point { x: 5, y: 6 }
+    ];
+    var x_sum: int = 0;
+    for (pt in points) {
+        x_sum = x_sum + pt.x;
+    }
+    if (x_sum == 9) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+}
+
+fn main() {
+    println("========================================");
+    println("       NAML Tier 1 Integration Test    ");
+    println("========================================");
+    println("");
+
+    test_enums();
+    println("");
+
+    test_options();
+    println("");
+
+    test_maps();
+    println("");
+
+    test_arrays();
+    println("");
+
+    test_structs();
+    println("");
+
+    test_control_flow();
+    println("");
+
+    test_combined();
+    println("");
+
+    println("========================================");
+    println("         All Tests Completed!          ");
+    println("========================================");
+}

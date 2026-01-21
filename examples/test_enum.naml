@@ -1,0 +1,51 @@
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+fn main() {
+    println("Testing enum pattern matching:");
+
+    var c: Color = Color::Red;
+
+    switch (c) {
+        case Red: {
+            println("Color is red");
+        }
+        case Green: {
+            println("Color is green");
+        }
+        case Blue: {
+            println("Color is blue");
+        }
+    }
+
+    c = Color::Green;
+    switch (c) {
+        case Red: {
+            println("Color is red");
+        }
+        case Green: {
+            println("Color is green");
+        }
+        case Blue: {
+            println("Color is blue");
+        }
+    }
+
+    c = Color::Blue;
+    switch (c) {
+        case Red: {
+            println("Color is red");
+        }
+        case Green: {
+            println("Color is green");
+        }
+        case Blue: {
+            println("Color is blue");
+        }
+    }
+
+    println("Done");
+}

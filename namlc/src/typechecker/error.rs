@@ -1,20 +1,20 @@
-///
-/// Type Checker Error Types
-///
-/// This module defines error types for the type checking phase. Errors
-/// carry source location information for precise error reporting.
-///
-/// Error categories:
-/// - TypeMismatch: Expected one type, found another
-/// - UndefinedVariable: Variable not found in scope
-/// - UndefinedType: Type name not found
-/// - UndefinedFunction: Function not found
-/// - UndefinedField: Struct field not found
-/// - UndefinedMethod: Method not found on type
-/// - DuplicateDefinition: Name already defined in scope
-/// - InvalidOperation: Operation not valid for types
-/// - InferenceFailed: Could not infer type
-///
+//!
+//! Type Checker Error Types
+//!
+//! This module defines error types for the type checking phase. Errors
+//! carry source location information for precise error reporting.
+//!
+//! Error categories:
+//! - TypeMismatch: Expected one type, found another
+//! - UndefinedVariable: Variable not found in scope
+//! - UndefinedType: Type name not found
+//! - UndefinedFunction: Function not found
+//! - UndefinedField: Struct field not found
+//! - UndefinedMethod: Method not found on type
+//! - DuplicateDefinition: Name already defined in scope
+//! - InvalidOperation: Operation not valid for types
+//! - InferenceFailed: Could not infer type
+//!
 
 use crate::source::Span;
 use thiserror::Error;

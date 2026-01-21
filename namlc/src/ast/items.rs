@@ -1,23 +1,23 @@
-///
-/// Top-Level Item AST Nodes
-///
-/// This module defines all top-level items that can appear in a naml source
-/// file. Items are declarations that define named entities in the program.
-///
-/// Key item types:
-/// - FunctionItem: Function and method definitions
-/// - StructItem: Struct type definitions with fields
-/// - InterfaceItem: Interface/trait definitions
-/// - EnumItem: Enum type definitions with variants
-/// - ExceptionItem: Exception type definitions
-/// - ImportItem: Module imports
-/// - UseItem: Type/function imports from modules
-/// - ExternItem: External function declarations
-///
-/// Platform annotations:
-/// - Functions can be marked with #[platforms(native, server, browser)]
-/// - Platform-specific implementations are handled at codegen time
-///
+//!
+//! Top-Level Item AST Nodes
+//!
+//! This module defines all top-level items that can appear in a naml source
+//! file. Items are declarations that define named entities in the program.
+//!
+//! Key item types:
+//! - FunctionItem: Function and method definitions
+//! - StructItem: Struct type definitions with fields
+//! - InterfaceItem: Interface/trait definitions
+//! - EnumItem: Enum type definitions with variants
+//! - ExceptionItem: Exception type definitions
+//! - ImportItem: Module imports
+//! - UseItem: Type/function imports from modules
+//! - ExternItem: External function declarations
+//!
+//! Platform annotations:
+//! - Functions can be marked with #[platforms(native, server, browser)]
+//! - Platform-specific implementations are handled at codegen time
+//!
 
 use crate::source::{Span, Spanned};
 use super::statements::{BlockStmt, Statement};

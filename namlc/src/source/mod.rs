@@ -1,21 +1,21 @@
-///
-/// Source Location and Span Module
-///
-/// This module provides types for tracking source code locations throughout
-/// the compilation pipeline. Every AST node carries a Span indicating where
-/// it came from in the original source text.
-///
-/// Key types:
-/// - Span: A range in source code (start offset, end offset, file id)
-/// - Spanned: Trait for types that have an associated span
-/// - SourceFile: Holds source text with line/column lookup
-///
-/// Design decisions:
-/// - Offsets are byte-based, not character-based (faster, works with UTF-8)
-/// - File ID allows spans to reference different source files
-/// - Spans are Copy for ergonomic use throughout the compiler
-/// - SourceFile caches line starts for O(log n) offset-to-line conversion
-///
+//!
+//! Source Location and Span Module
+//!
+//! This module provides types for tracking source code locations throughout
+//! the compilation pipeline. Every AST node carries a Span indicating where
+//! it came from in the original source text.
+//!
+//! Key types:
+//! - Span: A range in source code (start offset, end offset, file id)
+//! - Spanned: Trait for types that have an associated span
+//! - SourceFile: Holds source text with line/column lookup
+//!
+//! Design decisions:
+//! - Offsets are byte-based, not character-based (faster, works with UTF-8)
+//! - File ID allows spans to reference different source files
+//! - Spans are Copy for ergonomic use throughout the compiler
+//! - SourceFile caches line starts for O(log n) offset-to-line conversion
+//!
 
 use std::fmt;
 use std::sync::Arc;

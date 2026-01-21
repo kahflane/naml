@@ -1,0 +1,99 @@
+///
+/// Memory Management Test
+///
+/// Tests reference counting and cleanup for heap-allocated types.
+/// Run this multiple times and monitor memory usage to verify no leaks.
+///
+
+fn test_string_cleanup() {
+    println("=== String Cleanup Test ===");
+    var s: string = "hello world";
+    println(s);
+    var s2: string = "goodbye world";
+    s = s2;
+    println(s);
+}
+
+fn test_string_reassignment() {
+    println("=== String Reassignment Test ===");
+    var name: string = "Alice";
+    println(name);
+    name = "Bob";
+    println(name);
+    name = "Charlie";
+    println(name);
+}
+
+fn test_array_cleanup() {
+    println("=== Array Cleanup Test ===");
+    var arr: [int] = [1, 2, 3, 4, 5];
+    print("Array length: ");
+    println(arr.len());
+}
+
+fn test_map_cleanup() {
+    println("=== Map Cleanup Test ===");
+    var scores: map<string, int> = {};
+    scores["alice"] = 100;
+    scores["bob"] = 95;
+    print("Alice score: ");
+    println(scores["alice"]);
+    print("Bob score: ");
+    println(scores["bob"]);
+}
+
+fn test_loop_allocations() {
+    println("=== Loop Allocation Test ===");
+    var count: int = 0;
+    while (count < 5) {
+        var temp: string = "iteration";
+        print(temp);
+        print(": ");
+        println(count);
+        count = count + 1;
+    }
+    println("Loop completed");
+}
+
+struct TestStruct {
+    value: int,
+    name: string
+}
+
+fn test_struct_cleanup() {
+    println("=== Struct Cleanup Test ===");
+    var ts: TestStruct = TestStruct { value: 42, name: "test struct" };
+    print("Struct value: ");
+    println(ts.value);
+    print("Struct name: ");
+    println(ts.name);
+}
+
+fn main() {
+    println("========================================");
+    println("       Memory Management Tests         ");
+    println("========================================");
+    println("");
+
+    test_string_cleanup();
+    println("");
+
+    test_string_reassignment();
+    println("");
+
+    test_array_cleanup();
+    println("");
+
+    test_map_cleanup();
+    println("");
+
+    test_loop_allocations();
+    println("");
+
+    test_struct_cleanup();
+    println("");
+
+    println("========================================");
+    println("         All Tests Completed!          ");
+    println("========================================");
+}

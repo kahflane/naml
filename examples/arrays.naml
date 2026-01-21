@@ -1,0 +1,30 @@
+fn main() {
+    println("Testing arrays with for loop:");
+
+    var arr: [int] = [10, 20, 30, 40, 50];
+
+    print("Array length: ");
+    println(arr.len());
+
+    println("Iterating with for loop:");
+    for (val in arr) {
+        print("  Value: ");
+        println(val);
+    }
+
+    println("Iterating with index:");
+    for (i, val in arr) {
+        print("  arr[");
+        print(i);
+        print("] = ");
+        println(val);
+    }
+
+    println("Sum of elements:");
+    var sum: int = 0;
+    for (val in arr) {
+        sum = sum + val;
+    }
+    print("  Total: ");
+    println(sum);
+}

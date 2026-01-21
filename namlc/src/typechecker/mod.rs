@@ -1,19 +1,19 @@
-///
-/// Type Checker Module
-///
-/// This module provides type checking for naml programs. The type checker:
-///
-/// 1. Collects all type and function definitions (first pass)
-/// 2. Validates type definitions and builds the symbol table
-/// 3. Type checks all function bodies and expressions
-/// 4. Reports type errors with source locations
-///
-/// The type checker uses Hindley-Milner style type inference with
-/// unification. Type variables are created for unknown types and bound
-/// during inference.
-///
-/// Entry point: `check()` function takes an AST and returns errors
-///
+//!
+//! Type Checker Module
+//!
+//! This module provides type checking for naml programs. The type checker:
+//!
+//! 1. Collects all type and function definitions (first pass)
+//! 2. Validates type definitions and builds the symbol table
+//! 3. Type checks all function bodies and expressions
+//! 4. Reports type errors with source locations
+//!
+//! The type checker uses Hindley-Milner style type inference with
+//! unification. Type variables are created for unknown types and bound
+//! during inference.
+//!
+//! Entry point: `check()` function takes an AST and returns errors
+//!
 
 pub mod env;
 pub mod error;
@@ -78,6 +78,8 @@ impl<'a> TypeChecker<'a> {
             ("println", true, Type::Unit),
             ("printf", true, Type::Unit),
             ("read_line", false, Type::String),
+            // Concurrency builtins (no params)
+            ("wait_all", false, Type::Unit),
         ];
 
         for (name, is_variadic, return_ty) in builtins {
@@ -94,6 +96,43 @@ impl<'a> TypeChecker<'a> {
                     span: Span::dummy(),
                 });
             }
+        }
+
+        // Register sleep(ms: int) -> Unit
+        if let Some(spur) = self.interner.get("sleep") {
+            self.symbols.define_function(FunctionSig {
+                name: spur,
+                type_params: vec![],
+                params: vec![(spur, Type::Int)], // ms parameter
+                return_ty: Type::Unit,
+                throws: None,
+                is_async: false,
+                is_public: true,
+                is_variadic: false,
+                span: Span::dummy(),
+            });
+        }
+
+        // Register make_channel as a generic function: make_channel<T>(capacity: int) -> channel<T>
+        if let Some(spur) = self.interner.get("make_channel") {
+            // Create a type parameter T
+            let t_spur = self.interner.get("T").unwrap_or(spur); // Use T if interned, fallback to name
+            let type_param = TypeParam {
+                name: t_spur,
+                bounds: vec![],
+            };
+
+            self.symbols.define_function(FunctionSig {
+                name: spur,
+                type_params: vec![type_param.clone()],
+                params: vec![(spur, Type::Int)], // capacity parameter
+                return_ty: Type::Channel(Box::new(Type::Generic(t_spur, vec![]))),
+                throws: None,
+                is_async: false,
+                is_public: true,
+                is_variadic: false,
+                span: Span::dummy(),
+            });
         }
     }
 

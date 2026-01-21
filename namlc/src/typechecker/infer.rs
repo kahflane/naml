@@ -1,23 +1,23 @@
-///
-/// Type Inference for Expressions
-///
-/// This module infers types for expressions. Each expression form has
-/// specific typing rules:
-///
-/// - Literals: Type is determined by literal form
-/// - Identifiers: Look up in environment
-/// - Binary/Unary: Check operand types, return result type
-/// - Calls: Unify arguments with parameters, return result type
-/// - Field access: Look up field type on struct
-/// - Index: Check indexable type, return element type
-///
-/// Type variables are created for unknown types and unified during
-/// inference to discover concrete types.
-///
+//!
+//! Type Inference for Expressions
+//!
+//! This module infers types for expressions. Each expression form has
+//! specific typing rules:
+//!
+//! - Literals: Type is determined by literal form
+//! - Identifiers: Look up in environment
+//! - Binary/Unary: Check operand types, return result type
+//! - Calls: Unify arguments with parameters, return result type
+//! - Field access: Look up field type on struct
+//! - Index: Check indexable type, return element type
+//!
+//! Type variables are created for unknown types and unified during
+//! inference to discover concrete types.
+//!
 
 use lasso::Rodeo;
 
-use crate::ast::{self, Expression, Literal};
+use crate::ast::{self, Expression, Literal, Pattern};
 use crate::source::Spanned;
 
 use super::env::TypeEnv;
@@ -34,7 +34,6 @@ pub struct TypeInferrer<'a> {
     pub next_var_id: &'a mut u32,
     pub errors: &'a mut Vec<TypeError>,
     pub annotations: &'a mut TypeAnnotations,
-    /// Current switch scrutinee type for resolving bare enum variants in case patterns
     pub switch_scrutinee: Option<Type>,
 }
 
@@ -181,11 +180,22 @@ impl<'a> TypeInferrer<'a> {
             use super::symbols::TypeDef;
             match def {
                 TypeDef::Enum(e) => {
+                    let enum_ty = self.symbols.to_enum_type(e);
                     if path.segments.len() == 2 {
                         let variant_name = path.segments[1].symbol;
-                        for (name, _) in &e.variants {
+                        for (name, fields) in &e.variants {
                             if *name == variant_name {
-                                return Type::Enum(self.symbols.to_enum_type(e));
+                                // If variant has associated data, return function type
+                                if let Some(field_types) = fields {
+                                    return Type::Function(FunctionType {
+                                        params: field_types.clone(),
+                                        returns: Box::new(Type::Enum(enum_ty)),
+                                        throws: None,
+                                        is_async: false,
+                                        is_variadic: false,
+                                    });
+                                }
+                                return Type::Enum(enum_ty);
                             }
                         }
                         let variant = self.interner.resolve(&variant_name).to_string();
@@ -195,7 +205,7 @@ impl<'a> TypeInferrer<'a> {
                             span: path.span,
                         });
                     }
-                    Type::Enum(self.symbols.to_enum_type(e))
+                    Type::Enum(enum_ty)
                 }
                 _ => {
                     Type::Generic(first.symbol, Vec::new())
@@ -594,6 +604,56 @@ impl<'a> TypeInferrer<'a> {
             };
         }
 
+        // Handle built-in channel methods
+        if let Type::Channel(inner) = &resolved {
+            let method_name = self.interner.resolve(&call.method.symbol);
+            return match method_name {
+                "send" => {
+                    if call.args.len() != 1 {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 1,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return Type::Int;
+                    }
+                    let arg_ty = self.infer_expr(&call.args[0]);
+                    if let Err(e) = unify(&arg_ty, inner, call.args[0].span()) {
+                        self.errors.push(e);
+                    }
+                    Type::Int
+                }
+                "receive" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    (**inner).clone()
+                }
+                "close" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Unit
+                }
+                _ => {
+                    self.errors.push(TypeError::UndefinedMethod {
+                        ty: resolved.to_string(),
+                        method: method_name.to_string(),
+                        span: call.span,
+                    });
+                    Type::Error
+                }
+            };
+        }
+
         // Check if receiver is a bare type parameter (T with no type args)
         // If so, look up methods from its bounds
         if let Type::Generic(param_name, type_args) = &resolved {
@@ -752,14 +812,23 @@ impl<'a> TypeInferrer<'a> {
                 });
                 Type::Error
             }
-            Type::Generic(name, ref _type_args) => {
+            Type::Generic(name, ref type_args) => {
                 // Look up the struct definition by name
                 use super::symbols::TypeDef;
+                use std::collections::HashMap;
                 if let Some(TypeDef::Struct(def)) = self.symbols.get_type(name) {
                     let struct_ty = self.symbols.to_struct_type(def);
+                    // Build substitution map from type params to actual type args
+                    let substitution: HashMap<lasso::Spur, Type> = struct_ty
+                        .type_params
+                        .iter()
+                        .zip(type_args.iter())
+                        .map(|(tp, arg)| (tp.name, arg.clone()))
+                        .collect();
                     for f in &struct_ty.fields {
                         if f.name == field.field.symbol {
-                            return f.ty.clone();
+                            // Apply substitution to get concrete field type
+                            return f.ty.substitute(&substitution);
                         }
                     }
                     let field_name = self.interner.resolve(&field.field.symbol).to_string();
@@ -839,15 +908,25 @@ impl<'a> TypeInferrer<'a> {
     fn infer_struct_literal(&mut self, lit: &ast::StructLiteralExpr) -> Type {
         if let Some(def) = self.symbols.get_type(lit.name.symbol) {
             use super::symbols::TypeDef;
+            use std::collections::HashMap;
             match def {
                 TypeDef::Struct(s) => {
                     let struct_ty = self.symbols.to_struct_type(s);
+
+                    // Build substitution map from type params to fresh type vars
+                    let substitution: HashMap<lasso::Spur, Type> = struct_ty
+                        .type_params
+                        .iter()
+                        .map(|tp| (tp.name, fresh_type_var(self.next_var_id)))
+                        .collect();
 
                     for field_lit in &lit.fields {
                         let field_def = struct_ty.fields.iter().find(|f| f.name == field_lit.name.symbol);
                         if let Some(field_def) = field_def {
                             let value_ty = self.infer_expr(&field_lit.value);
-                            if let Err(e) = unify(&value_ty, &field_def.ty, field_lit.span) {
+                            // Apply substitution to field type to replace type params with type vars
+                            let substituted_field_ty = field_def.ty.substitute(&substitution);
+                            if let Err(e) = unify(&value_ty, &substituted_field_ty, field_lit.span) {
                                 self.errors.push(e);
                             }
                         } else {
@@ -862,11 +941,11 @@ impl<'a> TypeInferrer<'a> {
 
                     // If struct has type parameters, return Generic type instead of Struct
                     if !struct_ty.type_params.is_empty() {
-                        // Create fresh type variables for each type param
+                        // Collect the type vars in param order for the return type
                         let type_args: Vec<Type> = struct_ty
                             .type_params
                             .iter()
-                            .map(|_| fresh_type_var(self.next_var_id))
+                            .map(|tp| substitution.get(&tp.name).cloned().unwrap_or_else(|| fresh_type_var(self.next_var_id)))
                             .collect();
                         Type::Generic(lit.name.symbol, type_args)
                     } else {
@@ -1070,6 +1149,110 @@ impl<'a> TypeInferrer<'a> {
         }
 
         Type::Array(Box::new(elem_ty.resolve()))
+    }
+
+    pub fn infer_pattern(&mut self, pattern: &Pattern, scrutinee_ty: &Type) -> Type {
+        match pattern {
+            Pattern::Literal(lit) => {
+                // Literal patterns have a fixed type
+                match &lit.value {
+                    Literal::Int(_) => Type::Int,
+                    Literal::UInt(_) => Type::Uint,
+                    Literal::Float(_) => Type::Float,
+                    Literal::Bool(_) => Type::Bool,
+                    Literal::String(_) => Type::String,
+                    Literal::Bytes(_) => Type::Bytes,
+                    Literal::None => {
+                        let inner = fresh_type_var(self.next_var_id);
+                        Type::Option(Box::new(inner))
+                    }
+                }
+            }
+
+            Pattern::Identifier(ident) => {
+                // Identifier pattern: first check if it's an enum variant name
+                if let Type::Enum(enum_ty) = scrutinee_ty {
+                    for variant in &enum_ty.variants {
+                        if variant.name == ident.ident.symbol {
+                            // It's a variant name, return the enum type
+                            return scrutinee_ty.clone();
+                        }
+                    }
+                }
+                // Otherwise it's a binding that captures the scrutinee value
+                self.env.define(ident.ident.symbol, scrutinee_ty.clone(), false);
+                scrutinee_ty.clone()
+            }
+
+            Pattern::Variant(variant) => {
+                // Get the enum type from the path
+                if variant.path.is_empty() {
+                    return Type::Error;
+                }
+
+                // First segment is the enum type or variant name
+                let first = &variant.path[0];
+
+                // Check if it's a qualified path (EnumType::Variant) or bare variant
+                if variant.path.len() == 1 {
+                    // Bare variant name - use scrutinee type to resolve
+                    if let Type::Enum(enum_ty) = scrutinee_ty {
+                        for var in &enum_ty.variants {
+                            if var.name == first.symbol {
+                                // Bind variant fields if present
+                                if let Some(ref fields) = var.fields {
+                                    for (i, binding) in variant.bindings.iter().enumerate() {
+                                        if i < fields.len() {
+                                            self.env.define(binding.symbol, fields[i].clone(), false);
+                                        }
+                                    }
+                                }
+                                return scrutinee_ty.clone();
+                            }
+                        }
+                        // Unknown variant
+                        let variant_name = self.interner.resolve(&first.symbol).to_string();
+                        self.errors.push(TypeError::Custom {
+                            message: format!("unknown variant '{}'", variant_name),
+                            span: variant.span,
+                        });
+                    }
+                    return Type::Error;
+                }
+
+                // Qualified path - look up the enum type
+                if let Some(def) = self.symbols.get_type(first.symbol) {
+                    use super::symbols::TypeDef;
+                    if let TypeDef::Enum(e) = def {
+                        let enum_ty = self.symbols.to_enum_type(e);
+                        let variant_name = variant.path.last().unwrap().symbol;
+
+                        for var in &enum_ty.variants {
+                            if var.name == variant_name {
+                                // Bind variant fields if present
+                                if let Some(ref fields) = var.fields {
+                                    for (i, binding) in variant.bindings.iter().enumerate() {
+                                        if i < fields.len() {
+                                            self.env.define(binding.symbol, fields[i].clone(), false);
+                                        }
+                                    }
+                                }
+                                return Type::Enum(enum_ty);
+                            }
+                        }
+                    }
+                }
+
+                Type::Error
+            }
+
+            Pattern::Wildcard(_) => {
+                // Wildcard matches anything
+                scrutinee_ty.clone()
+            }
+
+            Pattern::_Phantom(_) => Type::Error,
+        }
     }
 
     pub fn check_stmt(&mut self, stmt: &ast::Statement) {
@@ -1298,12 +1481,12 @@ impl<'a> TypeInferrer<'a> {
                 self.switch_scrutinee = Some(scrutinee_ty.resolve());
 
                 for case in &switch.cases {
-                    let pattern_ty = self.infer_expr(&case.pattern);
+                    self.env.push_scope();
+                    let resolved_scrutinee = scrutinee_ty.resolve();
+                    let pattern_ty = self.infer_pattern(&case.pattern, &resolved_scrutinee);
                     if let Err(e) = unify(&pattern_ty, &scrutinee_ty, case.pattern.span()) {
                         self.errors.push(e);
                     }
-
-                    self.env.push_scope();
                     for s in &case.body.statements {
                         self.check_stmt(s);
                     }
@@ -1367,7 +1550,21 @@ impl<'a> TypeInferrer<'a> {
             ast::NamlType::Promise(inner) => {
                 Type::Promise(Box::new(self.convert_ast_type(inner)))
             }
-            ast::NamlType::Named(ident) => Type::Generic(ident.symbol, Vec::new()),
+            ast::NamlType::Named(ident) => {
+                // Look up the name to see if it's a known type (struct, enum, etc.)
+                if let Some(def) = self.symbols.get_type(ident.symbol) {
+                    use super::symbols::TypeDef;
+                    match def {
+                        TypeDef::Struct(s) => Type::Struct(self.symbols.to_struct_type(s)),
+                        TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
+                        TypeDef::Interface(i) => Type::Interface(self.symbols.to_interface_type(i)),
+                        TypeDef::Exception(_) => Type::Generic(ident.symbol, Vec::new()),
+                    }
+                } else {
+                    // Fall back to generic type (for type parameters)
+                    Type::Generic(ident.symbol, Vec::new())
+                }
+            }
             ast::NamlType::Generic(ident, args) => {
                 let converted_args = args.iter().map(|a| self.convert_ast_type(a)).collect();
                 Type::Generic(ident.symbol, converted_args)
@@ -1386,21 +1583,16 @@ impl<'a> TypeInferrer<'a> {
         }
     }
 
-    /// Check if this is an int literal being assigned to a uint type (allowed coercion)
     fn is_int_to_uint_coercion(&self, init_ty: &Type, target_ty: &Type, init: &Expression) -> bool {
         let init_resolved = init_ty.resolve();
         let target_resolved = target_ty.resolve();
 
-        // Check if target is uint and init type is int
         if target_resolved != Type::Uint || init_resolved != Type::Int {
             return false;
         }
-
-        // Check if the expression is an integer literal
         matches!(init, Expression::Literal(lit) if matches!(lit.value, Literal::Int(_)))
     }
 
-    /// Coerce int/uint operations: if one operand is uint and the other is an int literal, result is uint
     fn coerce_int_uint(
         &self,
         left_ty: &Type,

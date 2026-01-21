@@ -1,27 +1,28 @@
-///
-/// Abstract Syntax Tree Module
-///
-/// This module defines the complete AST for the naml programming language.
-/// The AST is the intermediate representation produced by the parser and
-/// consumed by the type checker and code generators.
-///
-/// Module structure:
-/// - types: Core type system (Ident, NamlType)
-/// - literals: Literal values (int, float, string, etc.)
-/// - operators: Binary, unary, and assignment operators
-/// - expressions: All expression node types
-/// - statements: All statement node types
-/// - items: Top-level declarations (functions, structs, etc.)
-/// - visitor: Visitor pattern for AST traversal
-///
-/// The root AST node is SourceFile, representing a complete naml source file.
-///
+//!
+//! Abstract Syntax Tree Module
+//!
+//! This module defines the complete AST for the naml programming language.
+//! The AST is the intermediate representation produced by the parser and
+//! consumed by the type checker and code generators.
+//!
+//! Module structure:
+//! - types: Core type system (Ident, NamlType)
+//! - literals: Literal values (int, float, string, etc.)
+//! - operators: Binary, unary, and assignment operators
+//! - expressions: All expression node types
+//! - statements: All statement node types
+//! - items: Top-level declarations (functions, structs, etc.)
+//! - visitor: Visitor pattern for AST traversal
+//!
+//! The root AST node is SourceFile, representing a complete naml source file.
+//!
 
 pub mod arena;
 pub mod expressions;
 pub mod items;
 pub mod literals;
 pub mod operators;
+pub mod patterns;
 pub mod statements;
 pub mod types;
 pub mod visitor;
@@ -31,6 +32,7 @@ pub use expressions::*;
 pub use items::*;
 pub use literals::*;
 pub use operators::*;
+pub use patterns::*;
 pub use statements::*;
 pub use types::*;
 pub use visitor::*;

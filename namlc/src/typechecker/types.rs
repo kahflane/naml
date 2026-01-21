@@ -1,16 +1,16 @@
-///
-/// Internal Type Representation
-///
-/// This module defines the internal type representation used during type
-/// checking. Unlike the AST NamlType, this representation supports:
-///
-/// - Type variables for inference (TypeVar)
-/// - Resolved named types with full definitions
-/// - Substitution during unification
-///
-/// The type checker converts AST types to these internal types, performs
-/// inference and checking, then can convert back for error messages.
-///
+//!
+//! Internal Type Representation
+//!
+//! This module defines the internal type representation used during type
+//! checking. Unlike the AST NamlType, this representation supports:
+//!
+//! - Type variables for inference (TypeVar)
+//! - Resolved named types with full definitions
+//! - Substitution during unification
+//!
+//! The type checker converts AST types to these internal types, performs
+//! inference and checking, then can convert back for error messages.
+//!
 
 use std::cell::RefCell;
 use std::collections::HashMap;

@@ -1,24 +1,25 @@
-///
-/// Statement AST Nodes
-///
-/// This module defines all statement types in the naml language. Statements
-/// are constructs that perform actions but don't necessarily produce values.
-///
-/// Key statement categories:
-/// - Declarations: var, const
-/// - Control flow: if, while, for, loop, switch, break, continue, return
-/// - Expression statements: expressions used for side effects
-/// - Error handling: throw
-///
-/// Design notes:
-/// - VarStmt supports both `var x` and `var mut x` for mutability
-/// - ForStmt supports optional index binding `for (i, val in collection)`
-/// - IfStmt vs IfExpr: statements don't require else, expressions do
-///
+//!
+//! Statement AST Nodes
+//!
+//! This module defines all statement types in the naml language. Statements
+//! are constructs that perform actions but don't necessarily produce values.
+//!
+//! Key statement categories:
+//! - Declarations: var, const
+//! - Control flow: if, while, for, loop, switch, break, continue, return
+//! - Expression statements: expressions used for side effects
+//! - Error handling: throw
+//!
+//! Design notes:
+//! - VarStmt supports both `var x` and `var mut x` for mutability
+//! - ForStmt supports optional index binding `for (i, val in collection)`
+//! - IfStmt vs IfExpr: statements don't require else, expressions do
+//!
 
 use crate::source::{Span, Spanned};
 use super::expressions::{BlockExpr, Expression};
 use super::operators::AssignOp;
+use super::patterns::Pattern;
 use super::types::{Ident, NamlType};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -151,7 +152,7 @@ pub struct SwitchStmt<'ast> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchCase<'ast> {
-    pub pattern: Expression<'ast>,
+    pub pattern: Pattern<'ast>,
     pub body: BlockStmt<'ast>,
     pub span: Span,
 }

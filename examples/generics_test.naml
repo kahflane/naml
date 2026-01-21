@@ -1,0 +1,180 @@
+///
+/// Generics Test - Basic generic features
+///
+
+enum UserStatus {
+    Active,
+    Inactive,
+    Suspended(string),
+    PendingVerification(string)
+}
+
+enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+struct Pair<A, B> {
+    first: A,
+    second: B
+}
+
+struct Box<T> {
+    value: T
+}
+
+fn test_user_status() {
+    println("=== UserStatus Enum Tests ===");
+
+    var active: UserStatus = UserStatus::Active;
+    var inactive: UserStatus = UserStatus::Inactive;
+    var suspended: UserStatus = UserStatus::Suspended("policy violation");
+    var pending: UserStatus = UserStatus::PendingVerification("email sent");
+
+    print("Testing Active: ");
+    switch (active) {
+        case Active: {
+            println("PASS");
+        }
+        default: {
+            println("FAIL");
+        }
+    }
+
+    print("Testing Inactive: ");
+    switch (inactive) {
+        case Inactive: {
+            println("PASS");
+        }
+        default: {
+            println("FAIL");
+        }
+    }
+
+    print("Testing Suspended with data: ");
+    switch (suspended) {
+        case Suspended(reason): {
+            print("PASS - reason: ");
+            println(reason);
+        }
+        default: {
+            println("FAIL");
+        }
+    }
+
+    print("Testing PendingVerification: ");
+    switch (pending) {
+        case PendingVerification(msg): {
+            print("PASS - msg: ");
+            println(msg);
+        }
+        default: {
+            println("FAIL");
+        }
+    }
+
+    print("Testing switch default for Inactive: ");
+    switch (inactive) {
+        case Active: {
+            println("FAIL");
+        }
+        case Suspended(r): {
+            println("FAIL");
+        }
+        default: {
+            println("PASS - matched default");
+        }
+    }
+}
+
+fn test_generic_struct() {
+    println("=== Generic Struct Tests ===");
+
+    var int_pair: Pair<int, int> = Pair { first: 10, second: 20 };
+
+    print("Testing Pair<int, int>.first: ");
+    if (int_pair.first == 10) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing Pair<int, int>.second: ");
+    if (int_pair.second == 20) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    var mixed_pair: Pair<string, int> = Pair { first: "hello", second: 42 };
+
+    print("Testing Pair<string, int>.first: ");
+    if (mixed_pair.first == "hello") {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    print("Testing Pair<string, int>.second: ");
+    if (mixed_pair.second == 42) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    var nested: Pair<Box<int>, string> = Pair { first: Box { value: 100 }, second: "nested" };
+    print("Testing nested generic: ");
+    if (nested.second == "nested") {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+}
+
+fn test_generic_box() {
+    println("=== Generic Box Tests ===");
+
+    var int_box: Box<int> = Box { value: 42 };
+    print("Testing Box<int>.value: ");
+    if (int_box.value == 42) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    var str_box: Box<string> = Box { value: "boxed string" };
+    print("Testing Box<string>.value: ");
+    if (str_box.value == "boxed string") {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+
+    var point_box: Box<Pair<int, int>> = Box { value: Pair { first: 1, second: 2 } };
+    print("Testing Box<Pair>.value.first: ");
+    if (point_box.value.first == 1) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+}
+
+fn main() {
+    println("========================================");
+    println("       NAML Generics Test              ");
+    println("========================================");
+    println("");
+
+    test_user_status();
+    println("");
+
+    test_generic_struct();
+    println("");
+
+    test_generic_box();
+    println("");
+
+    println("========================================");
+    println("         Tests Completed!              ");
+    println("========================================");
+}

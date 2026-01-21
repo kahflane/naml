@@ -1,20 +1,20 @@
-///
-/// AST Type Definitions
-///
-/// This module defines the core type system for naml's AST. All types that
-/// can appear in type annotations are represented here.
-///
-/// Key types:
-/// - Ident: An identifier with its source location (uses string interning)
-/// - NamlType: The complete type system including primitives, composites,
-///   generics, and function types
-///
-/// Design decisions:
-/// - No Any type - naml is strongly typed with no dynamic escape hatch
-/// - Ident carries its Span for better error messages
-/// - Box-based nesting for simplicity (can optimize to arena later)
-/// - Inferred placeholder for type inference pass
-///
+//!
+//! AST Type Definitions
+//!
+//! This module defines the core type system for naml's AST. All types that
+//! can appear in type annotations are represented here.
+//!
+//! Key types:
+//! - Ident: An identifier with its source location (uses string interning)
+//! - NamlType: The complete type system including primitives, composites,
+//!   generics, and function types
+//!
+//! Design decisions:
+//! - No Any type - naml is strongly typed with no dynamic escape hatch
+//! - Ident carries its Span for better error messages
+//! - Box-based nesting for simplicity (can optimize to arena later)
+//! - Inferred placeholder for type inference pass
+//!
 
 use lasso::Spur;
 use crate::source::Span;

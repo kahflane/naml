@@ -90,6 +90,11 @@ memchr.workspace = true
 ##
 bumpalo.workspace = true
 
+##
+## C library bindings for runtime
+##
+libc.workspace = true
+
 
 [dev-dependencies]
 insta.workspace = true

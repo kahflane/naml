@@ -1,10 +1,10 @@
-///
-/// Comprehensive Parser Test
-///
-/// This file tests the naml parser with a complex, real-world-like codebase
-/// that exercises all language features: interfaces, structs, enums, generics,
-/// async/await, error handling, lambdas, and more.
-///
+//!
+//! Comprehensive Parser Test
+//!
+//! This file tests the naml parser with a complex, real-world-like codebase
+//! that exercises all language features: interfaces, structs, enums, generics,
+//! async/await, error handling, lambdas, and more.
+//!
 
 use std::time::Instant;
 

@@ -1,9 +1,9 @@
-///
-/// Item Parser
-///
-/// Parses top-level items using nom combinators.
-/// Handles functions, structs, enums, interfaces, exceptions, imports, and extern.
-///
+//!
+//! Item Parser
+//!
+//! Parses top-level items using nom combinators.
+//! Handles functions, structs, enums, interfaces, exceptions, imports, and extern.
+//!
 
 use nom::multi::separated_list0;
 

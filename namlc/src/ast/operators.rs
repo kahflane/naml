@@ -1,17 +1,17 @@
-///
-/// Operator Definitions
-///
-/// This module defines all operators in the naml language including binary,
-/// unary, and assignment operators.
-///
-/// Key types:
-/// - BinaryOp: Two-operand operators (arithmetic, comparison, logical, bitwise)
-/// - UnaryOp: Single-operand operators (negation, logical not, bitwise not)
-/// - AssignOp: Assignment and compound assignment operators
-///
-/// The precedence() method on BinaryOp is used by the Pratt parser for
-/// correct operator precedence handling.
-///
+//!
+//! Operator Definitions
+//!
+//! This module defines all operators in the naml language including binary,
+//! unary, and assignment operators.
+//!
+//! Key types:
+//! - BinaryOp: Two-operand operators (arithmetic, comparison, logical, bitwise)
+//! - UnaryOp: Single-operand operators (negation, logical not, bitwise not)
+//! - AssignOp: Assignment and compound assignment operators
+//!
+//! The precedence() method on BinaryOp is used by the Pratt parser for
+//! correct operator precedence handling.
+//!
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {

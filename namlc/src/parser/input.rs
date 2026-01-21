@@ -1,9 +1,9 @@
-///
-/// TokenStream Input Type for nom
-///
-/// This module provides a custom input type that wraps a slice of tokens.
-/// nom requires specific traits to be implemented for custom input types.
-///
+//!
+//! TokenStream Input Type for nom
+//!
+//! This module provides a custom input type that wraps a slice of tokens.
+//! nom requires specific traits to be implemented for custom input types.
+//!
 
 use std::iter::Enumerate;
 use std::slice::Iter;

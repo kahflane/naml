@@ -1,28 +1,30 @@
-///
-/// namlc - The naml Compiler Library
-///
-/// This crate provides the core compiler infrastructure for the naml
-/// programming language. It includes:
-///
-/// - source: Source file handling, spans, and diagnostics
-/// - lexer: Tokenization of naml source code
-/// - ast: Abstract syntax tree definitions
-/// - parser: Parsing tokens into AST
-/// - typechecker: Type system and inference
-/// - codegen: Rust code generation (transpilation)
-///
-/// Entry points:
-/// - `tokenize`: Convert source text into tokens
-/// - `parse`: Parse tokens into AST
-/// - `check`: Type check an AST
-/// - `codegen`: Generate Rust code from AST
-///
+//!
+//! namlc - The naml Compiler Library
+//!
+//! This crate provides the core compiler infrastructure for the naml
+//! programming language. It includes:
+//!
+//! - source: Source file handling, spans, and diagnostics
+//! - lexer: Tokenization of naml source code
+//! - ast: Abstract syntax tree definitions
+//! - parser: Parsing tokens into AST
+//! - typechecker: Type system and inference
+//! - codegen: Cranelift JIT code generation
+//! - runtime: Runtime support (arrays, strings, memory management)
+//!
+//! Entry points:
+//! - `tokenize`: Convert source text into tokens
+//! - `parse`: Parse tokens into AST
+//! - `check`: Type check an AST
+//! - `compile_and_run`: JIT compile and execute
+//!
 
 pub mod ast;
 pub mod codegen;
 pub mod diagnostic;
 pub mod lexer;
 pub mod parser;
+pub mod runtime;
 pub mod source;
 pub mod typechecker;
 

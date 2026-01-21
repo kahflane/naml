@@ -1,15 +1,15 @@
-///
-/// Symbol Table - Global Definitions
-///
-/// This module manages the symbol table for type checking. It stores:
-///
-/// - Type definitions (structs, enums, interfaces, exceptions)
-/// - Function signatures (including methods)
-/// - Built-in types and functions
-///
-/// The symbol table is built in a first pass over the AST to collect all
-/// definitions, then used during type checking to resolve references.
-///
+//!
+//! Symbol Table - Global Definitions
+//!
+//! This module manages the symbol table for type checking. It stores:
+//!
+//! - Type definitions (structs, enums, interfaces, exceptions)
+//! - Function signatures (including methods)
+//! - Built-in types and functions
+//!
+//! The symbol table is built in a first pass over the AST to collect all
+//! definitions, then used during type checking to resolve references.
+//!
 
 use std::collections::HashMap;
 

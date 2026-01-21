@@ -1,22 +1,22 @@
-///
-/// Expression AST Nodes
-///
-/// This module defines all expression types in the naml language. Expressions
-/// are constructs that evaluate to a value.
-///
-/// Key design decisions:
-/// - Wrapper enum with separate structs for each expression type
-/// - Each struct carries its own Span for precise error reporting
-/// - Arena-allocated references for recursive structures (zero Box overhead)
-/// - All types implement Spanned trait for uniform span access
-///
-/// Expression categories:
-/// - Atoms: literals, identifiers, grouped expressions
-/// - Operators: binary, unary operations
-/// - Access: field access, indexing, method calls
-/// - Control: if expressions, blocks, spawn, await
-/// - Constructors: array literals, map literals, lambdas
-///
+//!
+//! Expression AST Nodes
+//!
+//! This module defines all expression types in the naml language. Expressions
+//! are constructs that evaluate to a value.
+//!
+//! Key design decisions:
+//! - Wrapper enum with separate structs for each expression type
+//! - Each struct carries its own Span for precise error reporting
+//! - Arena-allocated references for recursive structures (zero Box overhead)
+//! - All types implement Spanned trait for uniform span access
+//!
+//! Expression categories:
+//! - Atoms: literals, identifiers, grouped expressions
+//! - Operators: binary, unary operations
+//! - Access: field access, indexing, method calls
+//! - Control: if expressions, blocks, spawn, await
+//! - Constructors: array literals, map literals, lambdas
+//!
 
 use crate::source::{Span, Spanned};
 use super::literals::Literal;

@@ -1,22 +1,22 @@
-///
-/// Lexer Module - Zero-Copy Tokenization
-///
-/// This module handles tokenization of naml source code. It produces a
-/// stream of tokens that the parser consumes to build the AST.
-///
-/// Key design decisions:
-/// - Zero-copy: Tokens reference the source string, no allocations per token
-/// - String interning: Identifiers and strings stored via lasso::Spur
-/// - Whitespace/comments filtered out for fast parsing (no trivia in output)
-///
-/// Token categories:
-/// - Keywords: fn, var, const, if, while, for, etc.
-/// - Identifiers: User-defined names
-/// - Literals: Numbers, strings, booleans
-/// - Operators: +, -, *, /, ==, etc.
-/// - Delimiters: (, ), {, }, [, ], etc.
-/// - Trivia: Whitespace, comments (preserved but skippable)
-///
+//!
+//! Lexer Module - Zero-Copy Tokenization
+//!
+//! This module handles tokenization of naml source code. It produces a
+//! stream of tokens that the parser consumes to build the AST.
+//!
+//! Key design decisions:
+//! - Zero-copy: Tokens reference the source string, no allocations per token
+//! - String interning: Identifiers and strings stored via lasso::Spur
+//! - Whitespace/comments filtered out for fast parsing (no trivia in output)
+//!
+//! Token categories:
+//! - Keywords: fn, var, const, if, while, for, etc.
+//! - Identifiers: User-defined names
+//! - Literals: Numbers, strings, booleans
+//! - Operators: +, -, *, /, ==, etc.
+//! - Delimiters: (, ), {, }, [, ], etc.
+//! - Trivia: Whitespace, comments (preserved but skippable)
+//!
 
 use crate::source::Span;
 use lasso::{Rodeo, Spur};

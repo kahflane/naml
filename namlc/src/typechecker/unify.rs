@@ -1,19 +1,19 @@
-///
-/// Type Unification
-///
-/// This module implements the unification algorithm for type inference.
-/// Unification determines if two types can be made equal by binding type
-/// variables to concrete types.
-///
-/// The algorithm:
-/// 1. Resolve any type variables to their bound types
-/// 2. If both types are identical, succeed
-/// 3. If one is a type variable, bind it to the other (occurs check)
-/// 4. If both are composite types, recursively unify components
-/// 5. Otherwise, fail with a type mismatch error
-///
-/// The occurs check prevents infinite types like `?0 = [?0]`.
-///
+//!
+//! Type Unification
+//!
+//! This module implements the unification algorithm for type inference.
+//! Unification determines if two types can be made equal by binding type
+//! variables to concrete types.
+//!
+//! The algorithm:
+//! 1. Resolve any type variables to their bound types
+//! 2. If both types are identical, succeed
+//! 3. If one is a type variable, bind it to the other (occurs check)
+//! 4. If both are composite types, recursively unify components
+//! 5. Otherwise, fail with a type mismatch error
+//!
+//! The occurs check prevents infinite types like `?0 = [?0]`.
+//!
 
 use crate::source::Span;
 

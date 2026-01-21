@@ -1,0 +1,27 @@
+// Declare external C math functions
+extern fn sqrt(x: float) -> float;
+extern fn sin(x: float) -> float;
+extern fn cos(x: float) -> float;
+extern fn pow(base: float, exp: float) -> float;
+extern fn floor(x: float) -> float;
+extern fn ceil(x: float) -> float;
+
+fn main() {
+    println("Testing FFI with math functions:");
+
+    print("sqrt(16.0) = ");
+    var s: float = sqrt(16.0);
+    println(s);
+
+    print("pow(2.0, 10.0) = ");
+    var p: float = pow(2.0, 10.0);
+    println(p);
+
+    print("floor(3.7) = ");
+    var f: float = floor(3.7);
+    println(f);
+
+    print("ceil(3.2) = ");
+    var c: float = ceil(3.2);
+    println(c);
+}
