@@ -599,6 +599,7 @@ impl<'a> JitCompiler<'a> {
             module: &mut self.module,
             functions: &self.functions,
             struct_defs: &self.struct_defs,
+            enum_defs: &self.enum_defs,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
             var_counter: 0,
@@ -699,6 +700,7 @@ impl<'a> JitCompiler<'a> {
             module: &mut self.module,
             functions: &self.functions,
             struct_defs: &self.struct_defs,
+            enum_defs: &self.enum_defs,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
             var_counter: 0,
@@ -765,6 +767,7 @@ struct CompileContext<'a> {
     module: &'a mut JITModule,
     functions: &'a HashMap<String, FuncId>,
     struct_defs: &'a HashMap<String, StructDef>,
+    enum_defs: &'a HashMap<String, EnumDef>,
     extern_fns: &'a HashMap<String, ExternFn>,
     variables: HashMap<String, Variable>,
     var_counter: usize,
@@ -1158,6 +1161,40 @@ fn compile_expression(
             }
         }
 
+        Expression::Path(path_expr) => {
+            // Handle enum variant access: EnumType::Variant
+            if path_expr.segments.len() == 2 {
+                let enum_name = ctx.interner.resolve(&path_expr.segments[0].symbol).to_string();
+                let variant_name = ctx.interner.resolve(&path_expr.segments[1].symbol).to_string();
+
+                if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
+                    if let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                        // Unit variant - allocate stack slot and set tag
+                        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            enum_def.size as u32,
+                            0,
+                        ));
+                        let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+                        // Store tag at offset 0
+                        let tag_val = builder.ins().iconst(cranelift::prelude::types::I32, variant.tag as i64);
+                        builder.ins().store(MemFlags::new(), tag_val, slot_addr, 0);
+
+                        // Return pointer to stack slot
+                        return Ok(slot_addr);
+                    }
+                }
+            }
+
+            Err(CodegenError::Unsupported(format!(
+                "Path expression not supported: {:?}",
+                path_expr.segments.iter()
+                    .map(|s| ctx.interner.resolve(&s.symbol))
+                    .collect::<Vec<_>>()
+            )))
+        }
+
         Expression::Binary(bin) => {
             let lhs = compile_expression(ctx, builder, &bin.left)?;
             let rhs = compile_expression(ctx, builder, &bin.right)?;
@@ -1223,7 +1260,47 @@ fn compile_expression(
                 else {
                     Err(CodegenError::JitCompile(format!("Unknown function: {}", func_name)))
                 }
-            } else {
+            }
+            // Check for enum variant constructor: EnumType::Variant(data)
+            else if let Expression::Path(path_expr) = call.callee {
+                if path_expr.segments.len() == 2 {
+                    let enum_name = ctx.interner.resolve(&path_expr.segments[0].symbol).to_string();
+                    let variant_name = ctx.interner.resolve(&path_expr.segments[1].symbol).to_string();
+
+                    if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
+                        if let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                            // Allocate stack slot for enum
+                            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                                StackSlotKind::ExplicitSlot,
+                                enum_def.size as u32,
+                                0,
+                            ));
+                            let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+                            // Store tag
+                            let tag_val = builder.ins().iconst(cranelift::prelude::types::I32, variant.tag as i64);
+                            builder.ins().store(MemFlags::new(), tag_val, slot_addr, 0);
+
+                            // Store data fields
+                            for (i, arg) in call.args.iter().enumerate() {
+                                let arg_val = compile_expression(ctx, builder, arg)?;
+                                let offset = (variant.data_offset + i * 8) as i32;
+                                builder.ins().store(MemFlags::new(), arg_val, slot_addr, offset);
+                            }
+
+                            return Ok(slot_addr);
+                        }
+                    }
+                }
+
+                Err(CodegenError::Unsupported(format!(
+                    "Unknown enum variant call: {:?}",
+                    path_expr.segments.iter()
+                        .map(|s| ctx.interner.resolve(&s.symbol))
+                        .collect::<Vec<_>>()
+                )))
+            }
+            else {
                 Err(CodegenError::Unsupported("Indirect function calls not yet supported".to_string()))
             }
         }
