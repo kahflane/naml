@@ -1,0 +1,28 @@
+struct Point {
+    x: int,
+    y: int
+}
+
+struct Rectangle {
+    width: int,
+    height: int
+}
+
+fn main() {
+    println("Testing structs:");
+
+    var p: Point = Point { x: 10, y: 20 };
+    print("Point x: ");
+    println(p.x);
+    print("Point y: ");
+    println(p.y);
+
+    var rect: Rectangle = Rectangle { width: 100, height: 50 };
+    print("Rectangle width: ");
+    println(rect.width);
+    print("Rectangle height: ");
+    println(rect.height);
+
+    print("Area: ");
+    println(rect.width * rect.height);
+}

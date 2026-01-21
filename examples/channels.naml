@@ -1,0 +1,46 @@
+fn main() {
+    println("Testing channels:");
+
+    // Create a channel with capacity 5
+    var ch: channel<int> = make_channel(5);
+
+    // Send values
+    println("Sending values...");
+    ch.send(10);
+    ch.send(20);
+    ch.send(30);
+
+    // Receive values
+    println("Receiving values...");
+    var v1: int = ch.receive();
+    print("Received: ");
+    println(v1);
+
+    var v2: int = ch.receive();
+    print("Received: ");
+    println(v2);
+
+    var v3: int = ch.receive();
+    print("Received: ");
+    println(v3);
+
+    // Test with a loop
+    println("Testing channel with loop:");
+    var i: int = 0;
+    while (i < 5) {
+        ch.send(i * 10);
+        i = i + 1;
+    }
+
+    var sum: int = 0;
+    i = 0;
+    while (i < 5) {
+        sum = sum + ch.receive();
+        i = i + 1;
+    }
+    print("Sum of received values: ");
+    println(sum);
+
+    ch.close();
+    println("Channel closed.");
+}

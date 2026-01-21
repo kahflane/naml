@@ -1,0 +1,18 @@
+// Declare external C functions from libc
+extern fn abs(x: int) -> int;
+extern fn labs(x: int) -> int;
+
+fn main() {
+    println("Testing FFI with libc functions:");
+
+    var x: int = -42;
+    print("abs(-42) = ");
+    println(abs(x));
+
+    var y: int = -100;
+    print("labs(-100) = ");
+    println(labs(y));
+
+    print("abs(10) = ");
+    println(abs(10));
+}

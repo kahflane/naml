@@ -1,0 +1,41 @@
+fn main() {
+    println("Testing spawn:");
+
+    // Create a channel to communicate results
+    var ch: channel<int> = make_channel(10);
+
+    // Test basic spawn by spawning work that sends to channel
+    println("Spawning 3 tasks...");
+
+    spawn {
+        sleep(10);
+        ch.send(100);
+    };
+
+    spawn {
+        sleep(5);
+        ch.send(200);
+    };
+
+    spawn {
+        ch.send(300);
+    };
+
+    // Wait for all spawned tasks
+    wait_all();
+
+    // Read results
+    println("Tasks complete. Reading results:");
+    var sum: int = 0;
+    var i: int = 0;
+    while (i < 3) {
+        sum = sum + ch.receive();
+        i = i + 1;
+    }
+
+    print("Sum: ");
+    println(sum);
+
+    ch.close();
+    println("Done!");
+}

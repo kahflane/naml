@@ -1,0 +1,49 @@
+fn main() {
+    println("Testing switch statements:");
+
+    var day: int = 3;
+
+    switch (day) {
+        case 1: {
+            println("Monday");
+        }
+        case 2: {
+            println("Tuesday");
+        }
+        case 3: {
+            println("Wednesday");
+        }
+        case 4: {
+            println("Thursday");
+        }
+        case 5: {
+            println("Friday");
+        }
+        default: {
+            println("Weekend");
+        }
+    }
+
+    println("Testing multiple values:");
+    var x: int = 0;
+    while (x < 8) {
+        print("x = ");
+        print(x);
+        print(" -> ");
+        switch (x) {
+            case 0: {
+                println("zero");
+            }
+            case 1: {
+                println("one");
+            }
+            case 2: {
+                println("two");
+            }
+            default: {
+                println("many");
+            }
+        }
+        x = x + 1;
+    }
+}

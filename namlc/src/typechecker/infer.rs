@@ -594,6 +594,56 @@ impl<'a> TypeInferrer<'a> {
             };
         }
 
+        // Handle built-in channel methods
+        if let Type::Channel(inner) = &resolved {
+            let method_name = self.interner.resolve(&call.method.symbol);
+            return match method_name {
+                "send" => {
+                    if call.args.len() != 1 {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 1,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return Type::Int;
+                    }
+                    let arg_ty = self.infer_expr(&call.args[0]);
+                    if let Err(e) = unify(&arg_ty, inner, call.args[0].span()) {
+                        self.errors.push(e);
+                    }
+                    Type::Int
+                }
+                "receive" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    (**inner).clone()
+                }
+                "close" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Unit
+                }
+                _ => {
+                    self.errors.push(TypeError::UndefinedMethod {
+                        ty: resolved.to_string(),
+                        method: method_name.to_string(),
+                        span: call.span,
+                    });
+                    Type::Error
+                }
+            };
+        }
+
         // Check if receiver is a bare type parameter (T with no type args)
         // If so, look up methods from its bounds
         if let Type::Generic(param_name, type_args) = &resolved {
