@@ -176,6 +176,106 @@ pub extern "C" fn naml_map_decref(map: *mut NamlMap) {
     }
 }
 
+/// Decrement map reference count and also decref string values
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_decref_strings(map: *mut NamlMap) {
+    if map.is_null() { return; }
+    unsafe {
+        if (*map).header.decref() {
+            for i in 0..(*map).capacity {
+                let entry = (*map).entries.add(i);
+                if (*entry).occupied {
+                    if (*entry).key != 0 {
+                        naml_string_decref((*entry).key as *mut NamlString);
+                    }
+                    if (*entry).value != 0 {
+                        naml_string_decref((*entry).value as *mut NamlString);
+                    }
+                }
+            }
+            let entries_layout = Layout::array::<MapEntry>((*map).capacity).unwrap();
+            dealloc((*map).entries as *mut u8, entries_layout);
+            let map_layout = Layout::new::<NamlMap>();
+            dealloc(map as *mut u8, map_layout);
+        }
+    }
+}
+
+/// Decrement map reference count and also decref array values
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_decref_arrays(map: *mut NamlMap) {
+    if map.is_null() { return; }
+    unsafe {
+        if (*map).header.decref() {
+            for i in 0..(*map).capacity {
+                let entry = (*map).entries.add(i);
+                if (*entry).occupied {
+                    if (*entry).key != 0 {
+                        naml_string_decref((*entry).key as *mut NamlString);
+                    }
+                    if (*entry).value != 0 {
+                        super::array::naml_array_decref((*entry).value as *mut super::array::NamlArray);
+                    }
+                }
+            }
+            let entries_layout = Layout::array::<MapEntry>((*map).capacity).unwrap();
+            dealloc((*map).entries as *mut u8, entries_layout);
+            let map_layout = Layout::new::<NamlMap>();
+            dealloc(map as *mut u8, map_layout);
+        }
+    }
+}
+
+/// Decrement map reference count and also decref nested map values
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_decref_maps(map: *mut NamlMap) {
+    if map.is_null() { return; }
+    unsafe {
+        if (*map).header.decref() {
+            for i in 0..(*map).capacity {
+                let entry = (*map).entries.add(i);
+                if (*entry).occupied {
+                    if (*entry).key != 0 {
+                        naml_string_decref((*entry).key as *mut NamlString);
+                    }
+                    if (*entry).value != 0 {
+                        naml_map_decref((*entry).value as *mut NamlMap);
+                    }
+                }
+            }
+            let entries_layout = Layout::array::<MapEntry>((*map).capacity).unwrap();
+            dealloc((*map).entries as *mut u8, entries_layout);
+            let map_layout = Layout::new::<NamlMap>();
+            dealloc(map as *mut u8, map_layout);
+        }
+    }
+}
+
+/// Decrement map reference count and also decref struct values
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_decref_structs(map: *mut NamlMap) {
+    if map.is_null() { return; }
+    unsafe {
+        if (*map).header.decref() {
+            for i in 0..(*map).capacity {
+                let entry = (*map).entries.add(i);
+                if (*entry).occupied {
+                    if (*entry).key != 0 {
+                        naml_string_decref((*entry).key as *mut NamlString);
+                    }
+                    if (*entry).value != 0 {
+                        super::value::naml_struct_decref((*entry).value as *mut super::value::NamlStruct);
+                    }
+                }
+            }
+            let entries_layout = Layout::array::<MapEntry>((*map).capacity).unwrap();
+            dealloc((*map).entries as *mut u8, entries_layout);
+            let map_layout = Layout::new::<NamlMap>();
+            dealloc(map as *mut u8, map_layout);
+        }
+    }
+}
+
 unsafe fn resize_map(map: *mut NamlMap) {
     unsafe {
         let old_capacity = (*map).capacity;
@@ -193,14 +293,35 @@ unsafe fn resize_map(map: *mut NamlMap) {
         for i in 0..old_capacity {
             let entry = old_entries.add(i);
             if (*entry).occupied {
-                if (*entry).key != 0 {
-                    (*((*entry).key as *mut NamlString)).header.decref();
-                }
-                naml_map_set(map, (*entry).key, (*entry).value);
+                // Use internal rehash function that doesn't modify reference counts.
+                // We're moving entries to new locations - the map still owns the same
+                // references, so refcounts should remain unchanged.
+                rehash_entry(map, (*entry).key, (*entry).value);
             }
         }
 
         let old_layout = Layout::array::<MapEntry>(old_capacity).unwrap();
         dealloc(old_entries as *mut u8, old_layout);
+    }
+}
+
+/// Internal function to insert an entry during rehashing without modifying reference counts.
+/// Used only during resize when moving existing entries to new locations.
+unsafe fn rehash_entry(map: *mut NamlMap, key: i64, value: i64) {
+    unsafe {
+        let hash = hash_string(key as *const NamlString);
+        let mut idx = (hash as usize) % (*map).capacity;
+        loop {
+            let entry = (*map).entries.add(idx);
+            if !(*entry).occupied {
+                (*entry).key = key;
+                (*entry).value = value;
+                (*entry).occupied = true;
+                (*map).length += 1;
+                // No incref here - we're just moving the entry, not creating a new reference
+                return;
+            }
+            idx = (idx + 1) % (*map).capacity;
+        }
     }
 }

@@ -1,0 +1,102 @@
+///
+/// Struct Cleanup Test
+///
+/// Tests that structs with heap-allocated fields are properly cleaned up.
+/// Each struct should have its heap fields decremented when the struct is freed.
+///
+
+struct Person {
+    name: string,
+    age: int
+}
+
+struct PersonWithScores {
+    name: string,
+    scores: [int],
+    metadata: map<string, int>
+}
+
+struct SimpleStruct {
+    value: int,
+    count: int
+}
+
+fn test_simple_struct() {
+    println("=== Simple Struct Test (no heap fields) ===");
+    var s: SimpleStruct = SimpleStruct { value: 42, count: 10 };
+    print("Value: ");
+    println(s.value);
+    print("Count: ");
+    println(s.count);
+}
+
+fn test_struct_with_string() {
+    println("=== Struct With String Test ===");
+    var p: Person = Person { name: "Alice", age: 30 };
+    print("Name: ");
+    println(p.name);
+    print("Age: ");
+    println(p.age);
+}
+
+fn test_struct_with_array() {
+    println("=== Struct With Array Test ===");
+    var ps: PersonWithScores = PersonWithScores {
+        name: "Bob",
+        scores: [95, 88, 92],
+        metadata: {}
+    };
+    ps.metadata["grade"] = 100;
+    print("Name: ");
+    println(ps.name);
+    print("Scores length: ");
+    println(ps.scores.len());
+}
+
+fn test_struct_reassignment() {
+    println("=== Struct Reassignment Test ===");
+    var p: Person = Person { name: "First", age: 20 };
+    println(p.name);
+    p = Person { name: "Second", age: 25 };
+    println(p.name);
+    p = Person { name: "Third", age: 30 };
+    println(p.name);
+}
+
+fn test_loop_struct_creation() {
+    println("=== Loop Struct Creation Test ===");
+    var count: int = 0;
+    while (count < 3) {
+        var p: Person = Person { name: "Temp", age: count };
+        print("Loop iteration: ");
+        println(count);
+        count = count + 1;
+    }
+    println("Loop completed");
+}
+
+fn main() {
+    println("========================================");
+    println("       Struct Cleanup Tests           ");
+    println("========================================");
+    println("");
+
+    test_simple_struct();
+    println("");
+
+    test_struct_with_string();
+    println("");
+
+    test_struct_with_array();
+    println("");
+
+    test_struct_reassignment();
+    println("");
+
+    test_loop_struct_creation();
+    println("");
+
+    println("========================================");
+    println("         All Tests Completed!          ");
+    println("========================================");
+}

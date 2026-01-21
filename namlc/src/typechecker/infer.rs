@@ -181,11 +181,22 @@ impl<'a> TypeInferrer<'a> {
             use super::symbols::TypeDef;
             match def {
                 TypeDef::Enum(e) => {
+                    let enum_ty = self.symbols.to_enum_type(e);
                     if path.segments.len() == 2 {
                         let variant_name = path.segments[1].symbol;
-                        for (name, _) in &e.variants {
+                        for (name, fields) in &e.variants {
                             if *name == variant_name {
-                                return Type::Enum(self.symbols.to_enum_type(e));
+                                // If variant has associated data, return function type
+                                if let Some(field_types) = fields {
+                                    return Type::Function(FunctionType {
+                                        params: field_types.clone(),
+                                        returns: Box::new(Type::Enum(enum_ty)),
+                                        throws: None,
+                                        is_async: false,
+                                        is_variadic: false,
+                                    });
+                                }
+                                return Type::Enum(enum_ty);
                             }
                         }
                         let variant = self.interner.resolve(&variant_name).to_string();
@@ -195,7 +206,7 @@ impl<'a> TypeInferrer<'a> {
                             span: path.span,
                         });
                     }
-                    Type::Enum(self.symbols.to_enum_type(e))
+                    Type::Enum(enum_ty)
                 }
                 _ => {
                     Type::Generic(first.symbol, Vec::new())
@@ -802,14 +813,23 @@ impl<'a> TypeInferrer<'a> {
                 });
                 Type::Error
             }
-            Type::Generic(name, ref _type_args) => {
+            Type::Generic(name, ref type_args) => {
                 // Look up the struct definition by name
                 use super::symbols::TypeDef;
+                use std::collections::HashMap;
                 if let Some(TypeDef::Struct(def)) = self.symbols.get_type(name) {
                     let struct_ty = self.symbols.to_struct_type(def);
+                    // Build substitution map from type params to actual type args
+                    let substitution: HashMap<lasso::Spur, Type> = struct_ty
+                        .type_params
+                        .iter()
+                        .zip(type_args.iter())
+                        .map(|(tp, arg)| (tp.name, arg.clone()))
+                        .collect();
                     for f in &struct_ty.fields {
                         if f.name == field.field.symbol {
-                            return f.ty.clone();
+                            // Apply substitution to get concrete field type
+                            return f.ty.substitute(&substitution);
                         }
                     }
                     let field_name = self.interner.resolve(&field.field.symbol).to_string();
@@ -889,15 +909,25 @@ impl<'a> TypeInferrer<'a> {
     fn infer_struct_literal(&mut self, lit: &ast::StructLiteralExpr) -> Type {
         if let Some(def) = self.symbols.get_type(lit.name.symbol) {
             use super::symbols::TypeDef;
+            use std::collections::HashMap;
             match def {
                 TypeDef::Struct(s) => {
                     let struct_ty = self.symbols.to_struct_type(s);
+
+                    // Build substitution map from type params to fresh type vars
+                    let substitution: HashMap<lasso::Spur, Type> = struct_ty
+                        .type_params
+                        .iter()
+                        .map(|tp| (tp.name, fresh_type_var(self.next_var_id)))
+                        .collect();
 
                     for field_lit in &lit.fields {
                         let field_def = struct_ty.fields.iter().find(|f| f.name == field_lit.name.symbol);
                         if let Some(field_def) = field_def {
                             let value_ty = self.infer_expr(&field_lit.value);
-                            if let Err(e) = unify(&value_ty, &field_def.ty, field_lit.span) {
+                            // Apply substitution to field type to replace type params with type vars
+                            let substituted_field_ty = field_def.ty.substitute(&substitution);
+                            if let Err(e) = unify(&value_ty, &substituted_field_ty, field_lit.span) {
                                 self.errors.push(e);
                             }
                         } else {
@@ -912,11 +942,11 @@ impl<'a> TypeInferrer<'a> {
 
                     // If struct has type parameters, return Generic type instead of Struct
                     if !struct_ty.type_params.is_empty() {
-                        // Create fresh type variables for each type param
+                        // Collect the type vars in param order for the return type
                         let type_args: Vec<Type> = struct_ty
                             .type_params
                             .iter()
-                            .map(|_| fresh_type_var(self.next_var_id))
+                            .map(|tp| substitution.get(&tp.name).cloned().unwrap_or_else(|| fresh_type_var(self.next_var_id)))
                             .collect();
                         Type::Generic(lit.name.symbol, type_args)
                     } else {

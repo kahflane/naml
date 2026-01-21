@@ -659,7 +659,7 @@ fn (self: UserRepository) map_row_to_user(row: map<string, string>) -> User {
         last_name: none,
         address: none,
         phone: none,
-        status: UserStatus.Active,
+        status: UserStatus::Active,
         roles: [UserRole::User],
         metadata: {},
         created_at: 0,

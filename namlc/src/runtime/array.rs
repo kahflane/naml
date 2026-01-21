@@ -68,12 +68,108 @@ pub extern "C" fn naml_array_incref(arr: *mut NamlArray) {
     }
 }
 
-/// Decrement reference count and free if zero
+/// Decrement reference count and free if zero (for arrays of primitives)
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_array_decref(arr: *mut NamlArray) {
     if !arr.is_null() {
         unsafe {
             if (*arr).header.decref() {
+                let data_layout = Layout::array::<i64>((*arr).capacity).unwrap();
+                dealloc((*arr).data as *mut u8, data_layout);
+
+                let layout = Layout::new::<NamlArray>();
+                dealloc(arr as *mut u8, layout);
+            }
+        }
+    }
+}
+
+/// Decrement reference count and free if zero, also decref string elements
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_array_decref_strings(arr: *mut NamlArray) {
+    if !arr.is_null() {
+        unsafe {
+            if (*arr).header.decref() {
+                // Decref each string element
+                for i in 0..(*arr).len {
+                    let elem = *(*arr).data.add(i);
+                    if elem != 0 {
+                        super::value::naml_string_decref(elem as *mut super::value::NamlString);
+                    }
+                }
+
+                let data_layout = Layout::array::<i64>((*arr).capacity).unwrap();
+                dealloc((*arr).data as *mut u8, data_layout);
+
+                let layout = Layout::new::<NamlArray>();
+                dealloc(arr as *mut u8, layout);
+            }
+        }
+    }
+}
+
+/// Decrement reference count and free if zero, also decref nested array elements
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_array_decref_arrays(arr: *mut NamlArray) {
+    if !arr.is_null() {
+        unsafe {
+            if (*arr).header.decref() {
+                // Decref each nested array element
+                for i in 0..(*arr).len {
+                    let elem = *(*arr).data.add(i);
+                    if elem != 0 {
+                        naml_array_decref(elem as *mut NamlArray);
+                    }
+                }
+
+                let data_layout = Layout::array::<i64>((*arr).capacity).unwrap();
+                dealloc((*arr).data as *mut u8, data_layout);
+
+                let layout = Layout::new::<NamlArray>();
+                dealloc(arr as *mut u8, layout);
+            }
+        }
+    }
+}
+
+/// Decrement reference count and free if zero, also decref map elements
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_array_decref_maps(arr: *mut NamlArray) {
+    if !arr.is_null() {
+        unsafe {
+            if (*arr).header.decref() {
+                // Decref each map element
+                for i in 0..(*arr).len {
+                    let elem = *(*arr).data.add(i);
+                    if elem != 0 {
+                        super::map::naml_map_decref(elem as *mut super::map::NamlMap);
+                    }
+                }
+
+                let data_layout = Layout::array::<i64>((*arr).capacity).unwrap();
+                dealloc((*arr).data as *mut u8, data_layout);
+
+                let layout = Layout::new::<NamlArray>();
+                dealloc(arr as *mut u8, layout);
+            }
+        }
+    }
+}
+
+/// Decrement reference count and free if zero, also decref struct elements
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_array_decref_structs(arr: *mut NamlArray) {
+    if !arr.is_null() {
+        unsafe {
+            if (*arr).header.decref() {
+                // Decref each struct element
+                for i in 0..(*arr).len {
+                    let elem = *(*arr).data.add(i);
+                    if elem != 0 {
+                        super::value::naml_struct_decref(elem as *mut super::value::NamlStruct);
+                    }
+                }
+
                 let data_layout = Layout::array::<i64>((*arr).capacity).unwrap();
                 dealloc((*arr).data as *mut u8, data_layout);
 

@@ -258,7 +258,7 @@ pub extern "C" fn naml_struct_incref(s: *mut NamlStruct) {
     }
 }
 
-/// Decrement reference count and free if zero
+/// Decrement reference count and free if zero (for structs with no heap fields)
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
     if !s.is_null() {
@@ -271,6 +271,22 @@ pub extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
                 ).unwrap();
                 dealloc(s as *mut u8, layout);
             }
+        }
+    }
+}
+
+/// Free struct memory without refcount check (called by generated decref functions)
+/// Generated decref functions handle field cleanup before calling this.
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_struct_free(s: *mut NamlStruct) {
+    if !s.is_null() {
+        unsafe {
+            let field_count = (*s).field_count;
+            let layout = Layout::from_size_align(
+                std::mem::size_of::<NamlStruct>() + (field_count as usize) * std::mem::size_of::<i64>(),
+                std::mem::align_of::<NamlStruct>(),
+            ).unwrap();
+            dealloc(s as *mut u8, layout);
         }
     }
 }

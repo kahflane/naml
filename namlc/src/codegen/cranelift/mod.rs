@@ -20,13 +20,16 @@ use crate::ast::{
     LiteralExpr,
 };
 use crate::codegen::CodegenError;
-use crate::typechecker::{SymbolTable, TypeAnnotations};
+use crate::source::Spanned;
+use crate::typechecker::{SymbolTable, Type, TypeAnnotations};
 
-/// Struct definition with type_id and ordered field names
+/// Struct definition with type_id, field names, and field heap types for cleanup
 #[derive(Clone)]
 pub struct StructDef {
     pub type_id: u32,
     pub fields: Vec<String>,
+    /// Heap type for each field (None if primitive), used for nested cleanup
+    pub(crate) field_heap_types: Vec<Option<HeapType>>,
 }
 
 /// Enum definition with variant info for codegen
@@ -123,11 +126,16 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_array_print", crate::runtime::naml_array_print as *const u8);
         builder.symbol("naml_array_incref", crate::runtime::naml_array_incref as *const u8);
         builder.symbol("naml_array_decref", crate::runtime::naml_array_decref as *const u8);
+        builder.symbol("naml_array_decref_strings", crate::runtime::naml_array_decref_strings as *const u8);
+        builder.symbol("naml_array_decref_arrays", crate::runtime::naml_array_decref_arrays as *const u8);
+        builder.symbol("naml_array_decref_maps", crate::runtime::naml_array_decref_maps as *const u8);
+        builder.symbol("naml_array_decref_structs", crate::runtime::naml_array_decref_structs as *const u8);
 
         // Struct operations
         builder.symbol("naml_struct_new", crate::runtime::naml_struct_new as *const u8);
         builder.symbol("naml_struct_incref", crate::runtime::naml_struct_incref as *const u8);
         builder.symbol("naml_struct_decref", crate::runtime::naml_struct_decref as *const u8);
+        builder.symbol("naml_struct_free", crate::runtime::naml_struct_free as *const u8);
         builder.symbol("naml_struct_get_field", crate::runtime::naml_struct_get_field as *const u8);
         builder.symbol("naml_struct_set_field", crate::runtime::naml_struct_set_field as *const u8);
 
@@ -155,9 +163,17 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_map_len", crate::runtime::naml_map_len as *const u8);
         builder.symbol("naml_map_incref", crate::runtime::naml_map_incref as *const u8);
         builder.symbol("naml_map_decref", crate::runtime::naml_map_decref as *const u8);
+        builder.symbol("naml_map_decref_strings", crate::runtime::naml_map_decref_strings as *const u8);
+        builder.symbol("naml_map_decref_arrays", crate::runtime::naml_map_decref_arrays as *const u8);
+        builder.symbol("naml_map_decref_maps", crate::runtime::naml_map_decref_maps as *const u8);
+        builder.symbol("naml_map_decref_structs", crate::runtime::naml_map_decref_structs as *const u8);
 
         // String operations
         builder.symbol("naml_string_from_cstr", crate::runtime::naml_string_from_cstr as *const u8);
+        builder.symbol("naml_string_print", crate::runtime::naml_string_print as *const u8);
+        builder.symbol("naml_string_eq", crate::runtime::naml_string_eq as *const u8);
+        builder.symbol("naml_string_incref", crate::runtime::naml_string_incref as *const u8);
+        builder.symbol("naml_string_decref", crate::runtime::naml_string_decref as *const u8);
 
         let module = JITModule::new(builder);
         let ctx = module.make_context();
@@ -200,18 +216,22 @@ impl<'a> JitCompiler<'a> {
     }
 
     pub fn compile(&mut self, ast: &SourceFile<'_>) -> Result<(), CodegenError> {
-        // First pass: collect struct definitions
+        // First pass: collect struct definitions with field heap types
         for item in &ast.items {
             if let crate::ast::Item::Struct(struct_item) = item {
                 let name = self.interner.resolve(&struct_item.name.symbol).to_string();
-                let fields: Vec<String> = struct_item.fields.iter()
-                    .map(|f| self.interner.resolve(&f.name.symbol).to_string())
-                    .collect();
+                let mut fields = Vec::new();
+                let mut field_heap_types = Vec::new();
+
+                for f in &struct_item.fields {
+                    fields.push(self.interner.resolve(&f.name.symbol).to_string());
+                    field_heap_types.push(get_heap_type(&f.ty));
+                }
 
                 let type_id = self.next_type_id;
                 self.next_type_id += 1;
 
-                self.struct_defs.insert(name, StructDef { type_id, fields });
+                self.struct_defs.insert(name, StructDef { type_id, fields, field_heap_types });
             }
         }
 
@@ -269,6 +289,9 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
+        // Generate per-struct decref functions for structs with heap fields
+        self.generate_struct_decref_functions()?;
+
         // Scan for spawn blocks and collect captured variable info
         for item in &ast.items {
             if let Item::Function(f) = item {
@@ -303,6 +326,190 @@ impl<'a> JitCompiler<'a> {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// Generate per-struct decref functions for structs that have heap-allocated fields.
+    /// These functions decrement the struct's refcount, and if it reaches zero, they:
+    /// 1. Decref each heap-allocated field
+    /// 2. Free the struct memory
+    fn generate_struct_decref_functions(&mut self) -> Result<(), CodegenError> {
+        // Collect structs that need specialized decref functions
+        let structs_with_heap_fields: Vec<(String, StructDef)> = self.struct_defs.iter()
+            .filter(|(_, def)| def.field_heap_types.iter().any(|ht| ht.is_some()))
+            .map(|(name, def)| (name.clone(), def.clone()))
+            .collect();
+
+        for (struct_name, struct_def) in structs_with_heap_fields {
+            self.generate_struct_decref(&struct_name, &struct_def)?;
+        }
+
+        Ok(())
+    }
+
+    /// Generate a specialized decref function for a single struct type
+    fn generate_struct_decref(&mut self, struct_name: &str, struct_def: &StructDef) -> Result<(), CodegenError> {
+        let ptr_type = self.module.target_config().pointer_type();
+        let func_name = format!("naml_struct_decref_{}", struct_name);
+
+        // Function signature: fn(struct_ptr: *mut NamlStruct)
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(ptr_type));
+
+        let func_id = self.module
+            .declare_function(&func_name, Linkage::Local, &sig)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
+
+        // Store for later reference
+        self.functions.insert(func_name.clone(), func_id);
+
+        self.ctx.func.signature = sig;
+
+        let mut builder_ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
+
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        builder.seal_block(entry_block);
+
+        let struct_ptr = builder.block_params(entry_block)[0];
+
+        // Check if ptr is null
+        let zero = builder.ins().iconst(ptr_type, 0);
+        let is_null = builder.ins().icmp(IntCC::Equal, struct_ptr, zero);
+
+        let null_block = builder.create_block();
+        let decref_block = builder.create_block();
+
+        builder.ins().brif(is_null, null_block, &[], decref_block, &[]);
+
+        // Null case: just return
+        builder.switch_to_block(null_block);
+        builder.seal_block(null_block);
+        builder.ins().return_(&[]);
+
+        // Non-null case: decref the struct
+        builder.switch_to_block(decref_block);
+        builder.seal_block(decref_block);
+
+        // Call atomic decref on refcount (at offset 0 in HeapHeader)
+        // We use an atomic fetch_sub and check if result was 1 (meaning we need to free)
+        // For simplicity, just load/decrement/store (single-threaded assumption for now)
+        // HeapHeader layout: refcount (8 bytes), tag (1 byte), pad (7 bytes)
+        let refcount = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), struct_ptr, 0);
+        let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+        let new_refcount = builder.ins().isub(refcount, one);
+        builder.ins().store(MemFlags::new(), new_refcount, struct_ptr, 0);
+
+        // Check if old refcount was 1 (meaning it's now 0 and we should free)
+        let should_free = builder.ins().icmp(IntCC::Equal, refcount, one);
+
+        let free_block = builder.create_block();
+        let done_block = builder.create_block();
+
+        builder.ins().brif(should_free, free_block, &[], done_block, &[]);
+
+        // Free block: decref each heap field, then free struct memory
+        builder.switch_to_block(free_block);
+        builder.seal_block(free_block);
+
+        // Struct memory layout after header:
+        // - type_id: u32 (offset 16)
+        // - field_count: u32 (offset 20)
+        // - fields[]: i64 (offset 24+)
+        let base_field_offset: i32 = 24; // sizeof(HeapHeader) + type_id + field_count
+
+        // Declare decref functions we might need
+        let mut decref_sig = self.module.make_signature();
+        decref_sig.params.push(AbiParam::new(ptr_type));
+
+        for (field_idx, heap_type) in struct_def.field_heap_types.iter().enumerate() {
+            if let Some(ht) = heap_type {
+                let field_offset = base_field_offset + (field_idx as i32 * 8);
+                let field_val = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), struct_ptr, field_offset);
+
+                // Check if field is non-null
+                let field_is_null = builder.ins().icmp(IntCC::Equal, field_val, zero);
+                let decref_field_block = builder.create_block();
+                let next_field_block = builder.create_block();
+
+                builder.ins().brif(field_is_null, next_field_block, &[], decref_field_block, &[]);
+
+                builder.switch_to_block(decref_field_block);
+                builder.seal_block(decref_field_block);
+
+                // Get the right decref function name for this field type
+                let decref_func_name = match ht {
+                    HeapType::String => "naml_string_decref",
+                    HeapType::Array(None) => "naml_array_decref",
+                    HeapType::Array(Some(elem_type)) => {
+                        match elem_type.as_ref() {
+                            HeapType::String => "naml_array_decref_strings",
+                            HeapType::Array(_) => "naml_array_decref_arrays",
+                            HeapType::Map(_) => "naml_array_decref_maps",
+                            HeapType::Struct(_) => "naml_array_decref_structs",
+                        }
+                    }
+                    HeapType::Map(None) => "naml_map_decref",
+                    HeapType::Map(Some(val_type)) => {
+                        match val_type.as_ref() {
+                            HeapType::String => "naml_map_decref_strings",
+                            HeapType::Array(_) => "naml_map_decref_arrays",
+                            HeapType::Map(_) => "naml_map_decref_maps",
+                            HeapType::Struct(_) => "naml_map_decref_structs",
+                        }
+                    }
+                    HeapType::Struct(None) => "naml_struct_decref",
+                    HeapType::Struct(Some(nested_struct_name)) => {
+                        // Check if nested struct has heap fields
+                        if self.struct_defs.get(nested_struct_name)
+                            .map(|def| def.field_heap_types.iter().any(|h| h.is_some()))
+                            .unwrap_or(false)
+                        {
+                            // Use dynamically generated name - but we can't return borrowed str
+                            // So we'll handle this case specially
+                            "naml_struct_decref" // Fallback for now
+                        } else {
+                            "naml_struct_decref"
+                        }
+                    }
+                };
+
+                let decref_func_id = self.module
+                    .declare_function(decref_func_name, Linkage::Import, &decref_sig)
+                    .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", decref_func_name, e)))?;
+
+                let decref_func_ref = self.module.declare_func_in_func(decref_func_id, builder.func);
+                builder.ins().call(decref_func_ref, &[field_val]);
+                builder.ins().jump(next_field_block, &[]);
+
+                builder.switch_to_block(next_field_block);
+                builder.seal_block(next_field_block);
+            }
+        }
+
+        // Call naml_struct_free to deallocate the struct memory
+        let free_func_id = self.module
+            .declare_function("naml_struct_free", Linkage::Import, &decref_sig)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_struct_free: {}", e)))?;
+        let free_func_ref = self.module.declare_func_in_func(free_func_id, builder.func);
+        builder.ins().call(free_func_ref, &[struct_ptr]);
+        builder.ins().jump(done_block, &[]);
+
+        // Done block: return
+        builder.switch_to_block(done_block);
+        builder.seal_block(done_block);
+        builder.ins().return_(&[]);
+
+        builder.finalize();
+
+        self.module
+            .define_function(func_id, &mut self.ctx)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to define {}: {}", func_name, e)))?;
+
+        self.ctx.clear();
 
         Ok(())
     }
@@ -635,12 +842,14 @@ impl<'a> JitCompiler<'a> {
             enum_defs: &self.enum_defs,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
+            var_heap_types: HashMap::new(),
             var_counter: 0,
             block_terminated: false,
             loop_exit_block: None,
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
             current_spawn_id: 0, // Not used in trampolines
+            annotations: self.annotations,
         };
 
         // Load captured variables from closure data
@@ -736,12 +945,14 @@ impl<'a> JitCompiler<'a> {
             enum_defs: &self.enum_defs,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
+            var_heap_types: HashMap::new(),
             var_counter: 0,
             block_terminated: false,
             loop_exit_block: None,
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
             current_spawn_id: 0,
+            annotations: self.annotations,
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -765,6 +976,8 @@ impl<'a> JitCompiler<'a> {
         }
 
         if !ctx.block_terminated && func.return_ty.is_none() {
+            // Cleanup all heap variables before implicit void return
+            emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
             builder.ins().return_(&[]);
         }
 
@@ -795,6 +1008,67 @@ impl<'a> JitCompiler<'a> {
     }
 }
 
+/// Types of heap-allocated objects that need cleanup
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HeapType {
+    String,
+    /// Array with optional element heap type for nested cleanup
+    Array(Option<Box<HeapType>>),
+    /// Map with optional value heap type for nested cleanup
+    Map(Option<Box<HeapType>>),
+    /// Struct with optional type name for specialized decref (when it has heap fields)
+    Struct(Option<String>),
+}
+
+/// Determine if an AST type is heap-allocated and return its HeapType
+/// String variables now always hold NamlString* pointers (string literals are boxed at assignment)
+fn get_heap_type(naml_ty: &crate::ast::NamlType) -> Option<HeapType> {
+    use crate::ast::NamlType;
+    match naml_ty {
+        NamlType::String => Some(HeapType::String),
+        NamlType::Array(elem_ty) => {
+            // Get the element's heap type for nested cleanup
+            let elem_heap_type = get_heap_type(elem_ty).map(Box::new);
+            Some(HeapType::Array(elem_heap_type))
+        }
+        NamlType::FixedArray(elem_ty, _) => {
+            let elem_heap_type = get_heap_type(elem_ty).map(Box::new);
+            Some(HeapType::Array(elem_heap_type))
+        }
+        NamlType::Map(_, val_ty) => {
+            // Get the value's heap type for nested cleanup (keys are always strings)
+            let val_heap_type = get_heap_type(val_ty).map(Box::new);
+            Some(HeapType::Map(val_heap_type))
+        }
+        NamlType::Named(_) => Some(HeapType::Struct(None)),
+        NamlType::Generic(_, _) => Some(HeapType::Struct(None)),
+        _ => None, // Primitives don't need cleanup
+    }
+}
+
+/// Determine heap type from typechecker Type (for future use with type inference)
+#[allow(dead_code)]
+fn get_heap_type_from_type(ty: &Type) -> Option<HeapType> {
+    match ty {
+        Type::String => Some(HeapType::String),
+        Type::Array(elem_ty) => {
+            let elem_heap_type = get_heap_type_from_type(elem_ty).map(Box::new);
+            Some(HeapType::Array(elem_heap_type))
+        }
+        Type::FixedArray(elem_ty, _) => {
+            let elem_heap_type = get_heap_type_from_type(elem_ty).map(Box::new);
+            Some(HeapType::Array(elem_heap_type))
+        }
+        Type::Map(_, val_ty) => {
+            let val_heap_type = get_heap_type_from_type(val_ty).map(Box::new);
+            Some(HeapType::Map(val_heap_type))
+        }
+        Type::Struct(_) => Some(HeapType::Struct(None)),
+        Type::Generic(_, _) => Some(HeapType::Struct(None)),
+        _ => None,
+    }
+}
+
 struct CompileContext<'a> {
     interner: &'a Rodeo,
     module: &'a mut JITModule,
@@ -803,6 +1077,8 @@ struct CompileContext<'a> {
     enum_defs: &'a HashMap<String, EnumDef>,
     extern_fns: &'a HashMap<String, ExternFn>,
     variables: HashMap<String, Variable>,
+    /// Track which variables hold heap-allocated objects for cleanup
+    var_heap_types: HashMap<String, HeapType>,
     var_counter: usize,
     block_terminated: bool,
     loop_exit_block: Option<Block>,
@@ -810,6 +1086,8 @@ struct CompileContext<'a> {
     spawn_blocks: &'a HashMap<u32, SpawnBlockInfo>,
     /// Counter for tracking which spawn block we're currently at
     current_spawn_id: u32,
+    /// Type annotations from type checker for type-aware codegen
+    annotations: &'a TypeAnnotations,
 }
 
 fn compile_statement(
@@ -826,13 +1104,36 @@ fn compile_statement(
                 cranelift::prelude::types::I64
             };
 
+            // Check if this is a string variable
+            let is_string_var = matches!(var_stmt.ty.as_ref(), Some(crate::ast::NamlType::String));
+
+            // Track heap type for cleanup
+            if let Some(ref naml_ty) = var_stmt.ty {
+                if let Some(heap_type) = get_heap_type(naml_ty) {
+                    ctx.var_heap_types.insert(var_name.clone(), heap_type);
+                }
+            }
+
             let var = Variable::new(ctx.var_counter);
             ctx.var_counter += 1;
             builder.declare_var(var, ty);
 
             if let Some(ref init) = var_stmt.init {
-                let val = compile_expression(ctx, builder, init)?;
+                let mut val = compile_expression(ctx, builder, init)?;
+
+                // Box string literals as NamlString* for consistent memory management
+                if is_string_var {
+                    if matches!(init, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                        val = call_string_from_cstr(ctx, builder, val)?;
+                    }
+                }
+
                 builder.def_var(var, val);
+                // Incref the value since we're storing a reference
+                let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
+                if let Some(ref heap_type) = heap_type_clone {
+                    emit_incref(ctx, builder, val, heap_type)?;
+                }
             } else {
                 let zero = builder.ins().iconst(ty, 0);
                 builder.def_var(var, zero);
@@ -845,10 +1146,32 @@ fn compile_statement(
             match &assign.target {
                 Expression::Identifier(ident) => {
                     let var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
-                    let val = compile_expression(ctx, builder, &assign.value)?;
 
                     if let Some(&var) = ctx.variables.get(&var_name) {
+                        // Clone heap type before mutable operations
+                        let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
+
+                        // For heap variables: decref old value before assigning new one
+                        if let Some(ref heap_type) = heap_type_clone {
+                            let old_val = builder.use_var(var);
+                            emit_decref(ctx, builder, old_val, heap_type)?;
+                        }
+
+                        let mut val = compile_expression(ctx, builder, &assign.value)?;
+
+                        // Box string literals as NamlString* when assigning to string variables
+                        if matches!(&heap_type_clone, Some(HeapType::String)) {
+                            if matches!(&assign.value, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                                val = call_string_from_cstr(ctx, builder, val)?;
+                            }
+                        }
+
                         builder.def_var(var, val);
+
+                        // Incref the new value since we're storing a new reference
+                        if let Some(ref heap_type) = heap_type_clone {
+                            emit_incref(ctx, builder, val, heap_type)?;
+                        }
                     } else {
                         return Err(CodegenError::JitCompile(format!("Undefined variable: {}", var_name)));
                     }
@@ -879,8 +1202,23 @@ fn compile_statement(
         Statement::Return(ret) => {
             if let Some(ref expr) = ret.value {
                 let val = compile_expression(ctx, builder, expr)?;
+
+                // Determine if we're returning a local heap variable (ownership transfer)
+                let returned_var = get_returned_var_name(expr, ctx.interner);
+                let exclude_var = returned_var.as_ref().and_then(|name| {
+                    if ctx.var_heap_types.contains_key(name) {
+                        Some(name.as_str())
+                    } else {
+                        None
+                    }
+                });
+
+                // Cleanup all local heap variables except the returned one
+                emit_cleanup_all_vars(ctx, builder, exclude_var)?;
                 builder.ins().return_(&[val]);
             } else {
+                // Void return - cleanup all heap variables
+                emit_cleanup_all_vars(ctx, builder, None)?;
                 builder.ins().return_(&[]);
             }
             ctx.block_terminated = true;
@@ -1428,6 +1766,31 @@ fn compile_expression(
         }
 
         Expression::Binary(bin) => {
+            // Check if this is a string comparison (Eq/NotEq)
+            let lhs_type = ctx.annotations.get_type(bin.left.span());
+            if matches!(lhs_type, Some(Type::String)) && matches!(bin.op, BinaryOp::Eq | BinaryOp::NotEq) {
+                let lhs = compile_expression(ctx, builder, &bin.left)?;
+                let rhs = compile_expression(ctx, builder, &bin.right)?;
+                // Convert lhs to NamlString if it's a string literal
+                let lhs_str = if matches!(&*bin.left, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                    call_string_from_cstr(ctx, builder, lhs)?
+                } else {
+                    lhs
+                };
+                // Convert rhs to NamlString if it's a string literal
+                let rhs_str = if matches!(&*bin.right, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                    call_string_from_cstr(ctx, builder, rhs)?
+                } else {
+                    rhs
+                };
+                let result = call_string_equals(ctx, builder, lhs_str, rhs_str)?;
+                if bin.op == BinaryOp::NotEq {
+                    // Negate the result
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    return Ok(builder.ins().bxor(result, one));
+                }
+                return Ok(result);
+            }
             let lhs = compile_expression(ctx, builder, &bin.left)?;
             let rhs = compile_expression(ctx, builder, &bin.right)?;
             compile_binary_op(builder, &bin.op, lhs, rhs)
@@ -1515,7 +1878,14 @@ fn compile_expression(
 
                             // Store data fields
                             for (i, arg) in call.args.iter().enumerate() {
-                                let arg_val = compile_expression(ctx, builder, arg)?;
+                                let mut arg_val = compile_expression(ctx, builder, arg)?;
+                                // Check if argument is a string type - if so, convert C string to NamlString
+                                if let Some(Type::String) = ctx.annotations.get_type(arg.span()) {
+                                    // For string literals, convert to NamlString
+                                    if matches!(arg, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                                        arg_val = call_string_from_cstr(ctx, builder, arg_val)?;
+                                    }
+                                }
                                 let offset = (variant.data_offset + i * 8) as i32;
                                 builder.ins().store(MemFlags::new(), arg_val, slot_addr, offset);
                             }
@@ -1590,7 +1960,13 @@ fn compile_expression(
                     .position(|f| *f == field_name)
                     .ok_or_else(|| CodegenError::JitCompile(format!("Unknown field: {}", field_name)))?;
 
-                let value = compile_expression(ctx, builder, &field.value)?;
+                let mut value = compile_expression(ctx, builder, &field.value)?;
+                // Convert string literals to NamlString
+                if let Some(Type::String) = ctx.annotations.get_type(field.value.span()) {
+                    if matches!(&field.value, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                        value = call_string_from_cstr(ctx, builder, value)?;
+                    }
+                }
                 let idx_val = builder.ins().iconst(cranelift::prelude::types::I32, field_idx as i64);
                 call_struct_set_field(ctx, builder, struct_ptr, idx_val, value)?;
             }
@@ -1862,12 +2238,25 @@ fn compile_print_call(
             }
             _ => {
                 let val = compile_expression(ctx, builder, arg)?;
-                // Check value type to call appropriate print function
-                let val_type = builder.func.dfg.value_type(val);
-                if val_type == cranelift::prelude::types::F64 {
-                    call_print_float(ctx, builder, val)?;
-                } else {
-                    call_print_int(ctx, builder, val)?;
+                // Check type from annotations to call appropriate print function
+                let expr_type = ctx.annotations.get_type(arg.span());
+                match expr_type {
+                    Some(Type::String) => {
+                        // String variables now hold NamlString* (boxed strings)
+                        call_print_naml_string(ctx, builder, val)?;
+                    }
+                    Some(Type::Float) => {
+                        call_print_float(ctx, builder, val)?;
+                    }
+                    _ => {
+                        // Default: check Cranelift value type for F64, otherwise int
+                        let val_type = builder.func.dfg.value_type(val);
+                        if val_type == cranelift::prelude::types::F64 {
+                            call_print_float(ctx, builder, val)?;
+                        } else {
+                            call_print_int(ctx, builder, val)?;
+                        }
+                    }
                 }
             }
         }
@@ -1883,6 +2272,171 @@ fn compile_print_call(
     }
 
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+/// Emit incref call for a heap-allocated value
+fn emit_incref(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    val: Value,
+    heap_type: &HeapType,
+) -> Result<(), CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+
+    // Incref functions are the same regardless of element type
+    let func_name = match heap_type {
+        HeapType::String => "naml_string_incref",
+        HeapType::Array(_) => "naml_array_incref",
+        HeapType::Map(_) => "naml_map_incref",
+        HeapType::Struct(_) => "naml_struct_incref",
+    };
+
+    let func_id = ctx.module
+        .declare_function(func_name, Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+
+    // Only call incref if value is non-null
+    let zero = builder.ins().iconst(ptr_type, 0);
+    let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
+
+    let call_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    builder.ins().brif(is_null, merge_block, &[], call_block, &[]);
+
+    builder.switch_to_block(call_block);
+    builder.seal_block(call_block);
+    builder.ins().call(func_ref, &[val]);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(())
+}
+
+/// Check if a struct has any heap-allocated fields
+fn struct_has_heap_fields(struct_defs: &HashMap<String, StructDef>, struct_name: &str) -> bool {
+    if let Some(def) = struct_defs.get(struct_name) {
+        def.field_heap_types.iter().any(|ht| ht.is_some())
+    } else {
+        false
+    }
+}
+
+/// Emit decref call for a heap-allocated value
+/// Uses specialized decref functions for arrays/maps/structs to handle nested cleanup
+fn emit_decref(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    val: Value,
+    heap_type: &HeapType,
+) -> Result<(), CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+
+    // Select the appropriate decref function based on element type for nested cleanup
+    let func_name: String = match heap_type {
+        HeapType::String => "naml_string_decref".to_string(),
+        HeapType::Array(None) => "naml_array_decref".to_string(),
+        HeapType::Array(Some(elem_type)) => {
+            // Use specialized decref that also decrefs elements
+            match elem_type.as_ref() {
+                HeapType::String => "naml_array_decref_strings".to_string(),
+                HeapType::Array(_) => "naml_array_decref_arrays".to_string(),
+                HeapType::Map(_) => "naml_array_decref_maps".to_string(),
+                HeapType::Struct(_) => "naml_array_decref_structs".to_string(),
+            }
+        }
+        HeapType::Map(None) => "naml_map_decref".to_string(),
+        HeapType::Map(Some(val_type)) => {
+            // Use specialized decref that also decrefs values
+            match val_type.as_ref() {
+                HeapType::String => "naml_map_decref_strings".to_string(),
+                HeapType::Array(_) => "naml_map_decref_arrays".to_string(),
+                HeapType::Map(_) => "naml_map_decref_maps".to_string(),
+                HeapType::Struct(_) => "naml_map_decref_structs".to_string(),
+            }
+        }
+        HeapType::Struct(None) => "naml_struct_decref".to_string(),
+        HeapType::Struct(Some(struct_name)) => {
+            // Check if this struct has heap fields that need cleanup
+            if struct_has_heap_fields(ctx.struct_defs, struct_name) {
+                format!("naml_struct_decref_{}", struct_name)
+            } else {
+                "naml_struct_decref".to_string()
+            }
+        }
+    };
+
+    let func_id = ctx.module
+        .declare_function(&func_name, Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+
+    // Only call decref if value is non-null
+    let zero = builder.ins().iconst(ptr_type, 0);
+    let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
+
+    let call_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    builder.ins().brif(is_null, merge_block, &[], call_block, &[]);
+
+    builder.switch_to_block(call_block);
+    builder.seal_block(call_block);
+    builder.ins().call(func_ref, &[val]);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(())
+}
+
+/// Emit cleanup for all tracked heap variables, optionally excluding one variable
+/// The excluded variable is typically the return value that transfers ownership to caller
+fn emit_cleanup_all_vars(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    exclude_var: Option<&str>,
+) -> Result<(), CodegenError> {
+    // Collect vars to clean up (we need to clone to avoid borrow issues)
+    let vars_to_cleanup: Vec<(String, Variable, HeapType)> = ctx.var_heap_types
+        .iter()
+        .filter_map(|(name, heap_type)| {
+            // Skip the excluded variable (being returned - ownership transfers to caller)
+            if let Some(excl) = exclude_var {
+                if name == excl {
+                    return None;
+                }
+            }
+            ctx.variables.get(name).map(|var| (name.clone(), *var, heap_type.clone()))
+        })
+        .collect();
+
+    for (_, var, ref heap_type) in vars_to_cleanup {
+        let val = builder.use_var(var);
+        emit_decref(ctx, builder, val, heap_type)?;
+    }
+
+    Ok(())
+}
+
+/// Helper to extract variable name from a simple identifier expression
+fn get_returned_var_name(expr: &Expression, interner: &Rodeo) -> Option<String> {
+    match expr {
+        Expression::Identifier(ident) => {
+            Some(interner.resolve(&ident.ident.symbol).to_string())
+        }
+        _ => None,
+    }
 }
 
 fn call_print_int(
@@ -1934,6 +2488,43 @@ fn call_print_str(
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
     builder.ins().call(func_ref, &[ptr]);
     Ok(())
+}
+
+fn call_print_naml_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    ptr: Value,
+) -> Result<(), CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ctx.module.target_config().pointer_type()));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_print", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_print: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[ptr]);
+    Ok(())
+}
+
+fn call_string_equals(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    a: Value,
+    b: Value,
+) -> Result<Value, CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ctx.module.target_config().pointer_type()));
+    sig.params.push(AbiParam::new(ctx.module.target_config().pointer_type()));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_eq", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_eq: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[a, b]);
+    Ok(builder.inst_results(call)[0])
 }
 
 fn call_print_newline(
