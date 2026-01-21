@@ -150,6 +150,27 @@ impl<'a> JitCompiler<'a> {
         let module = JITModule::new(builder);
         let ctx = module.make_context();
 
+        // Built-in option type (polymorphic, treat as Option<i64> for now)
+        let mut enum_defs = HashMap::new();
+        enum_defs.insert("option".to_string(), EnumDef {
+            name: "option".to_string(),
+            variants: vec![
+                EnumVariantDef {
+                    name: "none".to_string(),
+                    tag: 0,
+                    field_types: vec![],
+                    data_offset: 8,
+                },
+                EnumVariantDef {
+                    name: "some".to_string(),
+                    tag: 1,
+                    field_types: vec![crate::ast::NamlType::Int],
+                    data_offset: 8,
+                },
+            ],
+            size: 16, // 8 (tag+pad) + 8 (data)
+        });
+
         Ok(Self {
             interner,
             annotations,
@@ -158,7 +179,7 @@ impl<'a> JitCompiler<'a> {
             ctx,
             functions: HashMap::new(),
             struct_defs: HashMap::new(),
-            enum_defs: HashMap::new(),
+            enum_defs,
             extern_fns: HashMap::new(),
             next_type_id: 0,
             spawn_counter: 0,
@@ -1592,6 +1613,27 @@ fn compile_expression(
             Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
         }
 
+        Expression::Some(some_expr) => {
+            let inner_val = compile_expression(ctx, builder, &some_expr.value)?;
+
+            // Allocate option on stack
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                16, // option size
+                0,
+            ));
+            let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+            // Tag = 1 (some)
+            let tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+            builder.ins().store(MemFlags::new(), tag, slot_addr, 0);
+
+            // Store inner value at offset 8
+            builder.ins().store(MemFlags::new(), inner_val, slot_addr, 8);
+
+            Ok(slot_addr)
+        }
+
         _ => {
             Err(CodegenError::Unsupported(
                 format!("Expression type not yet implemented: {:?}", std::mem::discriminant(expr))
@@ -1624,7 +1666,17 @@ fn compile_literal(
             compile_string_literal(ctx, builder, s)
         }
         Literal::None => {
-            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                16,
+                0,
+            ));
+            let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+            let tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+            builder.ins().store(MemFlags::new(), tag, slot_addr, 0);
+
+            Ok(slot_addr)
         }
         _ => {
             Err(CodegenError::Unsupported(
@@ -2095,6 +2147,39 @@ fn compile_method_call(
     method_name: &str,
     args: &[Expression<'_>],
 ) -> Result<Value, CodegenError> {
+    // Handle option methods first (before compiling receiver for or_default)
+    match method_name {
+        "is_some" => {
+            let opt_ptr = compile_expression(ctx, builder, receiver)?;
+            let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
+            let one = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+            let result = builder.ins().icmp(IntCC::Equal, tag, one);
+            return Ok(builder.ins().uextend(cranelift::prelude::types::I64, result));
+        }
+        "is_none" => {
+            let opt_ptr = compile_expression(ctx, builder, receiver)?;
+            let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
+            let zero = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+            let result = builder.ins().icmp(IntCC::Equal, tag, zero);
+            return Ok(builder.ins().uextend(cranelift::prelude::types::I64, result));
+        }
+        "or_default" => {
+            let opt_ptr = compile_expression(ctx, builder, receiver)?;
+            if args.is_empty() {
+                return Err(CodegenError::JitCompile("or_default requires a default value argument".to_string()));
+            }
+            let default_val = compile_expression(ctx, builder, &args[0])?;
+
+            let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
+            let is_some = builder.ins().icmp_imm(IntCC::Equal, tag, 1);
+
+            let some_val = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), opt_ptr, 8);
+
+            return Ok(builder.ins().select(is_some, some_val, default_val));
+        }
+        _ => {}
+    }
+
     let recv = compile_expression(ctx, builder, receiver)?;
 
     match method_name {
