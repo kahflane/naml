@@ -147,6 +147,18 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_channel_incref", crate::runtime::naml_channel_incref as *const u8);
         builder.symbol("naml_channel_decref", crate::runtime::naml_channel_decref as *const u8);
 
+        // Map operations
+        builder.symbol("naml_map_new", crate::runtime::naml_map_new as *const u8);
+        builder.symbol("naml_map_set", crate::runtime::naml_map_set as *const u8);
+        builder.symbol("naml_map_get", crate::runtime::naml_map_get as *const u8);
+        builder.symbol("naml_map_contains", crate::runtime::naml_map_contains as *const u8);
+        builder.symbol("naml_map_len", crate::runtime::naml_map_len as *const u8);
+        builder.symbol("naml_map_incref", crate::runtime::naml_map_incref as *const u8);
+        builder.symbol("naml_map_decref", crate::runtime::naml_map_decref as *const u8);
+
+        // String operations
+        builder.symbol("naml_string_from_cstr", crate::runtime::naml_string_from_cstr as *const u8);
+
         let module = JITModule::new(builder);
         let ctx = module.make_context();
 
@@ -830,14 +842,36 @@ fn compile_statement(
         }
 
         Statement::Assign(assign) => {
-            if let Expression::Identifier(ident) = &assign.target {
-                let var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
-                let val = compile_expression(ctx, builder, &assign.value)?;
+            match &assign.target {
+                Expression::Identifier(ident) => {
+                    let var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+                    let val = compile_expression(ctx, builder, &assign.value)?;
 
-                if let Some(&var) = ctx.variables.get(&var_name) {
-                    builder.def_var(var, val);
-                } else {
-                    return Err(CodegenError::JitCompile(format!("Undefined variable: {}", var_name)));
+                    if let Some(&var) = ctx.variables.get(&var_name) {
+                        builder.def_var(var, val);
+                    } else {
+                        return Err(CodegenError::JitCompile(format!("Undefined variable: {}", var_name)));
+                    }
+                }
+                Expression::Index(index_expr) => {
+                    let base = compile_expression(ctx, builder, &index_expr.base)?;
+                    let value = compile_expression(ctx, builder, &assign.value)?;
+
+                    // Check if index is a string literal - if so, use map_set with NamlString conversion
+                    if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = &*index_expr.index {
+                        let cstr_ptr = compile_expression(ctx, builder, &index_expr.index)?;
+                        let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
+                        call_map_set(ctx, builder, base, naml_str, value)?;
+                    } else {
+                        // Default to array set for integer indices
+                        let index = compile_expression(ctx, builder, &index_expr.index)?;
+                        call_array_set(ctx, builder, base, index, value)?;
+                    }
+                }
+                _ => {
+                    return Err(CodegenError::Unsupported(
+                        format!("Assignment target not supported: {:?}", std::mem::discriminant(&assign.target))
+                    ));
                 }
             }
         }
@@ -1511,10 +1545,23 @@ fn compile_expression(
             compile_array_literal(ctx, builder, &arr_expr.elements)
         }
 
+        Expression::Map(map_expr) => {
+            compile_map_literal(ctx, builder, &map_expr.entries)
+        }
+
         Expression::Index(index_expr) => {
-            let arr = compile_expression(ctx, builder, &index_expr.base)?;
-            let idx = compile_expression(ctx, builder, &index_expr.index)?;
-            call_array_get(ctx, builder, arr, idx)
+            let base = compile_expression(ctx, builder, &index_expr.base)?;
+
+            // Check if index is a string literal - if so, use map_get with NamlString conversion
+            if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = &*index_expr.index {
+                let cstr_ptr = compile_expression(ctx, builder, &index_expr.index)?;
+                let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
+                call_map_get(ctx, builder, base, naml_str)
+            } else {
+                // Default to array access for integer indices
+                let index = compile_expression(ctx, builder, &index_expr.index)?;
+                call_array_get(ctx, builder, base, index)
+            }
         }
 
         Expression::MethodCall(method_call) => {
@@ -2030,6 +2077,208 @@ fn call_array_print(
     Ok(())
 }
 
+fn call_array_set(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    index: Value,
+    value: Value,
+) -> Result<(), CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_array_set", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_set: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[arr, index, value]);
+    Ok(())
+}
+
+fn compile_map_literal(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    entries: &[crate::ast::MapEntry<'_>],
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    // Create naml_map_new signature
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // capacity
+    sig.returns.push(AbiParam::new(ptr_type)); // map ptr
+
+    let func_id = ctx.module
+        .declare_function("naml_map_new", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(e.to_string()))?;
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+
+    // Create map with capacity 16
+    let capacity = builder.ins().iconst(cranelift::prelude::types::I64, 16);
+    let call = builder.ins().call(func_ref, &[capacity]);
+    let map_ptr = builder.inst_results(call)[0];
+
+    // For each entry, call naml_map_set
+    if !entries.is_empty() {
+        let mut set_sig = ctx.module.make_signature();
+        set_sig.params.push(AbiParam::new(ptr_type)); // map
+        set_sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // key
+        set_sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // value
+
+        let set_func_id = ctx.module
+            .declare_function("naml_map_set", Linkage::Import, &set_sig)
+            .map_err(|e| CodegenError::JitCompile(e.to_string()))?;
+        let set_func_ref = ctx.module.declare_func_in_func(set_func_id, builder.func);
+
+        for entry in entries {
+            // Convert string literals to NamlString pointers for map keys
+            let key = if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = &entry.key {
+                let cstr_ptr = compile_expression(ctx, builder, &entry.key)?;
+                call_string_from_cstr(ctx, builder, cstr_ptr)?
+            } else {
+                compile_expression(ctx, builder, &entry.key)?
+            };
+            let value = compile_expression(ctx, builder, &entry.value)?;
+            builder.ins().call(set_func_ref, &[map_ptr, key, value]);
+        }
+    }
+
+    Ok(map_ptr)
+}
+
+fn call_string_from_cstr(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    cstr_ptr: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type)); // cstr: *const i8
+    sig.returns.push(AbiParam::new(ptr_type)); // *mut NamlString
+
+    let func_id = ctx.module
+        .declare_function("naml_string_from_cstr", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_from_cstr: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[cstr_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+#[allow(dead_code)]
+fn call_map_new(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    capacity: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_map_new", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_new: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[capacity]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_map_set(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    key: Value,
+    value: Value,
+) -> Result<(), CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_map_set", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_set: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[map, key, value]);
+    Ok(())
+}
+
+fn call_map_get(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    key: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_map_get", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_get: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[map, key]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_map_contains(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    key: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_map_contains", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_contains: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[map, key]);
+    Ok(builder.inst_results(call)[0])
+}
+
+#[allow(dead_code)]
+fn call_map_len(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_map_len", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_len: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[map]);
+    Ok(builder.inst_results(call)[0])
+}
+
 fn call_struct_new(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -2229,6 +2478,23 @@ fn compile_method_call(
         }
         "close" => {
             call_channel_close(ctx, builder, recv)?;
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+        // Map methods
+        "contains" => {
+            if args.is_empty() {
+                return Err(CodegenError::JitCompile("contains requires a key argument".to_string()));
+            }
+            let key = compile_expression(ctx, builder, &args[0])?;
+            call_map_contains(ctx, builder, recv, key)
+        }
+        "set" => {
+            if args.len() < 2 {
+                return Err(CodegenError::JitCompile("set requires key and value arguments".to_string()));
+            }
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            call_map_set(ctx, builder, recv, key, value)?;
             Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
         }
         _ => {

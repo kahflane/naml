@@ -209,6 +209,19 @@ pub extern "C" fn naml_string_print(s: *const NamlString) {
     }
 }
 
+/// Create a NamlString from a null-terminated C string pointer
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_string_from_cstr(cstr: *const i8) -> *mut NamlString {
+    if cstr.is_null() {
+        return naml_string_new(std::ptr::null(), 0);
+    }
+    unsafe {
+        let c_str = std::ffi::CStr::from_ptr(cstr);
+        let bytes = c_str.to_bytes();
+        naml_string_new(bytes.as_ptr(), bytes.len())
+    }
+}
+
 /// Allocate a new struct on the heap
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut NamlStruct {
