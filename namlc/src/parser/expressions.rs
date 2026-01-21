@@ -146,7 +146,6 @@ fn parse_atom<'a, 'ast>(
         Some(TokenKind::LBrace) => parse_block_or_map(arena, input),
         Some(TokenKind::Keyword(Keyword::If)) => parse_if_expr(arena, input),
         Some(TokenKind::Keyword(Keyword::Spawn)) => parse_spawn_expr(arena, input),
-        Some(TokenKind::Keyword(Keyword::Await)) => parse_await_expr(arena, input),
         Some(TokenKind::Keyword(Keyword::Try)) => parse_try_expr(arena, input),
         Some(TokenKind::Pipe | TokenKind::PipePipe) => parse_lambda_expr(arena, input),
         _ => Err(nom::Err::Error(PError {
@@ -557,23 +556,6 @@ fn parse_spawn_expr<'a, 'ast>(
         input,
         Expression::Spawn(SpawnExpr {
             body: arena.alloc(body),
-            span,
-        }),
-    ))
-}
-
-fn parse_await_expr<'a, 'ast>(
-    arena: &'ast AstArena,
-    input: TokenStream<'a>,
-) -> PResult<'a, Expression<'ast>> {
-    let (input, start) = keyword(Keyword::Await)(input)?;
-    let (input, expr) = parse_unary(arena, input)?;
-    let span = start.span.merge(expr.span());
-
-    Ok((
-        input,
-        Expression::Await(AwaitExpr {
-            expr: arena.alloc(expr),
             span,
         }),
     ))

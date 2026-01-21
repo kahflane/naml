@@ -177,11 +177,6 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "not inside a loop".to_string(),
             Some("continue can only be used inside loops".to_string()),
         ),
-        TypeError::AwaitOutsideAsync { .. } => (
-            "await outside of async function".to_string(),
-            "not in async context".to_string(),
-            Some("mark the function as 'async'".to_string()),
-        ),
         TypeError::PlatformMismatch { feature, platform, .. } => (
             format!("feature '{}' not available on '{}'", feature, platform),
             format!("not on {}", platform),

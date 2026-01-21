@@ -117,9 +117,6 @@ pub enum TypeError {
     #[error("continue outside of loop")]
     ContinueOutsideLoop { span: Span },
 
-    #[error("await outside of async function")]
-    AwaitOutsideAsync { span: Span },
-
     #[error("type '{ty}' does not satisfy bound '{bound}'")]
     BoundNotSatisfied {
         ty: String,
@@ -162,7 +159,6 @@ impl TypeError {
             TypeError::UnreachableCode { span } => *span,
             TypeError::BreakOutsideLoop { span } => *span,
             TypeError::ContinueOutsideLoop { span } => *span,
-            TypeError::AwaitOutsideAsync { span } => *span,
             TypeError::BoundNotSatisfied { span, .. } => *span,
             TypeError::NoBoundForMethod { span, .. } => *span,
             TypeError::Custom { span, .. } => *span,

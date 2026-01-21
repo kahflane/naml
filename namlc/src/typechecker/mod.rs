@@ -90,7 +90,6 @@ impl<'a> TypeChecker<'a> {
                     params: vec![],
                     return_ty,
                     throws: None,
-                    is_async: false,
                     is_public: true,
                     is_variadic,
                     span: Span::dummy(),
@@ -106,7 +105,6 @@ impl<'a> TypeChecker<'a> {
                 params: vec![(spur, Type::Int)], // ms parameter
                 return_ty: Type::Unit,
                 throws: None,
-                is_async: false,
                 is_public: true,
                 is_variadic: false,
                 span: Span::dummy(),
@@ -128,7 +126,6 @@ impl<'a> TypeChecker<'a> {
                 params: vec![(spur, Type::Int)], // capacity parameter
                 return_ty: Type::Channel(Box::new(Type::Generic(t_spur, vec![]))),
                 throws: None,
-                is_async: false,
                 is_public: true,
                 is_variadic: false,
                 span: Span::dummy(),
@@ -184,13 +181,6 @@ impl<'a> TypeChecker<'a> {
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
 
-        // Wrap async function return types in promise<T>
-        let return_ty = if func.is_async {
-            Type::Promise(Box::new(return_ty))
-        } else {
-            return_ty
-        };
-
         let throws = func.throws.as_ref().map(|t| self.convert_type(t));
 
         self.symbols.define_function(FunctionSig {
@@ -199,7 +189,6 @@ impl<'a> TypeChecker<'a> {
             params,
             return_ty,
             throws,
-            is_async: func.is_async,
             is_public: func.is_public,
             is_variadic: false,
             span: func.span,
@@ -227,7 +216,6 @@ impl<'a> TypeChecker<'a> {
             params,
             return_ty,
             throws,
-            is_async: false,
             is_public: true,
             is_variadic: false,
             span: ext.span,
@@ -265,13 +253,6 @@ impl<'a> TypeChecker<'a> {
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
 
-        // Wrap async method return types in promise<T>
-        let return_ty = if func.is_async {
-            Type::Promise(Box::new(return_ty))
-        } else {
-            return_ty
-        };
-
         let throws = func.throws.as_ref().map(|t| self.convert_type(t));
 
         self.symbols.define_method(
@@ -284,7 +265,6 @@ impl<'a> TypeChecker<'a> {
                 params,
                 return_ty,
                 throws,
-                is_async: func.is_async,
                 is_public: func.is_public,
                 span: func.span,
             },
@@ -398,7 +378,6 @@ impl<'a> TypeChecker<'a> {
                     params,
                     return_ty,
                     throws,
-                    is_async: m.is_async,
                 }
             })
             .collect();
@@ -494,7 +473,7 @@ impl<'a> TypeChecker<'a> {
         };
 
         self.env
-            .enter_function(return_ty, throws, func.is_async, &type_params);
+            .enter_function(return_ty, throws, &type_params);
         self.env.push_scope();
 
         if let Some(recv) = &func.receiver {
@@ -572,7 +551,6 @@ impl<'a> TypeChecker<'a> {
                     params: param_types,
                     returns: Box::new(self.convert_type(returns)),
                     throws: None,
-                    is_async: false,
                     is_variadic: false,
                 })
             }
@@ -680,14 +658,6 @@ mod tests {
             "fn main() { while (true) { break; } }",
         );
         assert!(errors.is_empty());
-    }
-
-    #[test]
-    fn test_await_outside_async() {
-        let errors = check_source(
-            "fn main() { await foo; }",
-        );
-        assert!(!errors.is_empty());
     }
 
     #[test]

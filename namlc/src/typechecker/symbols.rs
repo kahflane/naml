@@ -28,7 +28,6 @@ pub struct FunctionSig {
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
     pub throws: Option<Type>,
-    pub is_async: bool,
     pub is_public: bool,
     pub is_variadic: bool,
     pub span: Span,
@@ -43,7 +42,6 @@ pub struct MethodSig {
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
     pub throws: Option<Type>,
-    pub is_async: bool,
     pub is_public: bool,
     pub span: Span,
 }
@@ -92,7 +90,6 @@ pub struct InterfaceMethodDef {
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
     pub throws: Option<Type>,
-    pub is_async: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -194,7 +191,6 @@ impl SymbolTable {
                     params: m.params.iter().map(|(_, ty)| ty.clone()).collect(),
                     returns: m.return_ty.clone(),
                     throws: m.throws.clone(),
-                    is_async: m.is_async,
                 })
                 .collect(),
             type_params: def.type_params.clone(),
@@ -206,7 +202,6 @@ impl SymbolTable {
             params: sig.params.iter().map(|(_, ty)| ty.clone()).collect(),
             returns: Box::new(sig.return_ty.clone()),
             throws: sig.throws.clone().map(Box::new),
-            is_async: sig.is_async,
             is_variadic: sig.is_variadic,
         }
     }
@@ -236,7 +231,6 @@ mod tests {
             params: vec![],
             return_ty: Type::Unit,
             throws: None,
-            is_async: false,
             is_public: true,
             is_variadic: false,
             span: Span::dummy(),
@@ -290,7 +284,6 @@ mod tests {
                 params: vec![],
                 return_ty: Type::Float,
                 throws: None,
-                is_async: false,
                 is_public: true,
                 span: Span::dummy(),
             },

@@ -382,8 +382,6 @@ pub enum Keyword {
     Import,
     Use,
     Extern,
-    Async,
-    Await,
     Spawn,
     Throw,
     Throws,
@@ -872,8 +870,6 @@ impl<'a> Lexer<'a> {
             (0x6C696877, b'e') => TokenKind::Keyword(Keyword::While),  // "while"
             (0x61657262, b'k') => TokenKind::Keyword(Keyword::Break),  // "break"
             (0x6F726874, b'w') => TokenKind::Keyword(Keyword::Throw),  // "throw"
-            (0x6E797361, b'c') => TokenKind::Keyword(Keyword::Async),  // "async"
-            (0x69617761, b't') => TokenKind::Keyword(Keyword::Await),  // "await"
             (0x77617073, b'n') => TokenKind::Keyword(Keyword::Spawn),  // "spawn"
             (0x616F6C66, b't') => TokenKind::Keyword(Keyword::Float),  // "float"
             (0x65747962, b's') => TokenKind::Keyword(Keyword::Bytes),  // "bytes"

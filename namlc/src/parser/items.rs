@@ -35,9 +35,6 @@ pub fn parse_item<'a, 'ast>(
     };
 
     match input.first().map(|t| t.kind) {
-        Some(TokenKind::Keyword(Keyword::Async)) => {
-            parse_function_item(arena, input, is_public, platforms)
-        }
         Some(TokenKind::Keyword(Keyword::Fn)) => {
             parse_function_item(arena, input, is_public, platforms)
         }
@@ -108,13 +105,6 @@ fn parse_function_item<'a, 'ast>(
     is_public: bool,
     platforms: Option<Platforms>,
 ) -> PResult<'a, Item<'ast>> {
-    let (input, is_async) = if check_keyword(Keyword::Async)(input) {
-        let (input, _) = keyword(Keyword::Async)(input)?;
-        (input, true)
-    } else {
-        (input, false)
-    };
-
     let (input, start) = keyword(Keyword::Fn)(input)?;
 
     let (input, receiver) = if check(TokenKind::LParen)(input) {
@@ -185,7 +175,6 @@ fn parse_function_item<'a, 'ast>(
             params,
             return_ty,
             throws,
-            is_async,
             is_public,
             body,
             platforms,
@@ -449,14 +438,7 @@ fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<Interf
             break;
         }
 
-        let (new_input, is_async) = if check_keyword(Keyword::Async)(input) {
-            let (i, _) = keyword(Keyword::Async)(input)?;
-            (i, true)
-        } else {
-            (input, false)
-        };
-
-        let (new_input, start) = keyword(Keyword::Fn)(new_input)?;
+        let (new_input, start) = keyword(Keyword::Fn)(input)?;
         let (new_input, name) = ident(new_input)?;
 
         let (new_input, generics) = if check(TokenKind::Lt)(new_input) {
@@ -508,7 +490,6 @@ fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<Interf
             params,
             return_ty,
             throws,
-            is_async,
             span: start.span.merge(end.span),
         });
 

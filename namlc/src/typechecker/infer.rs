@@ -56,7 +56,6 @@ impl<'a> TypeInferrer<'a> {
             Expression::Block(block) => self.infer_block(block),
             Expression::Lambda(lambda) => self.infer_lambda(lambda),
             Expression::Spawn(spawn) => self.infer_spawn(spawn),
-            Expression::Await(await_expr) => self.infer_await(await_expr),
             Expression::Try(try_expr) => self.infer_try(try_expr),
             Expression::Catch(catch) => self.infer_catch(catch),
             Expression::Cast(cast) => self.infer_cast(cast),
@@ -191,7 +190,6 @@ impl<'a> TypeInferrer<'a> {
                                         params: field_types.clone(),
                                         returns: Box::new(Type::Enum(enum_ty)),
                                         throws: None,
-                                        is_async: false,
                                         is_variadic: false,
                                     });
                                 }
@@ -1063,7 +1061,6 @@ impl<'a> TypeInferrer<'a> {
             params: param_types,
             returns: Box::new(return_ty),
             throws: None,
-            is_async: false,
             is_variadic: false,
         })
     }
@@ -1071,29 +1068,6 @@ impl<'a> TypeInferrer<'a> {
     fn infer_spawn(&mut self, spawn: &ast::SpawnExpr) -> Type {
         let body_ty = self.infer_block(&spawn.body);
         Type::Promise(Box::new(body_ty))
-    }
-
-    fn infer_await(&mut self, await_expr: &ast::AwaitExpr) -> Type {
-        if !self.env.is_async() {
-            self.errors
-                .push(TypeError::AwaitOutsideAsync { span: await_expr.span });
-        }
-
-        let expr_ty = self.infer_expr(&await_expr.expr);
-        let resolved = expr_ty.resolve();
-
-        match resolved {
-            Type::Promise(inner) => (*inner).clone(),
-            Type::Error => Type::Error,
-            _ => {
-                self.errors.push(TypeError::type_mismatch(
-                    "promise<_>",
-                    resolved.to_string(),
-                    await_expr.span,
-                ));
-                Type::Error
-            }
-        }
     }
 
     fn infer_try(&mut self, try_expr: &ast::TryExpr) -> Type {
@@ -1575,7 +1549,6 @@ impl<'a> TypeInferrer<'a> {
                     params: param_types,
                     returns: Box::new(self.convert_ast_type(returns)),
                     throws: None,
-                    is_async: false,
                     is_variadic: false,
                 })
             }

@@ -63,7 +63,6 @@ pub struct FunctionType {
     pub params: Vec<Type>,
     pub returns: Box<Type>,
     pub throws: Option<Box<Type>>,
-    pub is_async: bool,
     pub is_variadic: bool,
 }
 
@@ -109,7 +108,6 @@ pub struct MethodType {
     pub params: Vec<Type>,
     pub returns: Type,
     pub throws: Option<Type>,
-    pub is_async: bool,
 }
 
 #[derive(Clone)]
@@ -186,7 +184,6 @@ impl Type {
             params,
             returns: Box::new(returns),
             throws: None,
-            is_async: false,
             is_variadic: false,
         })
     }
@@ -230,7 +227,6 @@ impl Type {
                 params: f.params.iter().map(|p| p.resolve()).collect(),
                 returns: Box::new(f.returns.resolve()),
                 throws: f.throws.as_ref().map(|t| Box::new(t.resolve())),
-                is_async: f.is_async,
                 is_variadic: f.is_variadic,
             }),
             _ => self.clone(),
@@ -291,7 +287,6 @@ impl Type {
                 params: f.params.iter().map(|p| p.substitute(substitutions)).collect(),
                 returns: Box::new(f.returns.substitute(substitutions)),
                 throws: f.throws.as_ref().map(|t| Box::new(t.substitute(substitutions))),
-                is_async: f.is_async,
                 is_variadic: f.is_variadic,
             }),
             _ => self.clone(),

@@ -102,7 +102,6 @@ pub struct FunctionItem<'ast> {
     pub params: Vec<Parameter>,
     pub return_ty: Option<NamlType>,
     pub throws: Option<NamlType>,
-    pub is_async: bool,
     pub is_public: bool,
     pub body: Option<BlockStmt<'ast>>,
     pub platforms: Option<Platforms>,
@@ -144,7 +143,6 @@ pub struct InterfaceMethod {
     pub params: Vec<Parameter>,
     pub return_ty: Option<NamlType>,
     pub throws: Option<NamlType>,
-    pub is_async: bool,
     pub span: Span,
 }
 
@@ -245,7 +243,6 @@ mod tests {
             params: vec![],
             return_ty: None,
             throws: None,
-            is_async: false,
             is_public: false,
             body: Some(BlockStmt::empty(Span::dummy())),
             platforms: None,

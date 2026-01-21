@@ -380,9 +380,6 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
                 v.visit_expr(tail);
             }
         }
-        Expression::Await(e) => {
-            v.visit_expr(e.expr);
-        }
         Expression::Try(e) => {
             v.visit_expr(e.expr);
         }

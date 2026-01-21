@@ -211,11 +211,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_async_fn() {
-        assert_parses("pub async fn get() -> int throws Error { return 0; }");
-    }
-
-    #[test]
     fn test_parse_mut_receiver() {
         assert_parses("fn (mut self: List<T>) add(item: T) { }");
     }
