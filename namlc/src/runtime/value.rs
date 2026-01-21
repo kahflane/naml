@@ -50,7 +50,12 @@ impl HeapHeader {
     }
 
     pub fn decref(&self) -> bool {
-        self.refcount.fetch_sub(1, Ordering::Release) == 1
+        if self.refcount.fetch_sub(1, Ordering::Release) == 1 {
+            std::sync::atomic::fence(Ordering::Acquire);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn refcount(&self) -> usize {

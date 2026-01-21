@@ -11,6 +11,7 @@ mod types;
 use std::collections::HashMap;
 
 use cranelift::prelude::*;
+use cranelift_codegen::ir::AtomicRmwOp;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataDescription, FuncId, Linkage, Module};
 use lasso::Rodeo;
@@ -147,6 +148,10 @@ impl<'a> JitCompiler<'a> {
         // Map operations
         builder.symbol("naml_map_new", crate::runtime::naml_map_new as *const u8);
         builder.symbol("naml_map_set", crate::runtime::naml_map_set as *const u8);
+        builder.symbol("naml_map_set_string", crate::runtime::naml_map_set_string as *const u8);
+        builder.symbol("naml_map_set_array", crate::runtime::naml_map_set_array as *const u8);
+        builder.symbol("naml_map_set_map", crate::runtime::naml_map_set_map as *const u8);
+        builder.symbol("naml_map_set_struct", crate::runtime::naml_map_set_struct as *const u8);
         builder.symbol("naml_map_get", crate::runtime::naml_map_get as *const u8);
         builder.symbol("naml_map_contains", crate::runtime::naml_map_contains as *const u8);
         builder.symbol("naml_map_len", crate::runtime::naml_map_len as *const u8);
@@ -379,25 +384,27 @@ impl<'a> JitCompiler<'a> {
         builder.seal_block(decref_block);
 
         // Call atomic decref on refcount (at offset 0 in HeapHeader)
-        // We use an atomic fetch_sub and check if result was 1 (meaning we need to free)
-        // For simplicity, just load/decrement/store (single-threaded assumption for now)
         // HeapHeader layout: refcount (8 bytes), tag (1 byte), pad (7 bytes)
-        let refcount = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), struct_ptr, 0);
+        // Use atomic_rmw to safely decrement refcount in multi-threaded scenarios
         let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
-        let new_refcount = builder.ins().isub(refcount, one);
-        builder.ins().store(MemFlags::new(), new_refcount, struct_ptr, 0);
+        let old_refcount = builder.ins().atomic_rmw(
+            cranelift::prelude::types::I64,
+            MemFlags::new(),
+            AtomicRmwOp::Sub,
+            struct_ptr,
+            one,
+        );
 
         // Check if old refcount was 1 (meaning it's now 0 and we should free)
-        let should_free = builder.ins().icmp(IntCC::Equal, refcount, one);
+        let should_free = builder.ins().icmp(IntCC::Equal, old_refcount, one);
 
         let free_block = builder.create_block();
         let done_block = builder.create_block();
 
         builder.ins().brif(should_free, free_block, &[], done_block, &[]);
-
-        // Free block: decref each heap field, then free struct memory
         builder.switch_to_block(free_block);
         builder.seal_block(free_block);
+        builder.ins().fence();
 
         // Struct memory layout after header:
         // - type_id: u32 (offset 16)
@@ -405,7 +412,6 @@ impl<'a> JitCompiler<'a> {
         // - fields[]: i64 (offset 24+)
         let base_field_offset: i32 = 24; // sizeof(HeapHeader) + type_id + field_count
 
-        // Declare decref functions we might need
         let mut decref_sig = self.module.make_signature();
         decref_sig.params.push(AbiParam::new(ptr_type));
 
@@ -414,17 +420,14 @@ impl<'a> JitCompiler<'a> {
                 let field_offset = base_field_offset + (field_idx as i32 * 8);
                 let field_val = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), struct_ptr, field_offset);
 
-                // Check if field is non-null
                 let field_is_null = builder.ins().icmp(IntCC::Equal, field_val, zero);
                 let decref_field_block = builder.create_block();
                 let next_field_block = builder.create_block();
 
                 builder.ins().brif(field_is_null, next_field_block, &[], decref_field_block, &[]);
-
                 builder.switch_to_block(decref_field_block);
                 builder.seal_block(decref_field_block);
 
-                // Get the right decref function name for this field type
                 let decref_func_name = match ht {
                     HeapType::String => "naml_string_decref",
                     HeapType::Array(None) => "naml_array_decref",
@@ -447,13 +450,10 @@ impl<'a> JitCompiler<'a> {
                     }
                     HeapType::Struct(None) => "naml_struct_decref",
                     HeapType::Struct(Some(nested_struct_name)) => {
-                        // Check if nested struct has heap fields
                         if self.struct_defs.get(nested_struct_name)
                             .map(|def| def.field_heap_types.iter().any(|h| h.is_some()))
                             .unwrap_or(false)
                         {
-                            // Use dynamically generated name - but we can't return borrowed str
-                            // So we'll handle this case specially
                             "naml_struct_decref" // Fallback for now
                         } else {
                             "naml_struct_decref"
@@ -2351,11 +2351,9 @@ fn emit_cleanup_all_vars(
     builder: &mut FunctionBuilder<'_>,
     exclude_var: Option<&str>,
 ) -> Result<(), CodegenError> {
-    // Collect vars to clean up (we need to clone to avoid borrow issues)
     let vars_to_cleanup: Vec<(String, Variable, HeapType)> = ctx.var_heap_types
         .iter()
         .filter_map(|(name, heap_type)| {
-            // Skip the excluded variable (being returned - ownership transfers to caller)
             if let Some(excl) = exclude_var {
                 if name == excl {
                     return None;
@@ -2732,6 +2730,17 @@ fn call_map_set(
     key: Value,
     value: Value,
 ) -> Result<(), CodegenError> {
+    call_map_set_typed(ctx, builder, map, key, value, None)
+}
+
+fn call_map_set_typed(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    key: Value,
+    value: Value,
+    value_type: Option<&HeapType>,
+) -> Result<(), CodegenError> {
     let ptr_type = ctx.module.target_config().pointer_type();
 
     let mut sig = ctx.module.make_signature();
@@ -2739,9 +2748,19 @@ fn call_map_set(
     sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
     sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
 
+    // Select the appropriate set function based on value type
+    // This ensures proper decref of old values when updating map entries
+    let func_name = match value_type {
+        Some(HeapType::String) => "naml_map_set_string",
+        Some(HeapType::Array(_)) => "naml_map_set_array",
+        Some(HeapType::Map(_)) => "naml_map_set_map",
+        Some(HeapType::Struct(_)) => "naml_map_set_struct",
+        None => "naml_map_set",
+    };
+
     let func_id = ctx.module
-        .declare_function("naml_map_set", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_set: {}", e)))?;
+        .declare_function(func_name, Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
 
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
     builder.ins().call(func_ref, &[map, key, value]);

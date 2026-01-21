@@ -79,6 +79,7 @@ pub extern "C" fn naml_map_new(capacity: usize) -> *mut NamlMap {
     }
 }
 
+/// Set a primitive value in the map (no refcount management for values)
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_map_set(map: *mut NamlMap, key: i64, value: i64) {
     if map.is_null() { return; }
@@ -99,6 +100,138 @@ pub extern "C" fn naml_map_set(map: *mut NamlMap, key: i64, value: i64) {
                 return;
             }
             if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
+                (*entry).value = value;
+                return;
+            }
+            idx = (idx + 1) % (*map).capacity;
+        }
+    }
+}
+
+/// Set a string value in the map (decrefs old string value when updating)
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_set_string(map: *mut NamlMap, key: i64, value: i64) {
+    if map.is_null() { return; }
+    unsafe {
+        if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
+            resize_map(map);
+        }
+        let hash = hash_string(key as *const NamlString);
+        let mut idx = (hash as usize) % (*map).capacity;
+        loop {
+            let entry = (*map).entries.add(idx);
+            if !(*entry).occupied {
+                (*entry).key = key;
+                (*entry).value = value;
+                (*entry).occupied = true;
+                (*map).length += 1;
+                if key != 0 { (*(key as *mut NamlString)).header.incref(); }
+                return;
+            }
+            if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
+                // Decref old string value before replacing
+                if (*entry).value != 0 {
+                    naml_string_decref((*entry).value as *mut NamlString);
+                }
+                (*entry).value = value;
+                return;
+            }
+            idx = (idx + 1) % (*map).capacity;
+        }
+    }
+}
+
+/// Set an array value in the map (decrefs old array value when updating)
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_set_array(map: *mut NamlMap, key: i64, value: i64) {
+    if map.is_null() { return; }
+    unsafe {
+        if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
+            resize_map(map);
+        }
+        let hash = hash_string(key as *const NamlString);
+        let mut idx = (hash as usize) % (*map).capacity;
+        loop {
+            let entry = (*map).entries.add(idx);
+            if !(*entry).occupied {
+                (*entry).key = key;
+                (*entry).value = value;
+                (*entry).occupied = true;
+                (*map).length += 1;
+                if key != 0 { (*(key as *mut NamlString)).header.incref(); }
+                return;
+            }
+            if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
+                // Decref old array value before replacing
+                if (*entry).value != 0 {
+                    super::array::naml_array_decref((*entry).value as *mut super::array::NamlArray);
+                }
+                (*entry).value = value;
+                return;
+            }
+            idx = (idx + 1) % (*map).capacity;
+        }
+    }
+}
+
+/// Set a map value in the map (decrefs old map value when updating)
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_set_map(map: *mut NamlMap, key: i64, value: i64) {
+    if map.is_null() { return; }
+    unsafe {
+        if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
+            resize_map(map);
+        }
+        let hash = hash_string(key as *const NamlString);
+        let mut idx = (hash as usize) % (*map).capacity;
+        loop {
+            let entry = (*map).entries.add(idx);
+            if !(*entry).occupied {
+                (*entry).key = key;
+                (*entry).value = value;
+                (*entry).occupied = true;
+                (*map).length += 1;
+                if key != 0 { (*(key as *mut NamlString)).header.incref(); }
+                return;
+            }
+            if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
+                // Decref old map value before replacing
+                if (*entry).value != 0 {
+                    naml_map_decref((*entry).value as *mut NamlMap);
+                }
+                (*entry).value = value;
+                return;
+            }
+            idx = (idx + 1) % (*map).capacity;
+        }
+    }
+}
+
+/// Set a struct value in the map (decrefs old struct value when updating)
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_map_set_struct(map: *mut NamlMap, key: i64, value: i64) {
+    if map.is_null() { return; }
+    unsafe {
+        if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
+            resize_map(map);
+        }
+        let hash = hash_string(key as *const NamlString);
+        let mut idx = (hash as usize) % (*map).capacity;
+        loop {
+            let entry = (*map).entries.add(idx);
+            if !(*entry).occupied {
+                (*entry).key = key;
+                (*entry).value = value;
+                (*entry).occupied = true;
+                (*map).length += 1;
+                if key != 0 { (*(key as *mut NamlString)).header.incref(); }
+                return;
+            }
+            if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
+                // Decref old struct value before replacing
+                if (*entry).value != 0 {
+                    super::value::naml_struct_decref((*entry).value as *mut super::value::NamlStruct);
+                }
                 (*entry).value = value;
                 return;
             }
