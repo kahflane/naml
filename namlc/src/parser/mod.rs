@@ -19,8 +19,11 @@ mod combinators;
 mod expressions;
 mod input;
 mod items;
+mod patterns;
 mod statements;
 mod types;
+
+pub use patterns::parse_pattern;
 
 pub use combinators::{PError, PErrorKind};
 pub use input::TokenStream;

@@ -334,7 +334,7 @@ fn parse_switch_stmt<'a, 'ast>(
 
         if check_keyword(Keyword::Case)(input) {
             let (new_input, _) = keyword(Keyword::Case)(input)?;
-            let (new_input, pattern) = parse_expression(arena, new_input)?;
+            let (new_input, pattern) = super::parse_pattern(new_input)?;
             let pattern_span = pattern.span();
             let (new_input, _) = token(TokenKind::Colon)(new_input)?;
             let (new_input, body) = parse_block(arena, new_input)?;
