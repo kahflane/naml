@@ -19,6 +19,7 @@
 
 use super::expressions::*;
 use super::items::*;
+use super::patterns::*;
 use super::statements::*;
 use super::types::*;
 
@@ -37,6 +38,10 @@ pub trait Visitor<'ast>: Sized {
 
     fn visit_type(&mut self, ty: &NamlType) {
         walk_type(self, ty)
+    }
+
+    fn visit_pattern(&mut self, pattern: &Pattern<'ast>) {
+        walk_pattern(self, pattern)
     }
 
     fn visit_ident(&mut self, _ident: &Ident) {}
@@ -240,7 +245,7 @@ pub fn walk_stmt<'ast, V: Visitor<'ast>>(v: &mut V, stmt: &Statement<'ast>) {
         Statement::Switch(s) => {
             v.visit_expr(&s.scrutinee);
             for case in &s.cases {
-                v.visit_expr(&case.pattern);
+                v.visit_pattern(&case.pattern);
                 for stmt in &case.body.statements {
                     v.visit_stmt(stmt);
                 }
@@ -437,6 +442,29 @@ pub fn walk_type<'ast, V: Visitor<'ast>>(v: &mut V, ty: &NamlType) {
             v.visit_type(returns);
         }
         _ => {}
+    }
+}
+
+pub fn walk_pattern<'ast, V: Visitor<'ast>>(v: &mut V, pattern: &Pattern<'ast>) {
+    match pattern {
+        Pattern::Literal(_) => {
+            // Literals don't contain nested visitable elements
+        }
+        Pattern::Identifier(p) => {
+            v.visit_ident(&p.ident);
+        }
+        Pattern::Variant(p) => {
+            for seg in &p.path {
+                v.visit_ident(seg);
+            }
+            for binding in &p.bindings {
+                v.visit_ident(binding);
+            }
+        }
+        Pattern::Wildcard(_) => {
+            // Wildcard has no nested elements
+        }
+        Pattern::_Phantom(_) => {}
     }
 }
 

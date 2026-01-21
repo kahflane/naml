@@ -17,7 +17,7 @@
 
 use lasso::Rodeo;
 
-use crate::ast::{self, Expression, Literal};
+use crate::ast::{self, Expression, Literal, Pattern};
 use crate::source::Spanned;
 
 use super::env::TypeEnv;
@@ -1122,6 +1122,112 @@ impl<'a> TypeInferrer<'a> {
         Type::Array(Box::new(elem_ty.resolve()))
     }
 
+    /// Infer the type of a pattern and bind any variables it introduces.
+    /// Returns the type that the pattern matches.
+    pub fn infer_pattern(&mut self, pattern: &Pattern, scrutinee_ty: &Type) -> Type {
+        match pattern {
+            Pattern::Literal(lit) => {
+                // Literal patterns have a fixed type
+                match &lit.value {
+                    Literal::Int(_) => Type::Int,
+                    Literal::UInt(_) => Type::Uint,
+                    Literal::Float(_) => Type::Float,
+                    Literal::Bool(_) => Type::Bool,
+                    Literal::String(_) => Type::String,
+                    Literal::Bytes(_) => Type::Bytes,
+                    Literal::None => {
+                        let inner = fresh_type_var(self.next_var_id);
+                        Type::Option(Box::new(inner))
+                    }
+                }
+            }
+
+            Pattern::Identifier(ident) => {
+                // Identifier pattern: first check if it's an enum variant name
+                if let Type::Enum(enum_ty) = scrutinee_ty {
+                    for variant in &enum_ty.variants {
+                        if variant.name == ident.ident.symbol {
+                            // It's a variant name, return the enum type
+                            return scrutinee_ty.clone();
+                        }
+                    }
+                }
+                // Otherwise it's a binding that captures the scrutinee value
+                self.env.define(ident.ident.symbol, scrutinee_ty.clone(), false);
+                scrutinee_ty.clone()
+            }
+
+            Pattern::Variant(variant) => {
+                // Get the enum type from the path
+                if variant.path.is_empty() {
+                    return Type::Error;
+                }
+
+                // First segment is the enum type or variant name
+                let first = &variant.path[0];
+
+                // Check if it's a qualified path (EnumType::Variant) or bare variant
+                if variant.path.len() == 1 {
+                    // Bare variant name - use scrutinee type to resolve
+                    if let Type::Enum(enum_ty) = scrutinee_ty {
+                        for var in &enum_ty.variants {
+                            if var.name == first.symbol {
+                                // Bind variant fields if present
+                                if let Some(ref fields) = var.fields {
+                                    for (i, binding) in variant.bindings.iter().enumerate() {
+                                        if i < fields.len() {
+                                            self.env.define(binding.symbol, fields[i].clone(), false);
+                                        }
+                                    }
+                                }
+                                return scrutinee_ty.clone();
+                            }
+                        }
+                        // Unknown variant
+                        let variant_name = self.interner.resolve(&first.symbol).to_string();
+                        self.errors.push(TypeError::Custom {
+                            message: format!("unknown variant '{}'", variant_name),
+                            span: variant.span,
+                        });
+                    }
+                    return Type::Error;
+                }
+
+                // Qualified path - look up the enum type
+                if let Some(def) = self.symbols.get_type(first.symbol) {
+                    use super::symbols::TypeDef;
+                    if let TypeDef::Enum(e) = def {
+                        let enum_ty = self.symbols.to_enum_type(e);
+                        let variant_name = variant.path.last().unwrap().symbol;
+
+                        for var in &enum_ty.variants {
+                            if var.name == variant_name {
+                                // Bind variant fields if present
+                                if let Some(ref fields) = var.fields {
+                                    for (i, binding) in variant.bindings.iter().enumerate() {
+                                        if i < fields.len() {
+                                            self.env.define(binding.symbol, fields[i].clone(), false);
+                                        }
+                                    }
+                                }
+                                return Type::Enum(enum_ty);
+                            }
+                        }
+                    }
+                }
+
+                Type::Error
+            }
+
+            Pattern::Wildcard(_) => {
+                // Wildcard matches anything
+                scrutinee_ty.clone()
+            }
+
+            Pattern::_Phantom(_) => Type::Error,
+        }
+    }
+
     pub fn check_stmt(&mut self, stmt: &ast::Statement) {
         use ast::Statement::*;
         match stmt {
@@ -1348,12 +1454,12 @@ impl<'a> TypeInferrer<'a> {
                 self.switch_scrutinee = Some(scrutinee_ty.resolve());
 
                 for case in &switch.cases {
-                    let pattern_ty = self.infer_expr(&case.pattern);
+                    self.env.push_scope();
+                    let resolved_scrutinee = scrutinee_ty.resolve();
+                    let pattern_ty = self.infer_pattern(&case.pattern, &resolved_scrutinee);
                     if let Err(e) = unify(&pattern_ty, &scrutinee_ty, case.pattern.span()) {
                         self.errors.push(e);
                     }
-
-                    self.env.push_scope();
                     for s in &case.body.statements {
                         self.check_stmt(s);
                     }
@@ -1417,7 +1523,21 @@ impl<'a> TypeInferrer<'a> {
             ast::NamlType::Promise(inner) => {
                 Type::Promise(Box::new(self.convert_ast_type(inner)))
             }
-            ast::NamlType::Named(ident) => Type::Generic(ident.symbol, Vec::new()),
+            ast::NamlType::Named(ident) => {
+                // Look up the name to see if it's a known type (struct, enum, etc.)
+                if let Some(def) = self.symbols.get_type(ident.symbol) {
+                    use super::symbols::TypeDef;
+                    match def {
+                        TypeDef::Struct(s) => Type::Struct(self.symbols.to_struct_type(s)),
+                        TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
+                        TypeDef::Interface(i) => Type::Interface(self.symbols.to_interface_type(i)),
+                        TypeDef::Exception(_) => Type::Generic(ident.symbol, Vec::new()),
+                    }
+                } else {
+                    // Fall back to generic type (for type parameters)
+                    Type::Generic(ident.symbol, Vec::new())
+                }
+            }
             ast::NamlType::Generic(ident, args) => {
                 let converted_args = args.iter().map(|a| self.convert_ast_type(a)).collect();
                 Type::Generic(ident.symbol, converted_args)

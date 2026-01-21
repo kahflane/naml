@@ -1076,13 +1076,13 @@ fn compile_statement(
                 builder.ins().jump(default_block, &[]);
             }
 
-            // Build the chain of checks
+            // Build the chain of checks using pattern matching
             for (i, case) in switch_stmt.cases.iter().enumerate() {
                 builder.switch_to_block(check_blocks[i]);
                 builder.seal_block(check_blocks[i]);
 
-                let pattern_val = compile_expression(ctx, builder, &case.pattern)?;
-                let cond = builder.ins().icmp(IntCC::Equal, scrutinee, pattern_val);
+                // Use compile_pattern_match instead of compile_expression
+                let cond = compile_pattern_match(ctx, builder, &case.pattern, scrutinee)?;
 
                 let next_check = if i + 1 < switch_stmt.cases.len() {
                     check_blocks[i + 1]
@@ -1093,11 +1093,14 @@ fn compile_statement(
                 builder.ins().brif(cond, case_blocks[i], &[], next_check, &[]);
             }
 
-            // Compile each case body
+            // Compile each case body with pattern variable bindings
             for (i, case) in switch_stmt.cases.iter().enumerate() {
                 builder.switch_to_block(case_blocks[i]);
                 builder.seal_block(case_blocks[i]);
                 ctx.block_terminated = false;
+
+                // Bind pattern variables before executing the case body
+                bind_pattern_vars(ctx, builder, &case.pattern, scrutinee)?;
 
                 for stmt in &case.body.statements {
                     compile_statement(ctx, builder, stmt)?;
@@ -1139,6 +1142,180 @@ fn compile_statement(
                 format!("Statement type not yet implemented: {:?}", std::mem::discriminant(stmt))
             ));
         }
+    }
+
+    Ok(())
+}
+
+/// Compile a pattern match, returning a boolean value indicating if the pattern matches.
+fn compile_pattern_match(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    pattern: &crate::ast::Pattern<'_>,
+    scrutinee: Value,
+) -> Result<Value, CodegenError> {
+    use crate::ast::Pattern;
+
+    match pattern {
+        Pattern::Literal(lit) => {
+            let lit_val = compile_literal(ctx, builder, &lit.value)?;
+            Ok(builder.ins().icmp(IntCC::Equal, scrutinee, lit_val))
+        }
+
+        Pattern::Identifier(ident) => {
+            // Check if this is an enum variant name by checking switch_scrutinee context
+            // For now, identifier patterns always match (they bind the value)
+            // If it's a bare variant name, we need to compare tags
+            let name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+
+            // Check all enum definitions for a matching variant
+            for enum_def in ctx.enum_defs.values() {
+                if let Some(variant) = enum_def.variants.iter().find(|v| v.name == name) {
+                    // This is a variant name - compare tags
+                    let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), scrutinee, 0);
+                    let expected_tag = builder.ins().iconst(cranelift::prelude::types::I32, variant.tag as i64);
+                    return Ok(builder.ins().icmp(IntCC::Equal, tag, expected_tag));
+                }
+            }
+
+            // Not a variant name - identifier pattern always matches (it's a binding)
+            Ok(builder.ins().iconst(cranelift::prelude::types::I8, 1))
+        }
+
+        Pattern::Variant(variant) => {
+            if variant.path.is_empty() {
+                return Err(CodegenError::JitCompile("Empty variant path".to_string()));
+            }
+
+            // Handle both bare variant (Active) and qualified (Status::Active)
+            let (enum_name, variant_name) = if variant.path.len() == 1 {
+                // Bare variant - need to find the enum from context
+                let var_name = ctx.interner.resolve(&variant.path[0].symbol).to_string();
+
+                // Search all enum definitions for this variant
+                let mut found = None;
+                for (e_name, enum_def) in ctx.enum_defs.iter() {
+                    if enum_def.variants.iter().any(|v| v.name == var_name) {
+                        found = Some((e_name.clone(), var_name.clone()));
+                        break;
+                    }
+                }
+
+                match found {
+                    Some(pair) => pair,
+                    None => return Err(CodegenError::JitCompile(format!(
+                        "Unknown variant: {}",
+                        var_name
+                    ))),
+                }
+            } else {
+                // Qualified path
+                let enum_name = ctx.interner.resolve(&variant.path[0].symbol).to_string();
+                let variant_name = ctx.interner.resolve(&variant.path.last().unwrap().symbol).to_string();
+                (enum_name, variant_name)
+            };
+
+            if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
+                if let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                    // Get enum tag from scrutinee (scrutinee is pointer to enum)
+                    let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), scrutinee, 0);
+                    let expected_tag = builder.ins().iconst(cranelift::prelude::types::I32, var_def.tag as i64);
+                    return Ok(builder.ins().icmp(IntCC::Equal, tag, expected_tag));
+                }
+            }
+
+            Err(CodegenError::JitCompile(format!(
+                "Unknown enum variant: {}::{}",
+                enum_name, variant_name
+            )))
+        }
+
+        Pattern::Wildcard(_) => {
+            // Wildcard always matches
+            Ok(builder.ins().iconst(cranelift::prelude::types::I8, 1))
+        }
+
+        Pattern::_Phantom(_) => {
+            Ok(builder.ins().iconst(cranelift::prelude::types::I8, 0))
+        }
+    }
+}
+
+/// Bind pattern variables to the matched value.
+fn bind_pattern_vars(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    pattern: &crate::ast::Pattern<'_>,
+    scrutinee: Value,
+) -> Result<(), CodegenError> {
+    use crate::ast::Pattern;
+
+    match pattern {
+        Pattern::Variant(variant) if !variant.bindings.is_empty() => {
+            // Get the enum and variant info
+            let (enum_name, variant_name) = if variant.path.len() == 1 {
+                let var_name = ctx.interner.resolve(&variant.path[0].symbol).to_string();
+
+                // Search all enum definitions for this variant
+                let mut found = None;
+                for (e_name, enum_def) in ctx.enum_defs.iter() {
+                    if enum_def.variants.iter().any(|v| v.name == var_name) {
+                        found = Some((e_name.clone(), var_name.clone()));
+                        break;
+                    }
+                }
+
+                match found {
+                    Some(pair) => pair,
+                    None => return Ok(()), // Variant not found, nothing to bind
+                }
+            } else {
+                let enum_name = ctx.interner.resolve(&variant.path[0].symbol).to_string();
+                let variant_name = ctx.interner.resolve(&variant.path.last().unwrap().symbol).to_string();
+                (enum_name, variant_name)
+            };
+
+            if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
+                if let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                    for (i, binding) in variant.bindings.iter().enumerate() {
+                        let binding_name = ctx.interner.resolve(&binding.symbol).to_string();
+                        let offset = (var_def.data_offset + i * 8) as i32;
+
+                        let field_val = builder.ins().load(
+                            cranelift::prelude::types::I64,
+                            MemFlags::new(),
+                            scrutinee,
+                            offset,
+                        );
+
+                        let var = Variable::new(ctx.var_counter);
+                        ctx.var_counter += 1;
+                        builder.declare_var(var, cranelift::prelude::types::I64);
+                        builder.def_var(var, field_val);
+                        ctx.variables.insert(binding_name, var);
+                    }
+                }
+            }
+        }
+
+        Pattern::Identifier(ident) => {
+            // Check if it's not a variant name (binding patterns)
+            let name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+
+            // Check if it's a variant name - don't bind in that case
+            let is_variant = ctx.enum_defs.values()
+                .any(|def| def.variants.iter().any(|v| v.name == name));
+
+            if !is_variant {
+                let var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(var, cranelift::prelude::types::I64);
+                builder.def_var(var, scrutinee);
+                ctx.variables.insert(name, var);
+            }
+        }
+
+        _ => {}
     }
 
     Ok(())
