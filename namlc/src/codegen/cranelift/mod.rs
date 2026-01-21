@@ -29,6 +29,25 @@ pub struct StructDef {
     pub fields: Vec<String>,
 }
 
+/// Enum definition with variant info for codegen
+#[derive(Clone)]
+pub struct EnumDef {
+    pub name: String,
+    pub variants: Vec<EnumVariantDef>,
+    /// Size in bytes (8 + max_data_size, aligned)
+    pub size: usize,
+}
+
+#[derive(Clone)]
+pub struct EnumVariantDef {
+    pub name: String,
+    pub tag: u32,
+    /// Types of data fields (empty for unit variants)
+    pub field_types: Vec<crate::ast::NamlType>,
+    /// Offset of data within enum (always 8 for now)
+    pub data_offset: usize,
+}
+
 /// External function declaration info
 #[derive(Clone)]
 pub struct ExternFn {
@@ -61,6 +80,7 @@ pub struct JitCompiler<'a> {
     ctx: codegen::Context,
     functions: HashMap<String, FuncId>,
     struct_defs: HashMap<String, StructDef>,
+    enum_defs: HashMap<String, EnumDef>,
     extern_fns: HashMap<String, ExternFn>,
     next_type_id: u32,
     spawn_counter: u32,
@@ -138,6 +158,7 @@ impl<'a> JitCompiler<'a> {
             ctx,
             functions: HashMap::new(),
             struct_defs: HashMap::new(),
+            enum_defs: HashMap::new(),
             extern_fns: HashMap::new(),
             next_type_id: 0,
             spawn_counter: 0,
@@ -158,6 +179,38 @@ impl<'a> JitCompiler<'a> {
                 self.next_type_id += 1;
 
                 self.struct_defs.insert(name, StructDef { type_id, fields });
+            }
+        }
+
+        // Collect enum definitions
+        for item in &ast.items {
+            if let crate::ast::Item::Enum(enum_item) = item {
+                let name = self.interner.resolve(&enum_item.name.symbol).to_string();
+                let mut variants = Vec::new();
+                let mut max_data_size: usize = 0;
+
+                for (tag, variant) in enum_item.variants.iter().enumerate() {
+                    let variant_name = self.interner.resolve(&variant.name.symbol).to_string();
+                    let field_types = variant.fields.clone().unwrap_or_default();
+                    let data_size = field_types.len() * 8; // Each field is 8 bytes
+                    max_data_size = max_data_size.max(data_size);
+
+                    variants.push(EnumVariantDef {
+                        name: variant_name,
+                        tag: tag as u32,
+                        field_types,
+                        data_offset: 8, // After tag + padding
+                    });
+                }
+
+                // Align to 8 bytes
+                let size = 8 + ((max_data_size + 7) / 8) * 8;
+
+                self.enum_defs.insert(name.clone(), EnumDef {
+                    name,
+                    variants,
+                    size,
+                });
             }
         }
 
