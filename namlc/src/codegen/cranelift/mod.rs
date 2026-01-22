@@ -17,7 +17,7 @@ use cranelift_module::{DataDescription, FuncId, Linkage, Module};
 use lasso::Rodeo;
 
 use crate::ast::{
-    BinaryOp, Expression, FunctionItem, Item, Literal, SourceFile, Statement, UnaryOp,
+    BinaryOp, Expression, FunctionItem, Item, Literal, NamlType, SourceFile, Statement, UnaryOp,
     LiteralExpr,
 };
 use crate::codegen::CodegenError;
@@ -244,6 +244,26 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
+        // Collect exception definitions (treated like structs for codegen)
+        for item in &ast.items {
+            if let crate::ast::Item::Exception(exception_item) = item {
+                let name = self.interner.resolve(&exception_item.name.symbol).to_string();
+                let mut fields = Vec::new();
+                let mut field_heap_types = Vec::new();
+
+                for f in &exception_item.fields {
+                    fields.push(self.interner.resolve(&f.name.symbol).to_string());
+                    field_heap_types.push(get_heap_type(&f.ty));
+                }
+
+                let type_id = self.next_type_id;
+                self.next_type_id += 1;
+
+                // Exception treated as a struct with its fields
+                self.struct_defs.insert(name, StructDef { type_id, fields, field_heap_types });
+            }
+        }
+
         // Collect enum definitions
         for item in &ast.items {
             if let crate::ast::Item::Enum(enum_item) = item {
@@ -331,18 +351,31 @@ impl<'a> JitCompiler<'a> {
             self.compile_lambda_function(info)?;
         }
 
+        // Declare all functions first (standalone and methods)
         for item in &ast.items {
             if let Item::Function(f) = item {
                 if f.receiver.is_none() {
                     self.declare_function(f)?;
+                } else {
+                    self.declare_method(f)?;
                 }
             }
         }
 
+        // Compile standalone functions
         for item in &ast.items {
             if let Item::Function(f) = item {
                 if f.receiver.is_none() && f.body.is_some() {
                     self.compile_function(f)?;
+                }
+            }
+        }
+
+        // Compile methods
+        for item in &ast.items {
+            if let Item::Function(f) = item {
+                if f.receiver.is_some() && f.body.is_some() {
+                    self.compile_method(f)?;
                 }
             }
         }
@@ -1178,6 +1211,139 @@ impl<'a> JitCompiler<'a> {
         Ok(())
     }
 
+    fn declare_method(&mut self, func: &FunctionItem<'_>) -> Result<FuncId, CodegenError> {
+        let receiver = func.receiver.as_ref()
+            .ok_or_else(|| CodegenError::JitCompile("Method must have receiver".to_string()))?;
+
+        // Get receiver type name
+        let receiver_type_name = match &receiver.ty {
+            crate::ast::NamlType::Named(ident) => self.interner.resolve(&ident.symbol).to_string(),
+            _ => return Err(CodegenError::JitCompile("Method receiver must be a named type".to_string())),
+        };
+
+        let method_name = self.interner.resolve(&func.name.symbol);
+        let full_name = format!("{}_{}", receiver_type_name, method_name);
+
+        let ptr_type = self.module.target_config().pointer_type();
+        let mut sig = self.module.make_signature();
+
+        // Receiver is the first parameter (pointer to struct)
+        sig.params.push(AbiParam::new(ptr_type));
+
+        for param in &func.params {
+            let ty = types::naml_to_cranelift(&param.ty);
+            sig.params.push(AbiParam::new(ty));
+        }
+
+        if let Some(ref return_ty) = func.return_ty {
+            let ty = types::naml_to_cranelift(return_ty);
+            sig.returns.push(AbiParam::new(ty));
+        }
+
+        let func_id = self.module
+            .declare_function(&full_name, Linkage::Local, &sig)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to declare method '{}': {}", full_name, e)))?;
+
+        self.functions.insert(full_name, func_id);
+
+        Ok(func_id)
+    }
+
+    fn compile_method(&mut self, func: &FunctionItem<'_>) -> Result<(), CodegenError> {
+        let receiver = func.receiver.as_ref()
+            .ok_or_else(|| CodegenError::JitCompile("Method must have receiver".to_string()))?;
+
+        let receiver_type_name = match &receiver.ty {
+            crate::ast::NamlType::Named(ident) => self.interner.resolve(&ident.symbol).to_string(),
+            _ => return Err(CodegenError::JitCompile("Method receiver must be a named type".to_string())),
+        };
+
+        let method_name = self.interner.resolve(&func.name.symbol);
+        let full_name = format!("{}_{}", receiver_type_name, method_name);
+
+        let func_id = *self.functions.get(&full_name)
+            .ok_or_else(|| CodegenError::JitCompile(format!("Method '{}' not declared", full_name)))?;
+
+        self.ctx.func.signature = self.module.declarations().get_function_decl(func_id).signature.clone();
+        self.ctx.func.name = cranelift_codegen::ir::UserFuncName::user(0, func_id.as_u32());
+
+        // Get pointer type before borrowing module
+        let ptr_type = self.module.target_config().pointer_type();
+
+        let mut builder_ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
+
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        builder.seal_block(entry_block);
+
+        let mut ctx = CompileContext {
+            interner: self.interner,
+            module: &mut self.module,
+            functions: &self.functions,
+            struct_defs: &self.struct_defs,
+            enum_defs: &self.enum_defs,
+            extern_fns: &self.extern_fns,
+            variables: HashMap::new(),
+            var_heap_types: HashMap::new(),
+            var_counter: 0,
+            block_terminated: false,
+            loop_exit_block: None,
+            loop_header_block: None,
+            spawn_blocks: &self.spawn_blocks,
+            current_spawn_id: 0,
+            lambda_blocks: &self.lambda_blocks,
+            current_lambda_id: 0,
+            annotations: self.annotations,
+        };
+
+        // Set up receiver variable (self)
+        let receiver_name = self.interner.resolve(&receiver.name.symbol).to_string();
+        let recv_val = builder.block_params(entry_block)[0];
+        let recv_var = Variable::new(ctx.var_counter);
+        ctx.var_counter += 1;
+        builder.declare_var(recv_var, ptr_type);
+        builder.def_var(recv_var, recv_val);
+        ctx.variables.insert(receiver_name, recv_var);
+
+        // Set up regular parameters (offset by 1 due to receiver)
+        for (i, param) in func.params.iter().enumerate() {
+            let param_name = self.interner.resolve(&param.name.symbol).to_string();
+            let val = builder.block_params(entry_block)[i + 1]; // +1 for receiver
+            let var = Variable::new(ctx.var_counter);
+            ctx.var_counter += 1;
+            let ty = types::naml_to_cranelift(&param.ty);
+            builder.declare_var(var, ty);
+            builder.def_var(var, val);
+            ctx.variables.insert(param_name, var);
+        }
+
+        if let Some(ref body) = func.body {
+            for stmt in &body.statements {
+                compile_statement(&mut ctx, &mut builder, stmt)?;
+                if ctx.block_terminated {
+                    break;
+                }
+            }
+        }
+
+        if !ctx.block_terminated && func.return_ty.is_none() {
+            emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
+            builder.ins().return_(&[]);
+        }
+
+        builder.finalize();
+
+        self.module
+            .define_function(func_id, &mut self.ctx)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to define method '{}': {}", full_name, e)))?;
+
+        self.module.clear_context(&mut self.ctx);
+
+        Ok(())
+    }
+
     pub fn run_main(&mut self) -> Result<(), CodegenError> {
         self.module.finalize_definitions()
             .map_err(|e| CodegenError::JitCompile(format!("Failed to finalize: {}", e)))?;
@@ -1367,6 +1533,49 @@ fn compile_statement(
                         call_array_set(ctx, builder, base, index, value)?;
                     }
                 }
+                Expression::Field(field_expr) => {
+                    // Field assignment: base.field = value
+                    // Get the base pointer (struct/exception)
+                    let base_ptr = compile_expression(ctx, builder, &field_expr.base)?;
+                    let value = compile_expression(ctx, builder, &assign.value)?;
+                    let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
+
+                    // Determine field offset based on struct type
+                    // For exceptions: offset 0 is message, then fields at 8, 16, etc.
+                    // For structs: fields at 0, 8, 16, etc.
+                    if let Expression::Identifier(ident) = &*field_expr.base {
+                        let var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+                        // Get the type annotation to determine struct/exception type
+                        if let Some(type_ann) = ctx.annotations.get_type(ident.ident.span) {
+                            if let crate::typechecker::Type::Exception(exc_name) = type_ann {
+                                let exc_name_str = ctx.interner.resolve(&exc_name).to_string();
+                                if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
+                                    // Find field offset (message at 0, then fields at 8, 16, ...)
+                                    let offset = if field_name == "message" {
+                                        0
+                                    } else if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                        8 + (idx * 8) as i32
+                                    } else {
+                                        return Err(CodegenError::JitCompile(format!("Unknown field: {}", field_name)));
+                                    };
+                                    builder.ins().store(MemFlags::new(), value, base_ptr, offset);
+                                    return Ok(());
+                                }
+                            } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
+                                let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
+                                if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
+                                    if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                        let offset = (idx * 8) as i32;
+                                        builder.ins().store(MemFlags::new(), value, base_ptr, offset);
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return Err(CodegenError::JitCompile(format!("Cannot assign to field: {}", field_name)));
+                }
                 _ => {
                     return Err(CodegenError::Unsupported(
                         format!("Assignment target not supported: {:?}", std::mem::discriminant(&assign.target))
@@ -1377,7 +1586,15 @@ fn compile_statement(
 
         Statement::Return(ret) => {
             if let Some(ref expr) = ret.value {
-                let val = compile_expression(ctx, builder, expr)?;
+                let mut val = compile_expression(ctx, builder, expr)?;
+
+                // Convert string literals to NamlString when returning
+                let return_type = ctx.annotations.get_type(expr.span());
+                if matches!(return_type, Some(Type::String)) {
+                    if matches!(expr, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                        val = call_string_from_cstr(ctx, builder, val)?;
+                    }
+                }
 
                 // Determine if we're returning a local heap variable (ownership transfer)
                 let returned_var = get_returned_var_name(expr, ctx.interner);
@@ -1706,6 +1923,36 @@ fn compile_statement(
             ctx.block_terminated = false;
         }
 
+        Statement::Throw(throw_stmt) => {
+            // Compile the exception value (for side effects, e.g., struct creation)
+            compile_expression(ctx, builder, &throw_stmt.value)?;
+
+            // For now, throw causes a trap/abort
+            // Full exception unwinding will be implemented later
+            builder.ins().trap(TrapCode::unwrap_user(1));
+            ctx.block_terminated = true;
+        }
+
+        Statement::Const(const_stmt) => {
+            // Constants are treated like immutable variables
+            let var_name = ctx.interner.resolve(&const_stmt.name.symbol).to_string();
+            let var = Variable::new(ctx.variables.len());
+            ctx.variables.insert(var_name.clone(), var);
+            builder.declare_var(var, cranelift::prelude::types::I64);
+
+            let init_val = compile_expression(ctx, builder, &const_stmt.init)?;
+            builder.def_var(var, init_val);
+        }
+
+        Statement::Block(block_stmt) => {
+            for stmt in &block_stmt.statements {
+                compile_statement(ctx, builder, stmt)?;
+                if ctx.block_terminated {
+                    break;
+                }
+            }
+        }
+
         _ => {
             return Err(CodegenError::Unsupported(
                 format!("Statement type not yet implemented: {:?}", std::mem::discriminant(stmt))
@@ -1925,6 +2172,42 @@ fn compile_expression(
         }
 
         Expression::Binary(bin) => {
+            // Handle null coalescing operator: lhs ?? rhs
+            // Returns lhs if not null/none, otherwise rhs
+            if bin.op == BinaryOp::NullCoalesce {
+                let lhs = compile_expression(ctx, builder, &bin.left)?;
+
+                // Create blocks for branching
+                let then_block = builder.create_block();
+                let else_block = builder.create_block();
+                let merge_block = builder.create_block();
+
+                // Add block parameter for the result
+                builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+                // Check if lhs is null (0)
+                let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                let is_null = builder.ins().icmp(IntCC::Equal, lhs, zero);
+                builder.ins().brif(is_null, else_block, &[], then_block, &[]);
+
+                // Then block: lhs is not null, use lhs
+                builder.switch_to_block(then_block);
+                builder.seal_block(then_block);
+                builder.ins().jump(merge_block, &[lhs]);
+
+                // Else block: lhs is null, evaluate and use rhs
+                builder.switch_to_block(else_block);
+                builder.seal_block(else_block);
+                let rhs = compile_expression(ctx, builder, &bin.right)?;
+                builder.ins().jump(merge_block, &[rhs]);
+
+                // Merge block: result is block parameter
+                builder.switch_to_block(merge_block);
+                builder.seal_block(merge_block);
+                let result = builder.block_params(merge_block)[0];
+                return Ok(result);
+            }
+
             // Check if this is a string comparison (Eq/NotEq)
             let lhs_type = ctx.annotations.get_type(bin.left.span());
             if matches!(lhs_type, Some(Type::String)) && matches!(bin.op, BinaryOp::Eq | BinaryOp::NotEq) {
@@ -2057,6 +2340,30 @@ fn compile_expression(
                     } else {
                         Ok(results[0])
                     }
+                }
+                // Check for exception constructor: ExceptionType("message")
+                else if ctx.struct_defs.contains_key(func_name) {
+                    // Exception constructor - allocate struct and store message
+                    let struct_def = ctx.struct_defs.get(func_name).unwrap();
+                    let num_fields = struct_def.fields.len();
+                    // Exception has implicit message field + defined fields
+                    // Total size: 8 bytes for message pointer + 8 bytes per field
+                    let size = 8 + (num_fields * 8);
+
+                    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        size as u32,
+                        8,
+                    ));
+                    let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+                    // Store message string at offset 0
+                    if !call.args.is_empty() {
+                        let message = compile_expression(ctx, builder, &call.args[0])?;
+                        builder.ins().store(MemFlags::new(), message, slot_addr, 0);
+                    }
+
+                    Ok(slot_addr)
                 }
                 else {
                     Err(CodegenError::JitCompile(format!("Unknown function: {}", func_name)))
@@ -2210,9 +2517,47 @@ fn compile_expression(
             let struct_ptr = compile_expression(ctx, builder, &field_expr.base)?;
             let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
 
-            // Try to determine the struct type from the base expression
-            // For now, we'll need to look up the field in all structs
-            // In a real implementation, we'd use type information from the typechecker
+            // Use type annotation to determine correct field offset
+            if let Expression::Identifier(ident) = &*field_expr.base {
+                if let Some(type_ann) = ctx.annotations.get_type(ident.ident.span) {
+                    if let crate::typechecker::Type::Exception(exc_name) = type_ann {
+                        let exc_name_str = ctx.interner.resolve(&exc_name).to_string();
+                        if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
+                            // Exception: message at offset 0, fields at 8, 16, ...
+                            let offset = if field_name == "message" {
+                                0
+                            } else if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                8 + (idx * 8) as i32
+                            } else {
+                                return Err(CodegenError::JitCompile(format!("Unknown field: {}", field_name)));
+                            };
+                            let value = builder.ins().load(
+                                cranelift::prelude::types::I64,
+                                MemFlags::new(),
+                                struct_ptr,
+                                offset,
+                            );
+                            return Ok(value);
+                        }
+                    } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
+                        let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
+                        if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
+                            if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                let offset = (idx * 8) as i32;
+                                let value = builder.ins().load(
+                                    cranelift::prelude::types::I64,
+                                    MemFlags::new(),
+                                    struct_ptr,
+                                    offset,
+                                );
+                                return Ok(value);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback to runtime lookup for generic cases
             for (_, struct_def) in ctx.struct_defs.iter() {
                 if let Some(field_idx) = struct_def.fields.iter().position(|f| *f == field_name) {
                     let idx_val = builder.ins().iconst(cranelift::prelude::types::I32, field_idx as i64);
@@ -2345,6 +2690,112 @@ fn compile_expression(
             builder.ins().store(MemFlags::new(), data_size_val, slot_addr, 16);
 
             Ok(slot_addr)
+        }
+
+        Expression::Try(try_expr) => {
+            // For now, try just evaluates the expression
+            // Full exception unwinding will be implemented later
+            compile_expression(ctx, builder, &try_expr.expr)
+        }
+
+        Expression::Catch(catch_expr) => {
+            // For now, catch just evaluates the inner expression
+            // Full exception handling will be implemented later
+            compile_expression(ctx, builder, &catch_expr.expr)
+        }
+
+        Expression::OrDefault(or_default_expr) => {
+            // Compile the option expression (returns pointer to option struct)
+            let option_ptr = compile_expression(ctx, builder, &or_default_expr.expr)?;
+
+            // Load the tag from offset 0 (0 = none, 1 = some)
+            let tag = builder.ins().load(
+                cranelift::prelude::types::I32,
+                MemFlags::new(),
+                option_ptr,
+                0,
+            );
+
+            // Create blocks for the conditional
+            let some_block = builder.create_block();
+            let none_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            // Add a block parameter for the result
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Branch based on tag (tag != 0 means some)
+            let zero = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+            let is_some = builder.ins().icmp(IntCC::NotEqual, tag, zero);
+            builder.ins().brif(is_some, some_block, &[], none_block, &[]);
+
+            // Some block: load and return the inner value
+            builder.switch_to_block(some_block);
+            builder.seal_block(some_block);
+            let inner_val = builder.ins().load(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                option_ptr,
+                8,
+            );
+            builder.ins().jump(merge_block, &[inner_val]);
+
+            // None block: compile and return the default value
+            builder.switch_to_block(none_block);
+            builder.seal_block(none_block);
+            let default_val = compile_expression(ctx, builder, &or_default_expr.default)?;
+            builder.ins().jump(merge_block, &[default_val]);
+
+            // Merge block: return the result
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        Expression::Cast(cast_expr) => {
+            // Evaluate the expression to cast
+            let value = compile_expression(ctx, builder, &cast_expr.expr)?;
+
+            // Get source and target types
+            let source_type = ctx.annotations.get_type(cast_expr.expr.span());
+
+            match &cast_expr.target_ty {
+                NamlType::Int => {
+                    match source_type {
+                        Some(Type::Float) => {
+                            Ok(builder.ins().fcvt_to_sint(cranelift::prelude::types::I64, value))
+                        }
+                        Some(Type::Uint) | Some(Type::Int) => Ok(value),
+                        _ => Ok(value)
+                    }
+                }
+                NamlType::Uint => {
+                    match source_type {
+                        Some(Type::Float) => {
+                            Ok(builder.ins().fcvt_to_uint(cranelift::prelude::types::I64, value))
+                        }
+                        Some(Type::Int) | Some(Type::Uint) => Ok(value),
+                        _ => Ok(value)
+                    }
+                }
+                NamlType::Float => {
+                    match source_type {
+                        Some(Type::Int) => {
+                            Ok(builder.ins().fcvt_from_sint(cranelift::prelude::types::F64, value))
+                        }
+                        Some(Type::Uint) => {
+                            Ok(builder.ins().fcvt_from_uint(cranelift::prelude::types::F64, value))
+                        }
+                        Some(Type::Float) => Ok(value),
+                        _ => Ok(value)
+                    }
+                }
+                _ => {
+                    // For other casts, just pass through the value
+                    Ok(value)
+                }
+            }
         }
 
         _ => {
@@ -3386,6 +3837,36 @@ fn compile_method_call(
             Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
         }
         _ => {
+            // Try to look up user-defined method
+            let receiver_type = ctx.annotations.get_type(receiver.span());
+            let type_name = match receiver_type {
+                Some(Type::Struct(s)) => Some(ctx.interner.resolve(&s.name).to_string()),
+                Some(Type::Generic(name, _)) => Some(ctx.interner.resolve(&name).to_string()),
+                _ => None,
+            };
+
+            if let Some(type_name) = type_name {
+                let full_name = format!("{}_{}", type_name, method_name);
+                if let Some(&func_id) = ctx.functions.get(&full_name) {
+                    let ptr_type = ctx.module.target_config().pointer_type();
+                    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+
+                    // Compile arguments
+                    let mut call_args = vec![recv];
+                    for arg in args {
+                        call_args.push(compile_expression(ctx, builder, arg)?);
+                    }
+
+                    let call = builder.ins().call(func_ref, &call_args);
+                    let results = builder.inst_results(call);
+                    if results.is_empty() {
+                        return Ok(builder.ins().iconst(ptr_type, 0));
+                    } else {
+                        return Ok(results[0]);
+                    }
+                }
+            }
+
             Err(CodegenError::Unsupported(format!("Unknown method: {}", method_name)))
         }
     }

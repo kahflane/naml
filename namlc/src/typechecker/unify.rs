@@ -101,24 +101,23 @@ pub fn unify(a: &Type, b: &Type, span: Span) -> TypeResult<()> {
 
             unify(&a_fn.returns, &b_fn.returns, span)?;
 
-            match (&a_fn.throws, &b_fn.throws) {
-                (Some(a_throws), Some(b_throws)) => unify(a_throws, b_throws, span)?,
-                (None, None) => {}
-                _ => {
-                    return Err(TypeError::type_mismatch(
-                        if a_fn.throws.is_some() {
-                            "throwing function"
-                        } else {
-                            "non-throwing function"
-                        },
-                        if b_fn.throws.is_some() {
-                            "throwing function"
-                        } else {
-                            "non-throwing function"
-                        },
-                        span,
-                    ));
-                }
+            if a_fn.throws.len() != b_fn.throws.len() {
+                return Err(TypeError::type_mismatch(
+                    if a_fn.throws.is_empty() {
+                        "non-throwing function"
+                    } else {
+                        "throwing function"
+                    },
+                    if b_fn.throws.is_empty() {
+                        "non-throwing function"
+                    } else {
+                        "throwing function"
+                    },
+                    span,
+                ));
+            }
+            for (a_throws, b_throws) in a_fn.throws.iter().zip(b_fn.throws.iter()) {
+                unify(a_throws, b_throws, span)?;
             }
 
             Ok(())
@@ -161,6 +160,17 @@ pub fn unify(a: &Type, b: &Type, span: Span) -> TypeResult<()> {
                 unify(a_arg, b_arg, span)?;
             }
 
+            Ok(())
+        }
+
+        (Type::Exception(a_name), Type::Exception(b_name)) => {
+            if a_name != b_name {
+                return Err(TypeError::type_mismatch(
+                    format!("exception:{:?}", a_name),
+                    format!("exception:{:?}", b_name),
+                    span,
+                ));
+            }
             Ok(())
         }
 

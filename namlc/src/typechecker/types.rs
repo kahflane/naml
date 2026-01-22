@@ -47,6 +47,7 @@ pub enum Type {
     Struct(StructType),
     Enum(EnumType),
     Interface(InterfaceType),
+    Exception(Spur),
 
     Function(FunctionType),
 
@@ -62,7 +63,7 @@ pub enum Type {
 pub struct FunctionType {
     pub params: Vec<Type>,
     pub returns: Box<Type>,
-    pub throws: Option<Box<Type>>,
+    pub throws: Vec<Type>,
     pub is_variadic: bool,
 }
 
@@ -107,7 +108,7 @@ pub struct MethodType {
     pub name: Spur,
     pub params: Vec<Type>,
     pub returns: Type,
-    pub throws: Option<Type>,
+    pub throws: Vec<Type>,
 }
 
 #[derive(Clone)]
@@ -183,7 +184,7 @@ impl Type {
         Type::Function(FunctionType {
             params,
             returns: Box::new(returns),
-            throws: None,
+            throws: vec![],
             is_variadic: false,
         })
     }
@@ -226,7 +227,7 @@ impl Type {
             Type::Function(f) => Type::Function(FunctionType {
                 params: f.params.iter().map(|p| p.resolve()).collect(),
                 returns: Box::new(f.returns.resolve()),
-                throws: f.throws.as_ref().map(|t| Box::new(t.resolve())),
+                throws: f.throws.iter().map(|t| t.resolve()).collect(),
                 is_variadic: f.is_variadic,
             }),
             _ => self.clone(),
@@ -252,7 +253,7 @@ impl Type {
             Type::Function(f) => {
                 f.params.iter().any(|p| p.contains_var(var_id))
                     || f.returns.contains_var(var_id)
-                    || f.throws.as_ref().map_or(false, |t| t.contains_var(var_id))
+                    || f.throws.iter().any(|t| t.contains_var(var_id))
             }
             Type::Generic(_, args) => args.iter().any(|a| a.contains_var(var_id)),
             _ => false,
@@ -286,7 +287,7 @@ impl Type {
             Type::Function(f) => Type::Function(FunctionType {
                 params: f.params.iter().map(|p| p.substitute(substitutions)).collect(),
                 returns: Box::new(f.returns.substitute(substitutions)),
-                throws: f.throws.as_ref().map(|t| Box::new(t.substitute(substitutions))),
+                throws: f.throws.iter().map(|t| t.substitute(substitutions)).collect(),
                 is_variadic: f.is_variadic,
             }),
             _ => self.clone(),
@@ -313,6 +314,7 @@ impl fmt::Display for Type {
             Type::Struct(s) => write!(f, "struct:{:?}", s.name),
             Type::Enum(e) => write!(f, "enum:{:?}", e.name),
             Type::Interface(i) => write!(f, "interface:{:?}", i.name),
+            Type::Exception(name) => write!(f, "exception:{:?}", name),
             Type::Function(func) => {
                 write!(f, "fn(")?;
                 for (i, p) in func.params.iter().enumerate() {

@@ -337,6 +337,7 @@ pub enum TokenKind {
     Arrow,
     FatArrow,
     Question,
+    QuestionQuestion,
 
     LParen,
     RParen,
@@ -651,6 +652,10 @@ impl<'a> Lexer<'a> {
             b':' => TokenKind::Colon,
 
             b';' => TokenKind::Semicolon,
+            b'?' if self.peek_byte() == Some(b'?') => {
+                self.pos += 1;
+                TokenKind::QuestionQuestion
+            }
             b'?' => TokenKind::Question,
 
             b'(' => TokenKind::LParen,

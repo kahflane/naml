@@ -1,0 +1,62 @@
+// Exceptions Example
+// Demonstrates exception syntax parsing and null coalescing operator
+
+// Define custom exception types
+exception DivisionByZero {
+    dividend: int,
+}
+
+exception InvalidInput {
+    value: int,
+    reason: string,
+}
+
+// Simple division without throwing (for testing basic flow)
+fn safe_divide(a: int, b: int) -> int {
+    if (b == 0) {
+        return 0;
+    }
+    return a / b;
+}
+
+fn main() {
+    println("Exception Handling Examples");
+    println("============================");
+    println("");
+
+    // Example 1: Normal division with catch (no exception thrown)
+    println("Example 1: Normal division");
+    var result1 = safe_divide(10, 2) catch e {
+        println("Error caught!");
+    } ?? -999;
+    println("10 / 2 =");
+    println(result1);
+    println("");
+
+    // Example 2: Division with zero divisor (returns 0, not exception)
+    println("Example 2: Division with zero divisor");
+    var result2 = safe_divide(10, 0) catch e {
+        println("This won't run");
+    } ?? -1;
+    println("10 / 0 =");
+    println(result2);
+    println("");
+
+    // Example 3: Testing ?? with a variable
+    println("Example 3: Null coalescing");
+    var x = 42;
+    var result3 = x ?? 0;
+    println("x ?? 0 =");
+    println(result3);
+    println("");
+
+    // Example 4: Exception constructor (syntax test)
+    println("Example 4: Exception constructor");
+    var ex = DivisionByZero("Test exception");
+    ex.dividend = 100;
+    println("Exception created with dividend:");
+    println(ex.dividend);
+    println("");
+
+    println("Examples completed!");
+}

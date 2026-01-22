@@ -41,6 +41,8 @@ pub enum BinaryOp {
     RangeIncl,
 
     Is,
+
+    NullCoalesce,
 }
 
 impl BinaryOp {
@@ -57,6 +59,7 @@ impl BinaryOp {
             BinaryOp::Add | BinaryOp::Sub => 9,
             BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => 10,
             BinaryOp::Range | BinaryOp::RangeIncl => 0,
+            BinaryOp::NullCoalesce => 0,
         }
     }
 
