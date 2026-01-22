@@ -42,7 +42,7 @@ Key design principles:
 - Zero-allocation where possible
 - Zero-copy string handling
 - Deterministic memory management (no GC)
-- Strong static typing with inference
+- Strong static typing with **required type annotations**
 
 ---
 
@@ -312,12 +312,20 @@ var str: string = number as string;
 
 ### Mutable Variables
 
-Use `var` to declare mutable variables. Type annotation is required:
+Use `var` to declare mutable variables. **Type annotation is always required**:
 
 ```naml
 var x: int = 10;
 var y: float = 3.14;
 var mut z: int = 30;   // Explicitly mutable (var is mutable by default)
+```
+
+**Important**: Type inference is not supported. The following is **invalid**:
+
+```naml
+// INVALID - will not compile:
+var x = 10;           // Error: ExpectedTypeAnnotation
+var name = "Alice";   // Error: ExpectedTypeAnnotation
 ```
 
 ### Variable with Else Block
@@ -998,7 +1006,9 @@ fn add(a: int, b: int) -> int {
 
 ### Required Type Annotations
 
-naml requires explicit type annotations for all variable declarations:
+naml requires explicit type annotations for all variable and constant declarations. This is a deliberate design choice to ensure code is always explicit and self-documenting.
+
+**Syntax**: `var name: Type = value;`
 
 ```naml
 var x: int = 42;
@@ -1009,7 +1019,18 @@ var arr: [int] = [];
 var m: map<string, int>;
 ```
 
-This ensures code is always explicit and self-documenting.
+**Constants also require type annotations**:
+
+```naml
+const PI: float = 3.14159;
+const MAX_SIZE: int = 1000;
+```
+
+**Why no type inference?**
+- Explicit types make code easier to read and understand
+- No guessing about what type a variable holds
+- Better error messages when types don't match
+- Self-documenting code without additional comments
 
 ---
 
