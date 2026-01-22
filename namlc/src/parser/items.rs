@@ -459,8 +459,6 @@ fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<Interf
             separated_list0(token(TokenKind::Comma), parse_parameter)(new_input)?;
         let (new_input, _) = token(TokenKind::RParen)(new_input)?;
 
-        let new_input = new_input;
-
         let (new_input, return_ty) = if check(TokenKind::Arrow)(new_input) {
             let (i, _) = token(TokenKind::Arrow)(new_input)?;
             let (i, ty) = parse_type(i)?;
@@ -468,8 +466,6 @@ fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<Interf
         } else {
             (new_input, None)
         };
-
-        let new_input = new_input;
 
         let (new_input, throws) = if check_keyword(Keyword::Throws)(new_input) {
             let (mut i, _) = keyword(Keyword::Throws)(new_input)?;
@@ -604,7 +600,6 @@ fn parse_use_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
 
     while check(TokenKind::Dot)(input) {
         let (new_input, _) = token(TokenKind::Dot)(input)?;
-        let new_input = new_input;
 
         if check(TokenKind::LBrace)(new_input) || check(TokenKind::Star)(new_input) {
             input = new_input;

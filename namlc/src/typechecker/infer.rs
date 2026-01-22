@@ -61,7 +61,7 @@ impl<'a> TypeInferrer<'a> {
             Expression::OrDefault(or_default) => self.infer_or_default(or_default),
             Expression::Cast(cast) => self.infer_cast(cast),
             Expression::Range(range) => self.infer_range(range),
-            Expression::Grouped(grouped) => self.infer_expr(&grouped.inner),
+            Expression::Grouped(grouped) => self.infer_expr(grouped.inner),
             Expression::Some(some) => self.infer_some(some),
         };
 
@@ -108,14 +108,57 @@ impl<'a> TypeInferrer<'a> {
                 let name = self.interner.resolve(&ident.ident.symbol);
                 name == "self"
             }
-            Expression::Field(field) => self.involves_self(&field.base),
-            Expression::Index(idx) => self.involves_self(&idx.base),
+            Expression::Field(field) => self.involves_self(field.base),
+            Expression::Index(idx) => self.involves_self(idx.base),
             _ => false,
         }
     }
 
+    fn mangle_generic_function(&self, func_name: &str, type_args: &[Type]) -> String {
+        let mut mangled = func_name.to_string();
+        for ty in type_args {
+            mangled.push('_');
+            mangled.push_str(&self.mangle_type(ty));
+        }
+        mangled
+    }
+
+    fn mangle_type(&self, ty: &Type) -> String {
+        match ty {
+            Type::Int => "int".to_string(),
+            Type::Uint => "uint".to_string(),
+            Type::Float => "float".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::String => "string".to_string(),
+            Type::Bytes => "bytes".to_string(),
+            Type::Unit => "unit".to_string(),
+            Type::Array(inner) => format!("Array_{}", self.mangle_type(inner)),
+            Type::FixedArray(inner, size) => format!("FixedArray_{}_{}", self.mangle_type(inner), size),
+            Type::Option(inner) => format!("Option_{}", self.mangle_type(inner)),
+            Type::Map(k, v) => format!("Map_{}_{}", self.mangle_type(k), self.mangle_type(v)),
+            Type::Channel(inner) => format!("Channel_{}", self.mangle_type(inner)),
+            Type::Promise(inner) => format!("Promise_{}", self.mangle_type(inner)),
+            Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
+            Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
+            Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
+            Type::Exception(name) => self.interner.resolve(name).to_string(),
+            Type::Function(_) => "fn".to_string(),
+            Type::TypeVar(tv) => format!("T{}", tv.id),
+            Type::Generic(name, args) => {
+                let mut s = self.interner.resolve(name).to_string();
+                for arg in args {
+                    s.push('_');
+                    s.push_str(&self.mangle_type(arg));
+                }
+                s
+            }
+            Type::Error => "error".to_string(),
+            Type::Never => "never".to_string(),
+        }
+    }
+
     fn infer_some(&mut self, some: &ast::SomeExpr) -> Type {
-        let inner_ty = self.infer_expr(&some.value);
+        let inner_ty = self.infer_expr(some.value);
         Type::Option(Box::new(inner_ty))
     }
 
@@ -220,12 +263,11 @@ impl<'a> TypeInferrer<'a> {
 
         // Handle `is` operator specially - RHS is a type name, not an expression
         if bin.op == Is {
-            let _left_ty = self.infer_expr(&bin.left);
-            if let ast::Expression::Identifier(ident) = &bin.right {
-                if self.symbols.get_type(ident.ident.symbol).is_some() {
+            let _left_ty = self.infer_expr(bin.left);
+            if let ast::Expression::Identifier(ident) = &bin.right
+                && self.symbols.get_type(ident.ident.symbol).is_some() {
                     return Type::Bool;
                 }
-            }
             self.errors.push(TypeError::Custom {
                 message: "'is' operator requires a type name on the right side".to_string(),
                 span: bin.right.span(),
@@ -233,8 +275,8 @@ impl<'a> TypeInferrer<'a> {
             return Type::Bool;
         }
 
-        let left_ty = self.infer_expr(&bin.left);
-        let right_ty = self.infer_expr(&bin.right);
+        let left_ty = self.infer_expr(bin.left);
+        let right_ty = self.infer_expr(bin.right);
 
         match bin.op {
             Add => {
@@ -245,7 +287,7 @@ impl<'a> TypeInferrer<'a> {
                     (Type::String, Type::String) => Type::String,
                     _ if left_resolved.is_numeric() || right_resolved.is_numeric() => {
                         // Handle int/uint coercion for Add as well
-                        let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, &bin.left, &bin.right);
+                        let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, bin.left, bin.right);
                         if let Some(result_ty) = coerced {
                             return result_ty;
                         }
@@ -283,7 +325,7 @@ impl<'a> TypeInferrer<'a> {
                 let right_resolved = right_ty.resolve();
 
                 // Handle int/uint coercion: if one is uint and other is int, prefer uint
-                let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, &bin.left, &bin.right);
+                let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, bin.left, bin.right);
                 if let Some(result_ty) = coerced {
                     return result_ty;
                 }
@@ -387,7 +429,7 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_unary(&mut self, un: &ast::UnaryExpr) -> Type {
-        let operand_ty = self.infer_expr(&un.operand);
+        let operand_ty = self.infer_expr(un.operand);
 
         use ast::UnaryOp::*;
         match un.op {
@@ -444,14 +486,13 @@ impl<'a> TypeInferrer<'a> {
                 return Type::Exception(exc_def.name);
             }
 
-            if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
-                if !func_sig.type_params.is_empty() {
+            if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol)
+                && !func_sig.type_params.is_empty() {
                     return self.infer_generic_call(call, func_sig);
                 }
-            }
         }
 
-        let callee_ty = self.infer_expr(&call.callee);
+        let callee_ty = self.infer_expr(call.callee);
         let resolved = callee_ty.resolve();
 
         match resolved {
@@ -546,12 +587,31 @@ impl<'a> TypeInferrer<'a> {
             }
         }
 
+        // Record monomorphization for codegen: resolve type vars to concrete types
+        let resolved_type_args: Vec<Type> = func_sig
+            .type_params
+            .iter()
+            .map(|tp| {
+                substitution
+                    .get(&tp.name)
+                    .cloned()
+                    .unwrap_or(Type::Error)
+                    .resolve()
+            })
+            .collect();
+
+        // Generate mangled name: func_TypeArg1_TypeArg2
+        let func_name = self.interner.resolve(&func_sig.name);
+        let mangled_name = self.mangle_generic_function(func_name, &resolved_type_args);
+        self.annotations
+            .record_monomorphization(call.span, func_sig.name, resolved_type_args, mangled_name);
+
         // Return substituted return type
         func_sig.return_ty.substitute(&substitution)
     }
 
     fn infer_method_call(&mut self, call: &ast::MethodCallExpr) -> Type {
-        let receiver_ty = self.infer_expr(&call.receiver);
+        let receiver_ty = self.infer_expr(call.receiver);
         let resolved = receiver_ty.resolve();
 
         // Handle built-in option methods
@@ -706,8 +766,8 @@ impl<'a> TypeInferrer<'a> {
 
         // Check if receiver is a bare type parameter (T with no type args)
         // If so, look up methods from its bounds
-        if let Type::Generic(param_name, type_args) = &resolved {
-            if type_args.is_empty() {
+        if let Type::Generic(param_name, type_args) = &resolved
+            && type_args.is_empty() {
                 // This might be a type parameter - check if it has bounds with this method
                 if let Some(method_type) =
                     super::generics::find_method_from_bounds(*param_name, call.method.symbol, self.env, self.symbols)
@@ -733,7 +793,6 @@ impl<'a> TypeInferrer<'a> {
                     return method_type.returns;
                 }
             }
-        }
 
         // Handle built-in exception methods
         if let Type::Exception(_) = &resolved {
@@ -748,6 +807,46 @@ impl<'a> TypeInferrer<'a> {
                         });
                     }
                     Type::String
+                }
+                _ => {
+                    self.errors.push(TypeError::UndefinedMethod {
+                        ty: resolved.to_string(),
+                        method: method_name.to_string(),
+                        span: call.span,
+                    });
+                    Type::Error
+                }
+            };
+        }
+
+        // Handle built-in string methods
+        if let Type::String = &resolved {
+            let method_name = self.interner.resolve(&call.method.symbol);
+            return match method_name {
+                "len" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Int
+                }
+                "char_at" => {
+                    if call.args.len() != 1 {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 1,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return Type::Int;
+                    }
+                    let arg_ty = self.infer_expr(&call.args[0]);
+                    if let Err(e) = unify(&arg_ty, &Type::Int, call.args[0].span()) {
+                        self.errors.push(e);
+                    }
+                    Type::Int
                 }
                 _ => {
                     self.errors.push(TypeError::UndefinedMethod {
@@ -786,14 +885,33 @@ impl<'a> TypeInferrer<'a> {
                 return Type::Error;
             }
 
+            // Build substitution map for generic type arguments
+            use std::collections::HashMap;
+            let substitutions: HashMap<lasso::Spur, Type> = if let Type::Generic(_, type_args) = &resolved {
+                // Look up the struct definition to get type parameter names
+                if let Some(TypeDef::Struct(struct_def)) = self.symbols.get_type(type_name) {
+                    struct_def.type_params.iter()
+                        .zip(type_args.iter())
+                        .map(|(param, arg)| (param.name, arg.clone()))
+                        .collect()
+                } else {
+                    HashMap::new()
+                }
+            } else {
+                HashMap::new()
+            };
+
             for (arg, (_, param_ty)) in call.args.iter().zip(method.params.iter()) {
                 let arg_ty = self.infer_expr(arg);
-                if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
+                // Substitute type parameters in the parameter type
+                let substituted_param_ty = param_ty.substitute(&substitutions);
+                if let Err(e) = unify(&arg_ty, &substituted_param_ty, arg.span()) {
                     self.errors.push(e);
                 }
             }
 
-            method.return_ty.clone()
+            // Substitute type parameters in the return type
+            method.return_ty.substitute(&substitutions)
         } else {
             let method = self.interner.resolve(&call.method.symbol).to_string();
             self.errors.push(TypeError::UndefinedMethod {
@@ -806,8 +924,8 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_index(&mut self, idx: &ast::IndexExpr) -> Type {
-        let base_ty = self.infer_expr(&idx.base);
-        let index_ty = self.infer_expr(&idx.index);
+        let base_ty = self.infer_expr(idx.base);
+        let index_ty = self.infer_expr(idx.index);
         let resolved = base_ty.resolve();
 
         match resolved {
@@ -842,7 +960,7 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_field(&mut self, field: &ast::FieldExpr) -> Type {
-        let base_ty = self.infer_expr(&field.base);
+        let base_ty = self.infer_expr(field.base);
         let resolved = base_ty.resolve();
 
         match resolved {
@@ -856,7 +974,7 @@ impl<'a> TypeInferrer<'a> {
                     field: field_name.to_string(),
                     span: field.span,
                 });
-                return Type::Error;
+                Type::Error
             }
             Type::Struct(s) => {
                 for f in &s.fields {
@@ -1089,12 +1207,12 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_if(&mut self, if_expr: &ast::IfExpr) -> Type {
-        let cond_ty = self.infer_expr(&if_expr.condition);
+        let cond_ty = self.infer_expr(if_expr.condition);
         if let Err(e) = unify(&cond_ty, &Type::Bool, if_expr.condition.span()) {
             self.errors.push(e);
         }
 
-        let then_ty = self.infer_block(&if_expr.then_branch);
+        let then_ty = self.infer_block(if_expr.then_branch);
 
         if let Some(else_branch) = &if_expr.else_branch {
             let else_ty = match else_branch {
@@ -1150,23 +1268,20 @@ impl<'a> TypeInferrer<'a> {
         self.env
             .enter_function(expected_return_ty.clone(), vec![], &[]);
 
-        let body_ty = self.infer_expr(&lambda.body);
+        let body_ty = self.infer_expr(lambda.body);
 
         self.env.exit_function();
 
         let return_ty = if lambda.return_ty.is_some() {
-            if let Err(e) = unify(&body_ty, &expected_return_ty, lambda.span) {
-                if !matches!(body_ty, Type::Unit) {
+            if let Err(e) = unify(&body_ty, &expected_return_ty, lambda.span)
+                && !matches!(body_ty, Type::Unit) {
                     self.errors.push(e);
                 }
-            }
             expected_return_ty
+        } else if unify(&body_ty, &expected_return_ty, lambda.span).is_err() {
+            body_ty
         } else {
-            if let Err(_) = unify(&body_ty, &expected_return_ty, lambda.span) {
-                body_ty
-            } else {
-                expected_return_ty.resolve()
-            }
+            expected_return_ty.resolve()
         };
 
         self.env.pop_scope();
@@ -1180,20 +1295,20 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_spawn(&mut self, spawn: &ast::SpawnExpr) -> Type {
-        let body_ty = self.infer_block(&spawn.body);
+        let body_ty = self.infer_block(spawn.body);
         Type::Promise(Box::new(body_ty))
     }
 
     fn infer_try(&mut self, try_expr: &ast::TryExpr) -> Type {
-        let expr_ty = self.infer_expr(&try_expr.expr);
-        expr_ty
+        
+        self.infer_expr(try_expr.expr)
     }
 
     fn infer_catch(&mut self, catch: &ast::CatchExpr) -> Type {
-        let expr_ty = self.infer_expr(&catch.expr);
+        let expr_ty = self.infer_expr(catch.expr);
 
         // Determine the exception type from the expression being caught
-        let exception_ty = self.get_throws_type(&catch.expr);
+        let exception_ty = self.get_throws_type(catch.expr);
 
         self.env.push_scope();
 
@@ -1203,7 +1318,7 @@ impl<'a> TypeInferrer<'a> {
         for stmt in &catch.handler.statements {
             self.check_stmt(stmt);
         }
-        if let Some(ref tail) = catch.handler.tail {
+        if let Some(tail) = catch.handler.tail {
             self.infer_expr(tail);
         }
 
@@ -1217,13 +1332,11 @@ impl<'a> TypeInferrer<'a> {
         match expr {
             Expression::Call(call) => {
                 // Check if callee is a function with throws
-                if let Expression::Identifier(ident) = call.callee {
-                    if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
-                        if let Some(first_throw) = func_sig.throws.first() {
+                if let Expression::Identifier(ident) = call.callee
+                    && let Some(func_sig) = self.symbols.get_function(ident.ident.symbol)
+                        && let Some(first_throw) = func_sig.throws.first() {
                             return first_throw.clone();
                         }
-                    }
-                }
                 Type::Error
             }
             Expression::MethodCall(_method_call) => {
@@ -1236,8 +1349,8 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_or_default(&mut self, or_default: &ast::OrDefaultExpr) -> Type {
-        let expr_ty = self.infer_expr(&or_default.expr);
-        let default_ty = self.infer_expr(&or_default.default);
+        let expr_ty = self.infer_expr(or_default.expr);
+        let default_ty = self.infer_expr(or_default.default);
 
         let inner_ty = match expr_ty.resolve() {
             Type::Option(inner) => *inner,
@@ -1252,7 +1365,7 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_cast(&mut self, cast: &ast::CastExpr) -> Type {
-        self.infer_expr(&cast.expr);
+        self.infer_expr(cast.expr);
         self.convert_ast_type(&cast.target_ty)
     }
 
@@ -1452,11 +1565,10 @@ impl<'a> TypeInferrer<'a> {
                         let init_ty = self.infer_expr(init);
                         // Allow int literals to be assigned to uint (non-negative int → uint coercion)
                         let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, init);
-                        if should_unify {
-                            if let Err(e) = unify(&init_ty, &ty, init.span()) {
+                        if should_unify
+                            && let Err(e) = unify(&init_ty, &ty, init.span()) {
                                 self.errors.push(e);
                             }
-                        }
                     }
 
                     self.env.define(var.name.symbol, ty, var.mutable);
@@ -1472,11 +1584,10 @@ impl<'a> TypeInferrer<'a> {
                 let init_ty = self.infer_expr(&c.init);
                 // Allow int literals to be assigned to uint (non-negative int → uint coercion)
                 let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, &c.init);
-                if should_unify {
-                    if let Err(e) = unify(&init_ty, &ty, c.init.span()) {
+                if should_unify
+                    && let Err(e) = unify(&init_ty, &ty, c.init.span()) {
                         self.errors.push(e);
                     }
-                }
 
                 self.env.define(c.name.symbol, ty, false);
             }
@@ -1484,8 +1595,8 @@ impl<'a> TypeInferrer<'a> {
                 // Special case for map index assignment: map[key] = value
                 // The value should be of type V, not option<V>
                 if let ast::Expression::Index(idx) = &assign.target {
-                    let base_ty = self.infer_expr(&idx.base);
-                    let index_ty = self.infer_expr(&idx.index);
+                    let base_ty = self.infer_expr(idx.base);
+                    let index_ty = self.infer_expr(idx.index);
                     let resolved = base_ty.resolve();
 
                     if let Type::Map(key, val) = resolved {
@@ -1512,11 +1623,10 @@ impl<'a> TypeInferrer<'a> {
             Return(ret) => {
                 if let Some(value) = &ret.value {
                     let ret_ty = self.infer_expr(value);
-                    if let Some(expected) = self.env.expected_return_type() {
-                        if let Err(e) = unify(&ret_ty, expected, value.span()) {
+                    if let Some(expected) = self.env.expected_return_type()
+                        && let Err(e) = unify(&ret_ty, expected, value.span()) {
                             self.errors.push(e);
                         }
-                    }
                 }
             }
             Throw(throw) => {

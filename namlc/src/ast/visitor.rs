@@ -333,7 +333,7 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
             for stmt in &e.then_branch.statements {
                 v.visit_stmt(stmt);
             }
-            if let Some(ref tail) = e.then_branch.tail {
+            if let Some(tail) = e.then_branch.tail {
                 v.visit_expr(tail);
             }
             if let Some(ref else_branch) = e.else_branch {
@@ -345,7 +345,7 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
                         for stmt in &block.statements {
                             v.visit_stmt(stmt);
                         }
-                        if let Some(ref tail) = block.tail {
+                        if let Some(tail) = block.tail {
                             v.visit_expr(tail);
                         }
                     }
@@ -356,7 +356,7 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
             for stmt in &e.statements {
                 v.visit_stmt(stmt);
             }
-            if let Some(ref tail) = e.tail {
+            if let Some(tail) = e.tail {
                 v.visit_expr(tail);
             }
         }
@@ -376,7 +376,7 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
             for stmt in &e.body.statements {
                 v.visit_stmt(stmt);
             }
-            if let Some(ref tail) = e.body.tail {
+            if let Some(tail) = e.body.tail {
                 v.visit_expr(tail);
             }
         }
@@ -389,7 +389,7 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
             for stmt in &e.handler.statements {
                 v.visit_stmt(stmt);
             }
-            if let Some(ref tail) = e.handler.tail {
+            if let Some(tail) = e.handler.tail {
                 v.visit_expr(tail);
             }
         }
@@ -402,10 +402,10 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
             v.visit_type(&e.target_ty);
         }
         Expression::Range(e) => {
-            if let Some(ref start) = e.start {
+            if let Some(start) = e.start {
                 v.visit_expr(start);
             }
-            if let Some(ref end) = e.end {
+            if let Some(end) = e.end {
                 v.visit_expr(end);
             }
         }

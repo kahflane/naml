@@ -29,7 +29,7 @@ struct ChannelInner {
 
 /// Create a new channel with the given capacity
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_new(capacity: usize) -> *mut NamlChannel {
+pub unsafe extern "C" fn naml_channel_new(capacity: usize) -> *mut NamlChannel {
     let cap = if capacity == 0 { 1 } else { capacity };
 
     unsafe {
@@ -56,7 +56,7 @@ pub extern "C" fn naml_channel_new(capacity: usize) -> *mut NamlChannel {
 
 /// Increment reference count
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_incref(ch: *mut NamlChannel) {
+pub unsafe extern "C" fn naml_channel_incref(ch: *mut NamlChannel) {
     if !ch.is_null() {
         unsafe { (*ch).header.incref(); }
     }
@@ -64,7 +64,7 @@ pub extern "C" fn naml_channel_incref(ch: *mut NamlChannel) {
 
 /// Decrement reference count and free if zero
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_decref(ch: *mut NamlChannel) {
+pub unsafe extern "C" fn naml_channel_decref(ch: *mut NamlChannel) {
     if !ch.is_null() {
         unsafe {
             if (*ch).header.decref() {
@@ -79,7 +79,7 @@ pub extern "C" fn naml_channel_decref(ch: *mut NamlChannel) {
 /// Send a value to the channel (blocks if full)
 /// Returns 1 on success, 0 if channel is closed
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_send(ch: *mut NamlChannel, value: i64) -> i64 {
+pub unsafe extern "C" fn naml_channel_send(ch: *mut NamlChannel, value: i64) -> i64 {
     if ch.is_null() {
         return 0;
     }
@@ -106,7 +106,7 @@ pub extern "C" fn naml_channel_send(ch: *mut NamlChannel, value: i64) -> i64 {
 /// Receive a value from the channel (blocks if empty)
 /// Returns the value, or 0 if channel is closed and empty
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_receive(ch: *mut NamlChannel) -> i64 {
+pub unsafe extern "C" fn naml_channel_receive(ch: *mut NamlChannel) -> i64 {
     if ch.is_null() {
         return 0;
     }
@@ -132,7 +132,7 @@ pub extern "C" fn naml_channel_receive(ch: *mut NamlChannel) -> i64 {
 /// Try to send without blocking
 /// Returns 1 on success, 0 if would block or closed
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_try_send(ch: *mut NamlChannel, value: i64) -> i64 {
+pub unsafe extern "C" fn naml_channel_try_send(ch: *mut NamlChannel, value: i64) -> i64 {
     if ch.is_null() {
         return 0;
     }
@@ -155,7 +155,7 @@ pub extern "C" fn naml_channel_try_send(ch: *mut NamlChannel, value: i64) -> i64
 /// Returns the value in the high bits and success (1) or failure (0) in low bit
 /// Use naml_channel_try_receive_value() and naml_channel_try_receive_ok() to extract
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_try_receive(ch: *mut NamlChannel) -> i64 {
+pub unsafe extern "C" fn naml_channel_try_receive(ch: *mut NamlChannel) -> i64 {
     if ch.is_null() {
         return 0;
     }
@@ -177,7 +177,7 @@ pub extern "C" fn naml_channel_try_receive(ch: *mut NamlChannel) -> i64 {
 
 /// Close the channel
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_close(ch: *mut NamlChannel) {
+pub unsafe extern "C" fn naml_channel_close(ch: *mut NamlChannel) {
     if ch.is_null() {
         return;
     }
@@ -193,7 +193,7 @@ pub extern "C" fn naml_channel_close(ch: *mut NamlChannel) {
 
 /// Check if channel is closed
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_is_closed(ch: *mut NamlChannel) -> i64 {
+pub unsafe extern "C" fn naml_channel_is_closed(ch: *mut NamlChannel) -> i64 {
     if ch.is_null() {
         return 1;
     }
@@ -207,7 +207,7 @@ pub extern "C" fn naml_channel_is_closed(ch: *mut NamlChannel) -> i64 {
 
 /// Get number of items in channel buffer
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_channel_len(ch: *mut NamlChannel) -> i64 {
+pub unsafe extern "C" fn naml_channel_len(ch: *mut NamlChannel) -> i64 {
     if ch.is_null() {
         return 0;
     }
@@ -226,23 +226,25 @@ mod tests {
 
     #[test]
     fn test_channel_basic() {
-        let ch = naml_channel_new(2);
-        assert!(!ch.is_null());
+        unsafe {
+            let ch = naml_channel_new(2);
+            assert!(!ch.is_null());
 
-        assert_eq!(naml_channel_send(ch, 42), 1);
-        assert_eq!(naml_channel_send(ch, 43), 1);
-        assert_eq!(naml_channel_receive(ch), 42);
-        assert_eq!(naml_channel_receive(ch), 43);
+            assert_eq!(naml_channel_send(ch, 42), 1);
+            assert_eq!(naml_channel_send(ch, 43), 1);
+            assert_eq!(naml_channel_receive(ch), 42);
+            assert_eq!(naml_channel_receive(ch), 43);
 
-        naml_channel_decref(ch);
+            naml_channel_decref(ch);
+        }
     }
 
     #[test]
     fn test_channel_concurrent() {
-        let ch = naml_channel_new(10);
+        let ch = unsafe { naml_channel_new(10) };
 
         let ch_send = ch as usize;
-        let sender = thread::spawn(move || {
+        let sender = thread::spawn(move || unsafe {
             let ch = ch_send as *mut NamlChannel;
             for i in 0..5 {
                 naml_channel_send(ch, i);
@@ -250,7 +252,7 @@ mod tests {
         });
 
         let ch_recv = ch as usize;
-        let receiver = thread::spawn(move || {
+        let receiver = thread::spawn(move || unsafe {
             let ch = ch_recv as *mut NamlChannel;
             let mut sum = 0i64;
             for _ in 0..5 {
@@ -263,6 +265,6 @@ mod tests {
         let sum = receiver.join().unwrap();
         assert_eq!(sum, 0 + 1 + 2 + 3 + 4);
 
-        naml_channel_decref(ch);
+        unsafe { naml_channel_decref(ch); }
     }
 }

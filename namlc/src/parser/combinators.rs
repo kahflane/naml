@@ -51,7 +51,7 @@ pub fn token(kind: TokenKind) -> impl Fn(TokenStream) -> PResult<Token> {
         match input.first() {
             Some(tok) if tok.kind == kind => {
                 let (rest, _) = input.take_split(1);
-                Ok((rest, tok.clone()))
+                Ok((rest, *tok))
             }
             _ => Err(nom::Err::Error(PError {
                 input,
@@ -66,7 +66,7 @@ pub fn keyword(kw: Keyword) -> impl Fn(TokenStream) -> PResult<Token> {
         match input.first() {
             Some(tok) if tok.kind == TokenKind::Keyword(kw) => {
                 let (rest, _) = input.take_split(1);
-                Ok((rest, tok.clone()))
+                Ok((rest, *tok))
             }
             _ => Err(nom::Err::Error(PError {
                 input,

@@ -53,7 +53,7 @@ impl NamlDiagnostic {
 
         Self {
             message: format!("parse error at {}:{}", line, col),
-            src: NamedSource::new(source.name.to_string(), source.source.to_string()),
+            src: NamedSource::new(&source.name, source.source.to_string()),
             span: (span.start as usize, (span.end - span.start) as usize).into(),
             label: err.message.clone(),
             help_text: None,
@@ -67,7 +67,7 @@ impl NamlDiagnostic {
 
         Self {
             message: format!("{} at {}:{}", message, line, col),
-            src: NamedSource::new(source.name.to_string(), source.source.to_string()),
+            src: NamedSource::new(&source.name, source.source.to_string()),
             span: (span.start as usize, (span.end - span.start) as usize).into(),
             label,
             help_text: help,

@@ -76,9 +76,7 @@ unsafe impl Send for LambdaInfo {}
 
 pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
-    #[allow(dead_code)]
     annotations: &'a TypeAnnotations,
-    #[allow(dead_code)]
     symbols: &'a SymbolTable,
     module: JITModule,
     ctx: codegen::Context,
@@ -91,6 +89,7 @@ pub struct JitCompiler<'a> {
     spawn_blocks: HashMap<u32, SpawnBlockInfo>,
     lambda_counter: u32,
     lambda_blocks: HashMap<u32, LambdaInfo>,
+    generic_functions: HashMap<String, *const FunctionItem<'a>>,
 }
 
 impl<'a> JitCompiler<'a> {
@@ -187,6 +186,25 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_string_eq", crate::runtime::naml_string_eq as *const u8);
         builder.symbol("naml_string_incref", crate::runtime::naml_string_incref as *const u8);
         builder.symbol("naml_string_decref", crate::runtime::naml_string_decref as *const u8);
+        builder.symbol("naml_string_char_at", crate::runtime::naml_string_char_at as *const u8);
+        builder.symbol("naml_string_char_len", crate::runtime::naml_string_char_len as *const u8);
+
+        // Type conversion operations
+        builder.symbol("naml_int_to_string", crate::runtime::naml_int_to_string as *const u8);
+        builder.symbol("naml_float_to_string", crate::runtime::naml_float_to_string as *const u8);
+        builder.symbol("naml_string_to_int", crate::runtime::naml_string_to_int as *const u8);
+        builder.symbol("naml_string_to_float", crate::runtime::naml_string_to_float as *const u8);
+
+        // Bytes operations
+        builder.symbol("naml_bytes_new", crate::runtime::naml_bytes_new as *const u8);
+        builder.symbol("naml_bytes_from", crate::runtime::naml_bytes_from as *const u8);
+        builder.symbol("naml_bytes_len", crate::runtime::naml_bytes_len as *const u8);
+        builder.symbol("naml_bytes_get", crate::runtime::naml_bytes_get as *const u8);
+        builder.symbol("naml_bytes_set", crate::runtime::naml_bytes_set as *const u8);
+        builder.symbol("naml_bytes_incref", crate::runtime::naml_bytes_incref as *const u8);
+        builder.symbol("naml_bytes_decref", crate::runtime::naml_bytes_decref as *const u8);
+        builder.symbol("naml_bytes_to_string", crate::runtime::naml_bytes_to_string as *const u8);
+        builder.symbol("naml_string_to_bytes", crate::runtime::naml_string_to_bytes as *const u8);
 
         let module = JITModule::new(builder);
         let ctx = module.make_context();
@@ -227,10 +245,11 @@ impl<'a> JitCompiler<'a> {
             spawn_blocks: HashMap::new(),
             lambda_counter: 0,
             lambda_blocks: HashMap::new(),
+            generic_functions: HashMap::new(),
         })
     }
 
-    pub fn compile(&mut self, ast: &SourceFile<'_>) -> Result<(), CodegenError> {
+    pub fn compile(&mut self, ast: &'a SourceFile<'a>) -> Result<(), CodegenError> {
         // First pass: collect struct definitions with field heap types
         for item in &ast.items {
             if let crate::ast::Item::Struct(struct_item) = item {
@@ -292,7 +311,7 @@ impl<'a> JitCompiler<'a> {
                 }
 
                 // Align to 8 bytes
-                let size = 8 + ((max_data_size + 7) / 8) * 8;
+                let size = 8 + max_data_size.div_ceil(8) * 8;
 
                 self.enum_defs.insert(name.clone(), EnumDef {
                     name,
@@ -329,10 +348,9 @@ impl<'a> JitCompiler<'a> {
 
         // Scan for spawn blocks and collect captured variable info
         for item in &ast.items {
-            if let Item::Function(f) = item {
-                if let Some(ref body) = f.body {
-                    self.scan_for_spawn_blocks(body)?;
-                }
+            if let Item::Function(f) = item
+                && let Some(ref body) = f.body {
+                self.scan_for_spawn_blocks(body)?;
             }
         }
 
@@ -358,9 +376,15 @@ impl<'a> JitCompiler<'a> {
         }
 
         // Declare all functions first (standalone and methods)
+        // Skip generic functions - they will be monomorphized
         for item in &ast.items {
             if let Item::Function(f) = item {
-                if f.receiver.is_none() {
+                let is_generic = !f.generics.is_empty();
+                if is_generic && f.receiver.is_none() {
+                    // Store generic function for later monomorphization
+                    let name = self.interner.resolve(&f.name.symbol).to_string();
+                    self.generic_functions.insert(name, f as *const _);
+                } else if f.receiver.is_none() {
                     self.declare_function(f)?;
                 } else {
                     self.declare_method(f)?;
@@ -368,22 +392,23 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
-        // Compile standalone functions
+        // Process monomorphizations - declare and compile specialized versions
+        self.process_monomorphizations()?;
+
+        // Compile standalone functions (skip generic functions)
         for item in &ast.items {
-            if let Item::Function(f) = item {
-                if f.receiver.is_none() && f.body.is_some() {
+            if let Item::Function(f) = item
+                && f.receiver.is_none() && f.body.is_some() && f.generics.is_empty() {
                     self.compile_function(f)?;
                 }
-            }
         }
 
         // Compile methods
         for item in &ast.items {
-            if let Item::Function(f) = item {
-                if f.receiver.is_some() && f.body.is_some() {
+            if let Item::Function(f) = item
+                && f.receiver.is_some() && f.body.is_some() {
                     self.compile_method(f)?;
                 }
-            }
         }
 
         Ok(())
@@ -514,16 +539,7 @@ impl<'a> JitCompiler<'a> {
                         }
                     }
                     HeapType::Struct(None) => "naml_struct_decref",
-                    HeapType::Struct(Some(nested_struct_name)) => {
-                        if self.struct_defs.get(nested_struct_name)
-                            .map(|def| def.field_heap_types.iter().any(|h| h.is_some()))
-                            .unwrap_or(false)
-                        {
-                            "naml_struct_decref" // Fallback for now
-                        } else {
-                            "naml_struct_decref"
-                        }
-                    }
+                    HeapType::Struct(Some(_)) => "naml_struct_decref"
                 };
 
                 let decref_func_id = self.module
@@ -559,6 +575,160 @@ impl<'a> JitCompiler<'a> {
             .map_err(|e| CodegenError::JitCompile(format!("Failed to define {}: {}", func_name, e)))?;
 
         self.ctx.clear();
+
+        Ok(())
+    }
+
+    fn process_monomorphizations(&mut self) -> Result<(), CodegenError> {
+        let monomorphizations: Vec<_> = self.annotations
+            .get_monomorphizations()
+            .values()
+            .cloned()
+            .collect();
+
+        for mono_info in monomorphizations {
+            let func_name = self.interner.resolve(&mono_info.function_name).to_string();
+
+            // Get the generic function AST
+            let func_ptr = match self.generic_functions.get(&func_name) {
+                Some(ptr) => *ptr,
+                None => continue, // Skip if function not found (might be external)
+            };
+
+            // Build type substitution map: param_name -> concrete_type_name
+            let func = unsafe { &*func_ptr };
+            let mut type_substitutions = HashMap::new();
+            for (param, arg_ty) in func.generics.iter().zip(mono_info.type_args.iter()) {
+                let param_name = self.interner.resolve(&param.name.symbol).to_string();
+                let concrete_name = self.mangle_type_name(arg_ty);
+                type_substitutions.insert(param_name, concrete_name);
+            }
+
+            // Declare the monomorphized function
+            self.declare_monomorphized_function(func, &mono_info.mangled_name)?;
+
+            // Compile the monomorphized function with type substitutions
+            self.compile_monomorphized_function(func, &mono_info.mangled_name, type_substitutions)?;
+        }
+
+        Ok(())
+    }
+
+    fn mangle_type_name(&self, ty: &Type) -> String {
+        match ty {
+            Type::Int => "int".to_string(),
+            Type::Uint => "uint".to_string(),
+            Type::Float => "float".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::String => "string".to_string(),
+            Type::Bytes => "bytes".to_string(),
+            Type::Unit => "unit".to_string(),
+            Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
+            Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
+            Type::Generic(name, _) => self.interner.resolve(name).to_string(),
+            _ => "unknown".to_string(),
+        }
+    }
+
+    fn declare_monomorphized_function(
+        &mut self,
+        func: &FunctionItem<'_>,
+        mangled_name: &str,
+    ) -> Result<FuncId, CodegenError> {
+        let mut sig = self.module.make_signature();
+
+        for param in &func.params {
+            let ty = types::naml_to_cranelift(&param.ty);
+            sig.params.push(AbiParam::new(ty));
+        }
+
+        if let Some(ref return_ty) = func.return_ty {
+            let ty = types::naml_to_cranelift(return_ty);
+            sig.returns.push(AbiParam::new(ty));
+        }
+
+        let func_id = self.module
+            .declare_function(mangled_name, Linkage::Export, &sig)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to declare monomorphized function '{}': {}", mangled_name, e)))?;
+
+        self.functions.insert(mangled_name.to_string(), func_id);
+
+        Ok(func_id)
+    }
+
+    fn compile_monomorphized_function(
+        &mut self,
+        func: &FunctionItem<'_>,
+        mangled_name: &str,
+        type_substitutions: HashMap<String, String>,
+    ) -> Result<(), CodegenError> {
+        let func_id = *self.functions.get(mangled_name)
+            .ok_or_else(|| CodegenError::JitCompile(format!("Monomorphized function '{}' not declared", mangled_name)))?;
+
+        self.ctx.func.signature = self.module.declarations().get_function_decl(func_id).signature.clone();
+        self.ctx.func.name = cranelift_codegen::ir::UserFuncName::user(0, func_id.as_u32());
+
+        let mut builder_ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
+
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        builder.seal_block(entry_block);
+
+        let mut ctx = CompileContext {
+            interner: self.interner,
+            module: &mut self.module,
+            functions: &self.functions,
+            struct_defs: &self.struct_defs,
+            enum_defs: &self.enum_defs,
+            extern_fns: &self.extern_fns,
+            variables: HashMap::new(),
+            var_heap_types: HashMap::new(),
+            var_counter: 0,
+            block_terminated: false,
+            loop_exit_block: None,
+            loop_header_block: None,
+            spawn_blocks: &self.spawn_blocks,
+            current_spawn_id: 0,
+            lambda_blocks: &self.lambda_blocks,
+            current_lambda_id: 0,
+            annotations: self.annotations,
+            type_substitutions,
+        };
+
+        for (i, param) in func.params.iter().enumerate() {
+            let param_name = self.interner.resolve(&param.name.symbol).to_string();
+            let val = builder.block_params(entry_block)[i];
+            let var = Variable::new(ctx.var_counter);
+            ctx.var_counter += 1;
+            let ty = types::naml_to_cranelift(&param.ty);
+            builder.declare_var(var, ty);
+            builder.def_var(var, val);
+            ctx.variables.insert(param_name, var);
+        }
+
+        if let Some(ref body) = func.body {
+            for stmt in &body.statements {
+                compile_statement(&mut ctx, &mut builder, stmt)?;
+                if ctx.block_terminated {
+                    break;
+                }
+            }
+        }
+
+        if !ctx.block_terminated && func.return_ty.is_none() {
+            emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
+            builder.ins().return_(&[]);
+        }
+
+        builder.finalize();
+
+        self.module
+            .define_function(func_id, &mut self.ctx)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to define monomorphized function '{}': {}", mangled_name, e)))?;
+
+        self.module.clear_context(&mut self.ctx);
 
         Ok(())
     }
@@ -634,7 +804,7 @@ impl<'a> JitCompiler<'a> {
         match expr {
             Expression::Spawn(spawn_expr) => {
                 // Found a spawn block - collect captured variables
-                let captured = self.collect_captured_vars_expr(&spawn_expr.body);
+                let captured = self.collect_captured_vars_expr(spawn_expr.body);
                 let id = self.spawn_counter;
                 self.spawn_counter += 1;
                 let func_name = format!("__spawn_{}", id);
@@ -642,6 +812,7 @@ impl<'a> JitCompiler<'a> {
                 // Store raw pointer to body for deferred trampoline compilation
                 // Safety: Only used within the same compile() call
                 // Note: spawn_expr.body is already a &BlockExpr, so we cast it directly
+                #[allow(clippy::unnecessary_cast)]
                 let body_ptr = spawn_expr.body as *const crate::ast::BlockExpr<'_> as *const crate::ast::BlockExpr<'static>;
 
                 self.spawn_blocks.insert(id, SpawnBlockInfo {
@@ -652,7 +823,7 @@ impl<'a> JitCompiler<'a> {
                 });
 
                 // Also scan inside spawn block for nested spawns
-                self.scan_for_spawn_blocks_expr(&spawn_expr.body)?;
+                self.scan_for_spawn_blocks_expr(spawn_expr.body)?;
             }
             Expression::Lambda(lambda_expr) => {
                 // Found a lambda - collect captured variables
@@ -667,6 +838,7 @@ impl<'a> JitCompiler<'a> {
                     .collect();
 
                 // Store raw pointer to body for deferred lambda compilation
+                #[allow(clippy::unnecessary_cast)]
                 let body_ptr = lambda_expr.body as *const crate::ast::Expression<'_> as *const crate::ast::Expression<'static>;
 
                 self.lambda_blocks.insert(id, LambdaInfo {
@@ -678,30 +850,30 @@ impl<'a> JitCompiler<'a> {
                 });
 
                 // Scan lambda body for nested spawns/lambdas
-                self.scan_expression_for_spawns(&lambda_expr.body)?;
+                self.scan_expression_for_spawns(lambda_expr.body)?;
             }
             Expression::Binary(bin) => {
-                self.scan_expression_for_spawns(&bin.left)?;
-                self.scan_expression_for_spawns(&bin.right)?;
+                self.scan_expression_for_spawns(bin.left)?;
+                self.scan_expression_for_spawns(bin.right)?;
             }
             Expression::Unary(un) => {
-                self.scan_expression_for_spawns(&un.operand)?;
+                self.scan_expression_for_spawns(un.operand)?;
             }
             Expression::Call(call) => {
-                self.scan_expression_for_spawns(&call.callee)?;
+                self.scan_expression_for_spawns(call.callee)?;
                 for arg in &call.args {
                     self.scan_expression_for_spawns(arg)?;
                 }
             }
             Expression::MethodCall(method) => {
-                self.scan_expression_for_spawns(&method.receiver)?;
+                self.scan_expression_for_spawns(method.receiver)?;
                 for arg in &method.args {
                     self.scan_expression_for_spawns(arg)?;
                 }
             }
             Expression::Index(idx) => {
-                self.scan_expression_for_spawns(&idx.base)?;
-                self.scan_expression_for_spawns(&idx.index)?;
+                self.scan_expression_for_spawns(idx.base)?;
+                self.scan_expression_for_spawns(idx.index)?;
             }
             Expression::Array(arr) => {
                 for elem in &arr.elements {
@@ -709,15 +881,15 @@ impl<'a> JitCompiler<'a> {
                 }
             }
             Expression::If(if_expr) => {
-                self.scan_expression_for_spawns(&if_expr.condition)?;
-                self.scan_for_spawn_blocks_expr(&if_expr.then_branch)?;
+                self.scan_expression_for_spawns(if_expr.condition)?;
+                self.scan_for_spawn_blocks_expr(if_expr.then_branch)?;
                 self.scan_else_branch_for_spawns(&if_expr.else_branch)?;
             }
             Expression::Block(block) => {
                 self.scan_for_spawn_blocks_expr(block)?;
             }
             Expression::Grouped(grouped) => {
-                self.scan_expression_for_spawns(&grouped.inner)?;
+                self.scan_expression_for_spawns(grouped.inner)?;
             }
             _ => {}
         }
@@ -738,8 +910,8 @@ impl<'a> JitCompiler<'a> {
         if let Some(branch) = else_branch {
             match branch {
                 crate::ast::ElseExpr::ElseIf(elif) => {
-                    self.scan_expression_for_spawns(&elif.condition)?;
-                    self.scan_for_spawn_blocks_expr(&elif.then_branch)?;
+                    self.scan_expression_for_spawns(elif.condition)?;
+                    self.scan_for_spawn_blocks_expr(elif.then_branch)?;
                     self.scan_else_branch_for_spawns(&elif.else_branch)?;
                 }
                 crate::ast::ElseExpr::Else(block) => {
@@ -768,7 +940,7 @@ impl<'a> JitCompiler<'a> {
         }
 
         // Collect from body (which is an Expression - typically a Block)
-        self.collect_vars_in_expression(&lambda.body, &mut captured, &defined);
+        self.collect_vars_in_expression(lambda.body, &mut captured, &defined);
 
         captured
     }
@@ -859,27 +1031,27 @@ impl<'a> JitCompiler<'a> {
                 }
             }
             Expression::Binary(bin) => {
-                self.collect_vars_in_expression(&bin.left, captured, defined);
-                self.collect_vars_in_expression(&bin.right, captured, defined);
+                self.collect_vars_in_expression(bin.left, captured, defined);
+                self.collect_vars_in_expression(bin.right, captured, defined);
             }
             Expression::Unary(un) => {
-                self.collect_vars_in_expression(&un.operand, captured, defined);
+                self.collect_vars_in_expression(un.operand, captured, defined);
             }
             Expression::Call(call) => {
-                self.collect_vars_in_expression(&call.callee, captured, defined);
+                self.collect_vars_in_expression(call.callee, captured, defined);
                 for arg in &call.args {
                     self.collect_vars_in_expression(arg, captured, defined);
                 }
             }
             Expression::MethodCall(method) => {
-                self.collect_vars_in_expression(&method.receiver, captured, defined);
+                self.collect_vars_in_expression(method.receiver, captured, defined);
                 for arg in &method.args {
                     self.collect_vars_in_expression(arg, captured, defined);
                 }
             }
             Expression::Index(idx) => {
-                self.collect_vars_in_expression(&idx.base, captured, defined);
-                self.collect_vars_in_expression(&idx.index, captured, defined);
+                self.collect_vars_in_expression(idx.base, captured, defined);
+                self.collect_vars_in_expression(idx.index, captured, defined);
             }
             Expression::Array(arr) => {
                 for elem in &arr.elements {
@@ -887,7 +1059,7 @@ impl<'a> JitCompiler<'a> {
                 }
             }
             Expression::Grouped(grouped) => {
-                self.collect_vars_in_expression(&grouped.inner, captured, defined);
+                self.collect_vars_in_expression(grouped.inner, captured, defined);
             }
             Expression::Block(block) => {
                 // Create a new defined set for block scope
@@ -906,7 +1078,7 @@ impl<'a> JitCompiler<'a> {
                     let name = self.interner.resolve(&param.name.symbol).to_string();
                     lambda_defined.insert(name);
                 }
-                self.collect_vars_in_expression(&lambda.body, captured, &lambda_defined);
+                self.collect_vars_in_expression(lambda.body, captured, &lambda_defined);
             }
             _ => {}
         }
@@ -962,6 +1134,7 @@ impl<'a> JitCompiler<'a> {
             lambda_blocks: &self.lambda_blocks,
             current_lambda_id: 0,
             annotations: self.annotations,
+            type_substitutions: HashMap::new(),
         };
 
         // Load captured variables from closure data
@@ -1069,6 +1242,7 @@ impl<'a> JitCompiler<'a> {
             lambda_blocks: &self.lambda_blocks,
             current_lambda_id: 0,
             annotations: self.annotations,
+            type_substitutions: HashMap::new(),
         };
 
         // Load captured variables from closure data
@@ -1178,6 +1352,7 @@ impl<'a> JitCompiler<'a> {
             lambda_blocks: &self.lambda_blocks,
             current_lambda_id: 0,
             annotations: self.annotations,
+            type_substitutions: HashMap::new(),
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -1221,10 +1396,11 @@ impl<'a> JitCompiler<'a> {
         let receiver = func.receiver.as_ref()
             .ok_or_else(|| CodegenError::JitCompile("Method must have receiver".to_string()))?;
 
-        // Get receiver type name
+        // Get receiver type name (handles both Named and Generic types)
         let receiver_type_name = match &receiver.ty {
             crate::ast::NamlType::Named(ident) => self.interner.resolve(&ident.symbol).to_string(),
-            _ => return Err(CodegenError::JitCompile("Method receiver must be a named type".to_string())),
+            crate::ast::NamlType::Generic(ident, _) => self.interner.resolve(&ident.symbol).to_string(),
+            _ => return Err(CodegenError::JitCompile("Method receiver must be a named or generic type".to_string())),
         };
 
         let method_name = self.interner.resolve(&func.name.symbol);
@@ -1261,7 +1437,8 @@ impl<'a> JitCompiler<'a> {
 
         let receiver_type_name = match &receiver.ty {
             crate::ast::NamlType::Named(ident) => self.interner.resolve(&ident.symbol).to_string(),
-            _ => return Err(CodegenError::JitCompile("Method receiver must be a named type".to_string())),
+            crate::ast::NamlType::Generic(ident, _) => self.interner.resolve(&ident.symbol).to_string(),
+            _ => return Err(CodegenError::JitCompile("Method receiver must be a named or generic type".to_string())),
         };
 
         let method_name = self.interner.resolve(&func.name.symbol);
@@ -1302,6 +1479,7 @@ impl<'a> JitCompiler<'a> {
             lambda_blocks: &self.lambda_blocks,
             current_lambda_id: 0,
             annotations: self.annotations,
+            type_substitutions: HashMap::new(),
         };
 
         // Set up receiver variable (self)
@@ -1436,6 +1614,7 @@ struct CompileContext<'a> {
     lambda_blocks: &'a HashMap<u32, LambdaInfo>,
     current_lambda_id: u32,
     annotations: &'a TypeAnnotations,
+    type_substitutions: HashMap<String, String>,
 }
 
 fn compile_statement(
@@ -1456,25 +1635,91 @@ fn compile_statement(
             let is_string_var = matches!(var_stmt.ty.as_ref(), Some(crate::ast::NamlType::String));
 
             // Track heap type for cleanup
-            if let Some(ref naml_ty) = var_stmt.ty {
-                if let Some(heap_type) = get_heap_type(naml_ty) {
+            if let Some(ref naml_ty) = var_stmt.ty
+                && let Some(heap_type) = get_heap_type(naml_ty) {
                     ctx.var_heap_types.insert(var_name.clone(), heap_type);
                 }
-            }
 
             let var = Variable::new(ctx.var_counter);
             ctx.var_counter += 1;
             builder.declare_var(var, ty);
 
-            if let Some(ref init) = var_stmt.init {
+            // Handle else block for option unwrap pattern: var x = opt else { ... }
+            if let (Some(init), Some(else_block)) = (&var_stmt.init, &var_stmt.else_block) {
+                // This is an option unwrap with else block
+                // Compile the option expression
+                let option_ptr = compile_expression(ctx, builder, init)?;
+
+                // Load the tag from offset 0 (0 = none, 1 = some)
+                let tag = builder.ins().load(
+                    cranelift::prelude::types::I32,
+                    MemFlags::new(),
+                    option_ptr,
+                    0,
+                );
+
+                // Create blocks
+                let some_block = builder.create_block();
+                let none_block = builder.create_block();
+                let merge_block = builder.create_block();
+
+                // Branch based on tag (tag == 0 means none)
+                let is_none = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+                builder.ins().brif(is_none, none_block, &[], some_block, &[]);
+
+                // None block: execute else block
+                builder.switch_to_block(none_block);
+                builder.seal_block(none_block);
+
+                // Initialize variable with zero before else block (in case else doesn't exit)
+                let zero = builder.ins().iconst(ty, 0);
+                builder.def_var(var, zero);
+
+                for else_stmt in &else_block.statements {
+                    compile_statement(ctx, builder, else_stmt)?;
+                    if ctx.block_terminated {
+                        break;
+                    }
+                }
+
+                // If else block didn't terminate (return/break), jump to merge
+                if !ctx.block_terminated {
+                    builder.ins().jump(merge_block, &[]);
+                }
+                ctx.block_terminated = false;
+
+                // Some block: extract value and assign
+                builder.switch_to_block(some_block);
+                builder.seal_block(some_block);
+
+                // Load value from offset 8
+                let val = builder.ins().load(
+                    cranelift::prelude::types::I64,
+                    MemFlags::new(),
+                    option_ptr,
+                    8,
+                );
+                builder.def_var(var, val);
+
+                // Incref the value
+                let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
+                if let Some(ref heap_type) = heap_type_clone {
+                    emit_incref(ctx, builder, val, heap_type)?;
+                }
+
+                builder.ins().jump(merge_block, &[]);
+
+                // Merge block
+                builder.switch_to_block(merge_block);
+                builder.seal_block(merge_block);
+            } else if let Some(ref init) = var_stmt.init {
                 let mut val = compile_expression(ctx, builder, init)?;
 
                 // Box string literals as NamlString* for consistent memory management
-                if is_string_var {
-                    if matches!(init, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                if is_string_var
+                    && matches!(init, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
                         val = call_string_from_cstr(ctx, builder, val)?;
                     }
-                }
 
                 builder.def_var(var, val);
                 // Incref the value since we're storing a reference
@@ -1508,11 +1753,10 @@ fn compile_statement(
                         let mut val = compile_expression(ctx, builder, &assign.value)?;
 
                         // Box string literals as NamlString* when assigning to string variables
-                        if matches!(&heap_type_clone, Some(HeapType::String)) {
-                            if matches!(&assign.value, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                        if matches!(&heap_type_clone, Some(HeapType::String))
+                            && matches!(&assign.value, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
                                 val = call_string_from_cstr(ctx, builder, val)?;
                             }
-                        }
 
                         builder.def_var(var, val);
 
@@ -1525,37 +1769,37 @@ fn compile_statement(
                     }
                 }
                 Expression::Index(index_expr) => {
-                    let base = compile_expression(ctx, builder, &index_expr.base)?;
+                    let base = compile_expression(ctx, builder, index_expr.base)?;
                     let value = compile_expression(ctx, builder, &assign.value)?;
 
                     // Check if index is a string literal - if so, use map_set with NamlString conversion
-                    if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = &*index_expr.index {
-                        let cstr_ptr = compile_expression(ctx, builder, &index_expr.index)?;
+                    if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = index_expr.index {
+                        let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
                         let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
                         call_map_set(ctx, builder, base, naml_str, value)?;
                     } else {
                         // Default to array set for integer indices
-                        let index = compile_expression(ctx, builder, &index_expr.index)?;
+                        let index = compile_expression(ctx, builder, index_expr.index)?;
                         call_array_set(ctx, builder, base, index, value)?;
                     }
                 }
                 Expression::Field(field_expr) => {
                     // Field assignment: base.field = value
                     // Get the base pointer (struct/exception)
-                    let base_ptr = compile_expression(ctx, builder, &field_expr.base)?;
+                    let base_ptr = compile_expression(ctx, builder, field_expr.base)?;
                     let value = compile_expression(ctx, builder, &assign.value)?;
                     let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
 
                     // Determine field offset based on struct type
                     // For exceptions: offset 0 is message, then fields at 8, 16, etc.
                     // For structs: fields at 0, 8, 16, etc.
-                    if let Expression::Identifier(ident) = &*field_expr.base {
+                    if let Expression::Identifier(ident) = field_expr.base {
                         let _var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
                         // Get the type annotation to determine struct/exception type
                         // Note: use ident.span (IdentExpr span), not ident.ident.span (Ident span)
                         if let Some(type_ann) = ctx.annotations.get_type(ident.span) {
                             if let crate::typechecker::Type::Exception(exc_name) = type_ann {
-                                let exc_name_str = ctx.interner.resolve(&exc_name).to_string();
+                                let exc_name_str = ctx.interner.resolve(exc_name).to_string();
                                 if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
                                     // Find field offset (message at 0, then fields at 8, 16, ...)
                                     let offset = if field_name == "message" {
@@ -1570,13 +1814,21 @@ fn compile_statement(
                                 }
                             } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
                                 let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
-                                if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
-                                    if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
+                                    && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
                                         let offset = (idx * 8) as i32;
                                         builder.ins().store(MemFlags::new(), value, base_ptr, offset);
                                         return Ok(());
                                     }
-                                }
+                            } else if let crate::typechecker::Type::Generic(name, _) = type_ann {
+                                // Handle generic struct types like LinkedList<T>
+                                let struct_name = ctx.interner.resolve(name).to_string();
+                                if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
+                                    && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                        let offset = (idx * 8) as i32;
+                                        builder.ins().store(MemFlags::new(), value, base_ptr, offset);
+                                        return Ok(());
+                                    }
                             }
                         }
                     }
@@ -1597,11 +1849,10 @@ fn compile_statement(
 
                 // Convert string literals to NamlString when returning
                 let return_type = ctx.annotations.get_type(expr.span());
-                if matches!(return_type, Some(Type::String)) {
-                    if matches!(expr, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                if matches!(return_type, Some(Type::String))
+                    && matches!(expr, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
                         val = call_string_from_cstr(ctx, builder, val)?;
                     }
-                }
 
                 // Determine if we're returning a local heap variable (ownership transfer)
                 let returned_var = get_returned_var_name(expr, ctx.interner);
@@ -1688,6 +1939,12 @@ fn compile_statement(
             let body_block = builder.create_block();
             let exit_block = builder.create_block();
 
+            // Save and set loop context for break/continue
+            let prev_loop_exit = ctx.loop_exit_block.take();
+            let prev_loop_header = ctx.loop_header_block.take();
+            ctx.loop_exit_block = Some(exit_block);
+            ctx.loop_header_block = Some(header_block);
+
             builder.ins().jump(header_block, &[]);
 
             builder.switch_to_block(header_block);
@@ -1711,89 +1968,283 @@ fn compile_statement(
             builder.switch_to_block(exit_block);
             builder.seal_block(exit_block);
             ctx.block_terminated = false;
-        }
-
-        Statement::For(for_stmt) => {
-            // Compile the iterable (should be an array)
-            let arr_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
-
-            // Get array length
-            let len = call_array_len(ctx, builder, arr_ptr)?;
-
-            // Create index variable
-            let idx_var = Variable::new(ctx.var_counter);
-            ctx.var_counter += 1;
-            builder.declare_var(idx_var, cranelift::prelude::types::I64);
-            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-            builder.def_var(idx_var, zero);
-
-            // Create value variable
-            let val_var = Variable::new(ctx.var_counter);
-            ctx.var_counter += 1;
-            builder.declare_var(val_var, cranelift::prelude::types::I64);
-            let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
-            ctx.variables.insert(val_name, val_var);
-
-            // Optionally create index binding
-            if let Some(ref idx_ident) = for_stmt.index {
-                let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
-                ctx.variables.insert(idx_name, idx_var);
-            }
-
-            // Create blocks
-            let header_block = builder.create_block();
-            let body_block = builder.create_block();
-            let exit_block = builder.create_block();
-
-            // Store exit block for break statements
-            let prev_loop_exit = ctx.loop_exit_block.take();
-            let prev_loop_header = ctx.loop_header_block.take();
-            ctx.loop_exit_block = Some(exit_block);
-            ctx.loop_header_block = Some(header_block);
-
-            builder.ins().jump(header_block, &[]);
-
-            // Header: check if idx < len
-            builder.switch_to_block(header_block);
-            let idx_val = builder.use_var(idx_var);
-            let cond = builder.ins().icmp(IntCC::SignedLessThan, idx_val, len);
-            builder.ins().brif(cond, body_block, &[], exit_block, &[]);
-
-            // Body
-            builder.switch_to_block(body_block);
-            builder.seal_block(body_block);
-            ctx.block_terminated = false;
-
-            // Get current element
-            let idx_val = builder.use_var(idx_var);
-            let elem = call_array_get(ctx, builder, arr_ptr, idx_val)?;
-            builder.def_var(val_var, elem);
-
-            // Compile body
-            for stmt in &for_stmt.body.statements {
-                compile_statement(ctx, builder, stmt)?;
-                if ctx.block_terminated {
-                    break;
-                }
-            }
-
-            // Increment index
-            if !ctx.block_terminated {
-                let idx_val = builder.use_var(idx_var);
-                let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
-                let next_idx = builder.ins().iadd(idx_val, one);
-                builder.def_var(idx_var, next_idx);
-                builder.ins().jump(header_block, &[]);
-            }
-
-            builder.seal_block(header_block);
-            builder.switch_to_block(exit_block);
-            builder.seal_block(exit_block);
-            ctx.block_terminated = false;
 
             // Restore previous loop context
             ctx.loop_exit_block = prev_loop_exit;
             ctx.loop_header_block = prev_loop_header;
+        }
+
+        Statement::For(for_stmt) => {
+            // Check if iterable is a range expression (binary op with Range or RangeIncl)
+            let range_info = match &for_stmt.iterable {
+                Expression::Binary(bin) if matches!(bin.op, BinaryOp::Range | BinaryOp::RangeIncl) => {
+                    Some((bin.left, bin.right, matches!(bin.op, BinaryOp::RangeIncl)))
+                }
+                Expression::Range(range_expr) => {
+                    // Handle Expression::Range if it exists
+                    range_expr.start.zip(range_expr.end.as_ref()).map(|(s, e)| (s, *e, range_expr.inclusive))
+                }
+                _ => None
+            };
+
+            // Check if iterable is a string (via type annotation, string literal, or heap type)
+            let is_string_literal = matches!(
+                &for_stmt.iterable,
+                Expression::Literal(LiteralExpr { value: Literal::String(_), .. })
+            );
+
+            // Also check if it's a string variable by looking at var_heap_types
+            let is_string_var = if let Expression::Identifier(ident) = &for_stmt.iterable {
+                let var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+                matches!(ctx.var_heap_types.get(&var_name), Some(HeapType::String))
+            } else {
+                false
+            };
+
+            let is_string = is_string_literal || is_string_var || matches!(
+                ctx.annotations.get_type(for_stmt.iterable.span()),
+                Some(Type::String)
+            );
+
+            if let Some((start_expr, end_expr, inclusive)) = range_info {
+                // Handle range iteration directly without array allocation
+                // Get start and end values
+                let start = compile_expression(ctx, builder, start_expr)?;
+                let end = compile_expression(ctx, builder, end_expr)?;
+
+                // Create index variable (this is both the loop counter and the value)
+                let idx_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(idx_var, cranelift::prelude::types::I64);
+                builder.def_var(idx_var, start);
+
+                // Bind the value variable to the same as index
+                let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
+                ctx.variables.insert(val_name, idx_var);
+
+                // Optionally create separate index binding (for iteration count from 0)
+                let iter_var = if for_stmt.index.is_some() {
+                    let iter_var = Variable::new(ctx.var_counter);
+                    ctx.var_counter += 1;
+                    builder.declare_var(iter_var, cranelift::prelude::types::I64);
+                    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    builder.def_var(iter_var, zero);
+                    if let Some(ref idx_ident) = for_stmt.index {
+                        let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
+                        ctx.variables.insert(idx_name, iter_var);
+                    }
+                    Some(iter_var)
+                } else {
+                    None
+                };
+
+                let header_block = builder.create_block();
+                let body_block = builder.create_block();
+                let exit_block = builder.create_block();
+
+                let prev_loop_exit = ctx.loop_exit_block.take();
+                let prev_loop_header = ctx.loop_header_block.take();
+                ctx.loop_exit_block = Some(exit_block);
+                ctx.loop_header_block = Some(header_block);
+
+                builder.ins().jump(header_block, &[]);
+
+                // Header: check if idx < end (or <= for inclusive)
+                builder.switch_to_block(header_block);
+                let idx_val = builder.use_var(idx_var);
+                let cond = if inclusive {
+                    builder.ins().icmp(IntCC::SignedLessThanOrEqual, idx_val, end)
+                } else {
+                    builder.ins().icmp(IntCC::SignedLessThan, idx_val, end)
+                };
+                builder.ins().brif(cond, body_block, &[], exit_block, &[]);
+
+                // Body
+                builder.switch_to_block(body_block);
+                builder.seal_block(body_block);
+                ctx.block_terminated = false;
+
+                for stmt in &for_stmt.body.statements {
+                    compile_statement(ctx, builder, stmt)?;
+                    if ctx.block_terminated {
+                        break;
+                    }
+                }
+
+                // Increment index
+                if !ctx.block_terminated {
+                    let idx_val = builder.use_var(idx_var);
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    let next_idx = builder.ins().iadd(idx_val, one);
+                    builder.def_var(idx_var, next_idx);
+
+                    // Also increment iteration counter if present
+                    if let Some(iter_v) = iter_var {
+                        let iter_val = builder.use_var(iter_v);
+                        let next_iter = builder.ins().iadd(iter_val, one);
+                        builder.def_var(iter_v, next_iter);
+                    }
+
+                    builder.ins().jump(header_block, &[]);
+                }
+
+                builder.seal_block(header_block);
+                builder.switch_to_block(exit_block);
+                builder.seal_block(exit_block);
+                ctx.block_terminated = false;
+
+                ctx.loop_exit_block = prev_loop_exit;
+                ctx.loop_header_block = prev_loop_header;
+            } else if is_string {
+                // Handle string character iteration
+                let raw_str_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
+
+                // If the iterable is a string literal, convert it to NamlString*
+                let str_ptr = if matches!(&for_stmt.iterable, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                    // Convert C string to NamlString*
+                    call_string_from_cstr(ctx, builder, raw_str_ptr)?
+                } else {
+                    raw_str_ptr
+                };
+
+                let len = call_string_char_len(ctx, builder, str_ptr)?;
+
+                // Create index variable
+                let idx_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(idx_var, cranelift::prelude::types::I64);
+                let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                builder.def_var(idx_var, zero);
+
+                // Create character variable (holds codepoint as int)
+                let char_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(char_var, cranelift::prelude::types::I64);
+                let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
+                ctx.variables.insert(val_name, char_var);
+
+                // Bind index if requested
+                if let Some(ref idx_ident) = for_stmt.index {
+                    let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
+                    ctx.variables.insert(idx_name, idx_var);
+                }
+
+                let header_block = builder.create_block();
+                let body_block = builder.create_block();
+                let exit_block = builder.create_block();
+
+                let prev_loop_exit = ctx.loop_exit_block.take();
+                let prev_loop_header = ctx.loop_header_block.take();
+                ctx.loop_exit_block = Some(exit_block);
+                ctx.loop_header_block = Some(header_block);
+
+                builder.ins().jump(header_block, &[]);
+
+                builder.switch_to_block(header_block);
+                let idx_val = builder.use_var(idx_var);
+                let cond = builder.ins().icmp(IntCC::SignedLessThan, idx_val, len);
+                builder.ins().brif(cond, body_block, &[], exit_block, &[]);
+
+                builder.switch_to_block(body_block);
+                builder.seal_block(body_block);
+                ctx.block_terminated = false;
+
+                // Get character at current index
+                let idx_val = builder.use_var(idx_var);
+                let char_code = call_string_char_at(ctx, builder, str_ptr, idx_val)?;
+                builder.def_var(char_var, char_code);
+
+                for stmt in &for_stmt.body.statements {
+                    compile_statement(ctx, builder, stmt)?;
+                    if ctx.block_terminated {
+                        break;
+                    }
+                }
+
+                if !ctx.block_terminated {
+                    let idx_val = builder.use_var(idx_var);
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    let next_idx = builder.ins().iadd(idx_val, one);
+                    builder.def_var(idx_var, next_idx);
+                    builder.ins().jump(header_block, &[]);
+                }
+
+                builder.seal_block(header_block);
+                builder.switch_to_block(exit_block);
+                builder.seal_block(exit_block);
+                ctx.block_terminated = false;
+
+                ctx.loop_exit_block = prev_loop_exit;
+                ctx.loop_header_block = prev_loop_header;
+            } else {
+                // Original array iteration code
+                let arr_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
+                let len = call_array_len(ctx, builder, arr_ptr)?;
+
+                let idx_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(idx_var, cranelift::prelude::types::I64);
+                let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                builder.def_var(idx_var, zero);
+
+                let val_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(val_var, cranelift::prelude::types::I64);
+                let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
+                ctx.variables.insert(val_name, val_var);
+
+                if let Some(ref idx_ident) = for_stmt.index {
+                    let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
+                    ctx.variables.insert(idx_name, idx_var);
+                }
+
+                let header_block = builder.create_block();
+                let body_block = builder.create_block();
+                let exit_block = builder.create_block();
+
+                let prev_loop_exit = ctx.loop_exit_block.take();
+                let prev_loop_header = ctx.loop_header_block.take();
+                ctx.loop_exit_block = Some(exit_block);
+                ctx.loop_header_block = Some(header_block);
+
+                builder.ins().jump(header_block, &[]);
+
+                builder.switch_to_block(header_block);
+                let idx_val = builder.use_var(idx_var);
+                let cond = builder.ins().icmp(IntCC::SignedLessThan, idx_val, len);
+                builder.ins().brif(cond, body_block, &[], exit_block, &[]);
+
+                builder.switch_to_block(body_block);
+                builder.seal_block(body_block);
+                ctx.block_terminated = false;
+
+                let idx_val = builder.use_var(idx_var);
+                let elem = call_array_get(ctx, builder, arr_ptr, idx_val)?;
+                builder.def_var(val_var, elem);
+
+                for stmt in &for_stmt.body.statements {
+                    compile_statement(ctx, builder, stmt)?;
+                    if ctx.block_terminated {
+                        break;
+                    }
+                }
+
+                if !ctx.block_terminated {
+                    let idx_val = builder.use_var(idx_var);
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    let next_idx = builder.ins().iadd(idx_val, one);
+                    builder.def_var(idx_var, next_idx);
+                    builder.ins().jump(header_block, &[]);
+                }
+
+                builder.seal_block(header_block);
+                builder.switch_to_block(exit_block);
+                builder.seal_block(exit_block);
+                ctx.block_terminated = false;
+
+                ctx.loop_exit_block = prev_loop_exit;
+                ctx.loop_header_block = prev_loop_header;
+            }
         }
 
         Statement::Loop(loop_stmt) => {
@@ -1962,12 +2413,6 @@ fn compile_statement(
                 }
             }
         }
-
-        _ => {
-            return Err(CodegenError::Unsupported(
-                format!("Statement type not yet implemented: {:?}", std::mem::discriminant(stmt))
-            ));
-        }
     }
 
     Ok(())
@@ -2027,13 +2472,12 @@ fn compile_pattern_match(
                 (enum_name, variant_name)
             };
 
-            if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
-                if let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+            if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
+                && let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
                     let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), scrutinee, 0);
                     let expected_tag = builder.ins().iconst(cranelift::prelude::types::I32, var_def.tag as i64);
                     return Ok(builder.ins().icmp(IntCC::Equal, tag, expected_tag));
                 }
-            }
 
             Err(CodegenError::JitCompile(format!(
                 "Unknown enum variant: {}::{}",
@@ -2084,8 +2528,8 @@ fn bind_pattern_vars(
                 (enum_name, variant_name)
             };
 
-            if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
-                if let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+            if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
+                && let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
                     for (i, binding) in variant.bindings.iter().enumerate() {
                         let binding_name = ctx.interner.resolve(&binding.symbol).to_string();
                         let offset = (var_def.data_offset + i * 8) as i32;
@@ -2104,7 +2548,6 @@ fn bind_pattern_vars(
                         ctx.variables.insert(binding_name, var);
                     }
                 }
-            }
         }
 
         Pattern::Identifier(ident) => {
@@ -2153,8 +2596,8 @@ fn compile_expression(
                 let enum_name = ctx.interner.resolve(&path_expr.segments[0].symbol).to_string();
                 let variant_name = ctx.interner.resolve(&path_expr.segments[1].symbol).to_string();
 
-                if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
-                    if let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
+                    && let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name) {
                         // Unit variant - allocate stack slot and set tag
                         let slot = builder.create_sized_stack_slot(StackSlotData::new(
                             StackSlotKind::ExplicitSlot,
@@ -2170,7 +2613,6 @@ fn compile_expression(
                         // Return pointer to stack slot
                         return Ok(slot_addr);
                     }
-                }
             }
 
             Err(CodegenError::Unsupported(format!(
@@ -2185,7 +2627,7 @@ fn compile_expression(
             // Handle null coalescing operator: lhs ?? rhs
             // Returns lhs if not null/none, otherwise rhs
             if bin.op == BinaryOp::NullCoalesce {
-                let lhs = compile_expression(ctx, builder, &bin.left)?;
+                let lhs = compile_expression(ctx, builder, bin.left)?;
 
                 // Create blocks for branching
                 let then_block = builder.create_block();
@@ -2208,7 +2650,7 @@ fn compile_expression(
                 // Else block: lhs is null, evaluate and use rhs
                 builder.switch_to_block(else_block);
                 builder.seal_block(else_block);
-                let rhs = compile_expression(ctx, builder, &bin.right)?;
+                let rhs = compile_expression(ctx, builder, bin.right)?;
                 builder.ins().jump(merge_block, &[rhs]);
 
                 // Merge block: result is block parameter
@@ -2221,16 +2663,16 @@ fn compile_expression(
             // Check if this is a string comparison (Eq/NotEq)
             let lhs_type = ctx.annotations.get_type(bin.left.span());
             if matches!(lhs_type, Some(Type::String)) && matches!(bin.op, BinaryOp::Eq | BinaryOp::NotEq) {
-                let lhs = compile_expression(ctx, builder, &bin.left)?;
-                let rhs = compile_expression(ctx, builder, &bin.right)?;
+                let lhs = compile_expression(ctx, builder, bin.left)?;
+                let rhs = compile_expression(ctx, builder, bin.right)?;
                 // Convert lhs to NamlString if it's a string literal
-                let lhs_str = if matches!(&*bin.left, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                let lhs_str = if matches!(bin.left, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
                     call_string_from_cstr(ctx, builder, lhs)?
                 } else {
                     lhs
                 };
                 // Convert rhs to NamlString if it's a string literal
-                let rhs_str = if matches!(&*bin.right, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                let rhs_str = if matches!(bin.right, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
                     call_string_from_cstr(ctx, builder, rhs)?
                 } else {
                     rhs
@@ -2243,13 +2685,13 @@ fn compile_expression(
                 }
                 return Ok(result);
             }
-            let lhs = compile_expression(ctx, builder, &bin.left)?;
-            let rhs = compile_expression(ctx, builder, &bin.right)?;
+            let lhs = compile_expression(ctx, builder, bin.left)?;
+            let rhs = compile_expression(ctx, builder, bin.right)?;
             compile_binary_op(builder, &bin.op, lhs, rhs)
         }
 
         Expression::Unary(unary) => {
-            let operand = compile_expression(ctx, builder, &unary.operand)?;
+            let operand = compile_expression(ctx, builder, unary.operand)?;
             compile_unary_op(builder, &unary.op, operand)
         }
 
@@ -2282,8 +2724,16 @@ fn compile_expression(
                     _ => {}
                 }
 
+                // Check if this is a call to a generic function (monomorphized)
+                // First, check if the call span has a monomorphization recorded
+                let actual_func_name = if let Some(mangled_name) = ctx.annotations.get_call_instantiation(call.span) {
+                    mangled_name.as_str()
+                } else {
+                    func_name
+                };
+
                 // Check for normal (naml) function
-                if let Some(&func_id) = ctx.functions.get(func_name) {
+                if let Some(&func_id) = ctx.functions.get(actual_func_name) {
                     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
 
                     let mut args = Vec::new();
@@ -2386,8 +2836,8 @@ fn compile_expression(
                     let enum_name = ctx.interner.resolve(&path_expr.segments[0].symbol).to_string();
                     let variant_name = ctx.interner.resolve(&path_expr.segments[1].symbol).to_string();
 
-                    if let Some(enum_def) = ctx.enum_defs.get(&enum_name) {
-                        if let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                    if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
+                        && let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name) {
                             // Allocate stack slot for enum
                             let slot = builder.create_sized_stack_slot(StackSlotData::new(
                                 StackSlotKind::ExplicitSlot,
@@ -2416,7 +2866,6 @@ fn compile_expression(
 
                             return Ok(slot_addr);
                         }
-                    }
                 }
 
                 Err(CodegenError::Unsupported(format!(
@@ -2432,7 +2881,7 @@ fn compile_expression(
         }
 
         Expression::Grouped(grouped) => {
-            compile_expression(ctx, builder, &grouped.inner)
+            compile_expression(ctx, builder, grouped.inner)
         }
 
         Expression::Block(block) => {
@@ -2470,23 +2919,23 @@ fn compile_expression(
         }
 
         Expression::Index(index_expr) => {
-            let base = compile_expression(ctx, builder, &index_expr.base)?;
+            let base = compile_expression(ctx, builder, index_expr.base)?;
 
             // Check if index is a string literal - if so, use map_get with NamlString conversion
-            if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = &*index_expr.index {
-                let cstr_ptr = compile_expression(ctx, builder, &index_expr.index)?;
+            if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = index_expr.index {
+                let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
                 let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
                 call_map_get(ctx, builder, base, naml_str)
             } else {
                 // Default to array access for integer indices
-                let index = compile_expression(ctx, builder, &index_expr.index)?;
+                let index = compile_expression(ctx, builder, index_expr.index)?;
                 call_array_get(ctx, builder, base, index)
             }
         }
 
         Expression::MethodCall(method_call) => {
             let method_name = ctx.interner.resolve(&method_call.method.symbol);
-            compile_method_call(ctx, builder, &method_call.receiver, method_name, &method_call.args)
+            compile_method_call(ctx, builder, method_call.receiver, method_name, &method_call.args)
         }
 
         Expression::StructLiteral(struct_lit) => {
@@ -2512,11 +2961,10 @@ fn compile_expression(
 
                 let mut value = compile_expression(ctx, builder, &field.value)?;
                 // Convert string literals to NamlString
-                if let Some(Type::String) = ctx.annotations.get_type(field.value.span()) {
-                    if matches!(&field.value, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                if let Some(Type::String) = ctx.annotations.get_type(field.value.span())
+                    && matches!(&field.value, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
                         value = call_string_from_cstr(ctx, builder, value)?;
                     }
-                }
                 let idx_val = builder.ins().iconst(cranelift::prelude::types::I32, field_idx as i64);
                 call_struct_set_field(ctx, builder, struct_ptr, idx_val, value)?;
             }
@@ -2525,15 +2973,15 @@ fn compile_expression(
         }
 
         Expression::Field(field_expr) => {
-            let struct_ptr = compile_expression(ctx, builder, &field_expr.base)?;
+            let struct_ptr = compile_expression(ctx, builder, field_expr.base)?;
             let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
 
             // Use type annotation to determine correct field offset
             // Note: use ident.span (IdentExpr span), not ident.ident.span (Ident span)
-            if let Expression::Identifier(ident) = &*field_expr.base {
-                if let Some(type_ann) = ctx.annotations.get_type(ident.span) {
+            if let Expression::Identifier(ident) = field_expr.base
+                && let Some(type_ann) = ctx.annotations.get_type(ident.span) {
                     if let crate::typechecker::Type::Exception(exc_name) = type_ann {
-                        let exc_name_str = ctx.interner.resolve(&exc_name).to_string();
+                        let exc_name_str = ctx.interner.resolve(exc_name).to_string();
                         if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
                             // Exception: message at offset 0, fields at 8, 16, ...
                             let offset = if field_name == "message" {
@@ -2553,8 +3001,8 @@ fn compile_expression(
                         }
                     } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
                         let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
-                        if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
-                            if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                        if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
+                            && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
                                 let offset = (idx * 8) as i32;
                                 let value = builder.ins().load(
                                     cranelift::prelude::types::I64,
@@ -2564,10 +3012,8 @@ fn compile_expression(
                                 );
                                 return Ok(value);
                             }
-                        }
                     }
                 }
-            }
 
             // Fallback to runtime lookup for generic cases
             for (_, struct_def) in ctx.struct_defs.iter() {
@@ -2626,7 +3072,7 @@ fn compile_expression(
         }
 
         Expression::Some(some_expr) => {
-            let inner_val = compile_expression(ctx, builder, &some_expr.value)?;
+            let inner_val = compile_expression(ctx, builder, some_expr.value)?;
 
             // Allocate option on stack
             let slot = builder.create_sized_stack_slot(StackSlotData::new(
@@ -2707,12 +3153,12 @@ fn compile_expression(
         Expression::Try(try_expr) => {
             // For now, try just evaluates the expression
             // Full exception unwinding will be implemented later
-            compile_expression(ctx, builder, &try_expr.expr)
+            compile_expression(ctx, builder, try_expr.expr)
         }
 
         Expression::Catch(catch_expr) => {
             // Compile the expression that might throw
-            let result = compile_expression(ctx, builder, &catch_expr.expr)?;
+            let result = compile_expression(ctx, builder, catch_expr.expr)?;
 
             // Check if an exception occurred
             let has_exception = call_exception_check(ctx, builder)?;
@@ -2779,7 +3225,7 @@ fn compile_expression(
 
         Expression::OrDefault(or_default_expr) => {
             // Compile the option expression (returns pointer to option struct)
-            let option_ptr = compile_expression(ctx, builder, &or_default_expr.expr)?;
+            let option_ptr = compile_expression(ctx, builder, or_default_expr.expr)?;
 
             // Load the tag from offset 0 (0 = none, 1 = some)
             let tag = builder.ins().load(
@@ -2816,7 +3262,7 @@ fn compile_expression(
             // None block: compile and return the default value
             builder.switch_to_block(none_block);
             builder.seal_block(none_block);
-            let default_val = compile_expression(ctx, builder, &or_default_expr.default)?;
+            let default_val = compile_expression(ctx, builder, or_default_expr.default)?;
             builder.ins().jump(merge_block, &[default_val]);
 
             // Merge block: return the result
@@ -2828,7 +3274,7 @@ fn compile_expression(
 
         Expression::Cast(cast_expr) => {
             // Evaluate the expression to cast
-            let value = compile_expression(ctx, builder, &cast_expr.expr)?;
+            let value = compile_expression(ctx, builder, cast_expr.expr)?;
 
             // Get source and target types
             let source_type = ctx.annotations.get_type(cast_expr.expr.span());
@@ -2838,6 +3284,9 @@ fn compile_expression(
                     match source_type {
                         Some(Type::Float) => {
                             Ok(builder.ins().fcvt_to_sint(cranelift::prelude::types::I64, value))
+                        }
+                        Some(Type::String) => {
+                            call_string_to_int(ctx, builder, value)
                         }
                         Some(Type::Uint) | Some(Type::Int) => Ok(value),
                         _ => Ok(value)
@@ -2860,7 +3309,34 @@ fn compile_expression(
                         Some(Type::Uint) => {
                             Ok(builder.ins().fcvt_from_uint(cranelift::prelude::types::F64, value))
                         }
+                        Some(Type::String) => {
+                            call_string_to_float(ctx, builder, value)
+                        }
                         Some(Type::Float) => Ok(value),
+                        _ => Ok(value)
+                    }
+                }
+                NamlType::String => {
+                    match source_type {
+                        Some(Type::Int) | Some(Type::Uint) => {
+                            call_int_to_string(ctx, builder, value)
+                        }
+                        Some(Type::Float) => {
+                            call_float_to_string(ctx, builder, value)
+                        }
+                        Some(Type::Bytes) => {
+                            call_bytes_to_string(ctx, builder, value)
+                        }
+                        Some(Type::String) => Ok(value),
+                        _ => Ok(value)
+                    }
+                }
+                NamlType::Bytes => {
+                    match source_type {
+                        Some(Type::String) => {
+                            call_string_to_bytes(ctx, builder, value)
+                        }
+                        Some(Type::Bytes) => Ok(value),
                         _ => Ok(value)
                     }
                 }
@@ -3035,45 +3511,50 @@ fn compile_print_call(
         return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
     }
 
-    for (i, arg) in args.iter().enumerate() {
-        match arg {
-            Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) => {
-                let s = ctx.interner.resolve(spur);
-                let ptr = compile_string_literal(ctx, builder, s)?;
+    // Check if first arg is a format string with {}
+    if let Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) = &args[0] {
+        let format_str = ctx.interner.resolve(spur);
+        if format_str.contains("{}") {
+            // Format string mode
+            let mut arg_idx = 1;
+            let mut last_end = 0;
+
+            for (start, _) in format_str.match_indices("{}") {
+                // Print literal part before placeholder
+                if start > last_end {
+                    let literal_part = &format_str[last_end..start];
+                    let ptr = compile_string_literal(ctx, builder, literal_part)?;
+                    call_print_str(ctx, builder, ptr)?;
+                }
+
+                // Print the argument
+                if arg_idx < args.len() {
+                    let arg = &args[arg_idx];
+                    print_arg(ctx, builder, arg)?;
+                    arg_idx += 1;
+                }
+
+                last_end = start + 2;
+            }
+
+            // Print remaining literal after last placeholder
+            if last_end < format_str.len() {
+                let remaining = &format_str[last_end..];
+                let ptr = compile_string_literal(ctx, builder, remaining)?;
                 call_print_str(ctx, builder, ptr)?;
             }
-            Expression::Literal(LiteralExpr { value: Literal::Int(n), .. }) => {
-                let val = builder.ins().iconst(cranelift::prelude::types::I64, *n);
-                call_print_int(ctx, builder, val)?;
+
+            if newline {
+                call_print_newline(ctx, builder)?;
             }
-            Expression::Literal(LiteralExpr { value: Literal::Float(f), .. }) => {
-                let val = builder.ins().f64const(*f);
-                call_print_float(ctx, builder, val)?;
-            }
-            _ => {
-                let val = compile_expression(ctx, builder, arg)?;
-                // Check type from annotations to call appropriate print function
-                let expr_type = ctx.annotations.get_type(arg.span());
-                match expr_type {
-                    Some(Type::String) => {
-                        // String variables now hold NamlString* (boxed strings)
-                        call_print_naml_string(ctx, builder, val)?;
-                    }
-                    Some(Type::Float) => {
-                        call_print_float(ctx, builder, val)?;
-                    }
-                    _ => {
-                        // Default: check Cranelift value type for F64, otherwise int
-                        let val_type = builder.func.dfg.value_type(val);
-                        if val_type == cranelift::prelude::types::F64 {
-                            call_print_float(ctx, builder, val)?;
-                        } else {
-                            call_print_int(ctx, builder, val)?;
-                        }
-                    }
-                }
-            }
+
+            return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
         }
+    }
+
+    // Original behavior for non-format strings
+    for (i, arg) in args.iter().enumerate() {
+        print_arg(ctx, builder, arg)?;
 
         if i < args.len() - 1 {
             let space = compile_string_literal(ctx, builder, " ")?;
@@ -3086,6 +3567,52 @@ fn compile_print_call(
     }
 
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn print_arg(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arg: &Expression<'_>,
+) -> Result<(), CodegenError> {
+    match arg {
+        Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) => {
+            let s = ctx.interner.resolve(spur);
+            let ptr = compile_string_literal(ctx, builder, s)?;
+            call_print_str(ctx, builder, ptr)?;
+        }
+        Expression::Literal(LiteralExpr { value: Literal::Int(n), .. }) => {
+            let val = builder.ins().iconst(cranelift::prelude::types::I64, *n);
+            call_print_int(ctx, builder, val)?;
+        }
+        Expression::Literal(LiteralExpr { value: Literal::Float(f), .. }) => {
+            let val = builder.ins().f64const(*f);
+            call_print_float(ctx, builder, val)?;
+        }
+        _ => {
+            let val = compile_expression(ctx, builder, arg)?;
+            // Check type from annotations to call appropriate print function
+            let expr_type = ctx.annotations.get_type(arg.span());
+            match expr_type {
+                Some(Type::String) => {
+                    // String variables now hold NamlString* (boxed strings)
+                    call_print_naml_string(ctx, builder, val)?;
+                }
+                Some(Type::Float) => {
+                    call_print_float(ctx, builder, val)?;
+                }
+                _ => {
+                    // Default: check Cranelift value type for F64, otherwise int
+                    let val_type = builder.func.dfg.value_type(val);
+                    if val_type == cranelift::prelude::types::F64 {
+                        call_print_float(ctx, builder, val)?;
+                    } else {
+                        call_print_int(ctx, builder, val)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn emit_incref(
@@ -3213,11 +3740,10 @@ fn emit_cleanup_all_vars(
     let vars_to_cleanup: Vec<(String, Variable, HeapType)> = ctx.var_heap_types
         .iter()
         .filter_map(|(name, heap_type)| {
-            if let Some(excl) = exclude_var {
-                if name == excl {
+            if let Some(excl) = exclude_var
+                && name == excl {
                     return None;
                 }
-            }
             ctx.variables.get(name).map(|var| (name.clone(), *var, heap_type.clone()))
         })
         .collect();
@@ -3324,6 +3850,160 @@ fn call_string_equals(
 
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
     let call = builder.ins().call(func_ref, &[a, b]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_int_to_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_int_to_string", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_int_to_string: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_float_to_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::F64));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_float_to_string", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_float_to_string: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_to_int(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_to_int", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_int: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_to_float(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::F64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_to_float", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_float: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_char_len(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    str_ptr: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_char_len", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_char_len: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[str_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_char_at(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    str_ptr: Value,
+    index: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_char_at", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_char_at: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[str_ptr, index]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_to_bytes(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    str_ptr: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_to_bytes", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_bytes: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[str_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_bytes_to_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    bytes_ptr: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_bytes_to_string", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_bytes_to_string: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[bytes_ptr]);
     Ok(builder.inst_results(call)[0])
 }
 
@@ -3845,7 +4525,21 @@ fn compile_method_call(
 
     match method_name {
         "len" => {
-            call_array_len(ctx, builder, recv)
+            // Check receiver type to dispatch to correct len function
+            let receiver_type = ctx.annotations.get_type(receiver.span());
+            if matches!(receiver_type, Some(Type::String)) {
+                call_string_char_len(ctx, builder, recv)
+            } else {
+                call_array_len(ctx, builder, recv)
+            }
+        }
+        "char_at" => {
+            // String char_at method
+            if args.is_empty() {
+                return Err(CodegenError::JitCompile("char_at requires an index argument".to_string()));
+            }
+            let idx = compile_expression(ctx, builder, &args[0])?;
+            call_string_char_at(ctx, builder, recv, idx)
         }
         "push" => {
             if args.is_empty() {
@@ -3930,7 +4624,20 @@ fn compile_method_call(
             let receiver_type = ctx.annotations.get_type(receiver.span());
             let type_name = match receiver_type {
                 Some(Type::Struct(s)) => Some(ctx.interner.resolve(&s.name).to_string()),
-                Some(Type::Generic(name, _)) => Some(ctx.interner.resolve(&name).to_string()),
+                Some(Type::Generic(name, type_args)) => {
+                    let name_str = ctx.interner.resolve(name).to_string();
+                    // Check if this is a bare type parameter (no type args)
+                    // If so, look up the concrete type from substitutions
+                    if type_args.is_empty() {
+                        if let Some(concrete_type) = ctx.type_substitutions.get(&name_str) {
+                            Some(concrete_type.clone())
+                        } else {
+                            Some(name_str)
+                        }
+                    } else {
+                        Some(name_str)
+                    }
+                }
                 _ => None,
             };
 

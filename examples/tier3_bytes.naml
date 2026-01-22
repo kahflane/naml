@@ -1,0 +1,27 @@
+///
+/// Tier 3 Test: Bytes Type
+///
+
+fn main() {
+    println("=== Bytes Type Tests ===");
+
+    // Convert string to bytes
+    var s: string = "Hello";
+    var b: bytes = s as bytes;
+
+    print("String: ");
+    println(s);
+
+    // Convert bytes back to string
+    var s2: string = b as string;
+    print("Bytes as string: ");
+    println(s2);
+
+    // Test with different strings
+    var greeting: string = "World";
+    var greeting_bytes: bytes = greeting as bytes;
+    print("As bytes: ");
+    println(greeting_bytes);
+
+    println("=== Bytes Type Tests Complete ===");
+}

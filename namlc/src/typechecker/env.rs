@@ -146,7 +146,7 @@ impl TypeEnv {
     pub fn is_defined_in_current_scope(&self, name: Spur) -> bool {
         self.scopes
             .last()
-            .map_or(false, |scope| scope.get(name).is_some())
+            .is_some_and(|scope| scope.get(name).is_some())
     }
 
     pub fn enter_loop(&mut self) {
@@ -201,11 +201,10 @@ impl TypeEnv {
     }
 
     pub fn bind_type_param(&mut self, name: Spur, concrete: Type) {
-        if let Some(func) = self.function_stack.last_mut() {
-            if let Some(binding) = func.type_params.get_mut(&name) {
+        if let Some(func) = self.function_stack.last_mut()
+            && let Some(binding) = func.type_params.get_mut(&name) {
                 binding.concrete = Some(concrete);
             }
-        }
     }
 
     pub fn get_type_param_binding(&self, name: Spur) -> Option<&Type> {

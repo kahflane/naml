@@ -156,7 +156,7 @@ fn parse_named_or_generic_type(input: TokenStream) -> PResult<NamlType> {
 }
 
 thread_local! {
-    static PENDING_GT: std::cell::Cell<u8> = std::cell::Cell::new(0);
+    static PENDING_GT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }
 
 pub fn parse_gt(input: TokenStream) -> PResult<()> {
