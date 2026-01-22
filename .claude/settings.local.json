@@ -24,7 +24,8 @@
       "Skill(superpowers:using-git-worktrees)",
       "Skill(superpowers:writing-plans)",
       "Bash(gh issue list:*)",
-      "Bash(gh issue create:*)"
+      "Bash(gh issue create:*)",
+      "Bash(cargo clippy:*)"
     ]
   },
   "hooks": {

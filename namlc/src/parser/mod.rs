@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_parse_var_statement() {
-        assert_parses("fn main() { var x = 42; }");
+        assert_parses("fn main() { var x: int = 42; }");
     }
 
     #[test]

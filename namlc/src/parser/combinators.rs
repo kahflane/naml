@@ -28,6 +28,7 @@ pub enum PErrorKind {
     ExpectedIdent,
     ExpectedExpr,
     ExpectedType,
+    ExpectedTypeAnnotation,
     ExpectedStatement,
     ExpectedItem,
     Nom(ErrorKind),

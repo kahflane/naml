@@ -92,10 +92,10 @@ var fixed: [int; 5] = [1, 2, 3, 4, 5];
 Array operations:
 
 ```naml
-var first = numbers[0];      // Indexing
-var len = numbers.len();     // Length
-numbers.push(6);             // Append
-var last = numbers.pop();    // Remove last
+var first: int = numbers[0];      // Indexing
+var len: int = numbers.len();     // Length
+numbers.push(6);                   // Append
+var last: int = numbers.pop();    // Remove last
 ```
 
 ### Maps
@@ -115,8 +115,8 @@ var maybe: option<int> = some(42);
 var nothing: option<int> = none;
 
 // Null coalescing
-var value = maybe ?? 0;  // Returns 42
-var other = nothing ?? -1;  // Returns -1
+var value: int = maybe ?? 0;  // Returns 42
+var other: int = nothing ?? -1;  // Returns -1
 ```
 
 ### Channels
@@ -144,43 +144,43 @@ var predicate: fn(string) -> bool;
 
 ```naml
 // Integers
-var a = 42;
-var b = 1_000_000;      // Underscores for readability
-var c = -100;
+var a: int = 42;
+var b: int = 1_000_000;      // Underscores for readability
+var c: int = -100;
 
 // Floats
-var pi = 3.14159;
-var scientific = 1.5e10;
+var pi: float = 3.14159;
+var scientific: float = 1.5e10;
 ```
 
 ### String Literals
 
 ```naml
-var greeting = "Hello, World!";
-var with_quotes = "She said \"hi\"";
-var with_newline = "Line 1\nLine 2";
+var greeting: string = "Hello, World!";
+var with_quotes: string = "She said \"hi\"";
+var with_newline: string = "Line 1\nLine 2";
 ```
 
 ### Boolean Literals
 
 ```naml
-var yes = true;
-var no = false;
+var yes: bool = true;
+var no: bool = false;
 ```
 
 ### Option Literals
 
 ```naml
-var present = some(42);
-var absent = none;
+var present: option<int> = some(42);
+var absent: option<int> = none;
 ```
 
 ### Array Literals
 
 ```naml
-var numbers = [1, 2, 3, 4, 5];
-var strings = ["a", "b", "c"];
-var nested = [[1, 2], [3, 4]];
+var numbers: [int] = [1, 2, 3, 4, 5];
+var strings: [string] = ["a", "b", "c"];
+var nested: [[int]] = [[1, 2], [3, 4]];
 ```
 
 ---
@@ -198,11 +198,11 @@ var nested = [[1, 2], [3, 4]];
 | `%` | Modulo (remainder) |
 
 ```naml
-var sum = 10 + 5;       // 15
-var diff = 10 - 5;      // 5
-var prod = 10 * 5;      // 50
-var quot = 10 / 5;      // 2
-var rem = 10 % 3;       // 1
+var sum: int = 10 + 5;       // 15
+var diff: int = 10 - 5;      // 5
+var prod: int = 10 * 5;      // 50
+var quot: int = 10 / 5;      // 2
+var rem: int = 10 % 3;       // 1
 ```
 
 ### Comparison Operators
@@ -217,12 +217,12 @@ var rem = 10 % 3;       // 1
 | `>=` | Greater than or equal |
 
 ```naml
-var eq = 5 == 5;        // true
-var neq = 5 != 3;       // true
-var lt = 3 < 5;         // true
-var lte = 5 <= 5;       // true
-var gt = 5 > 3;         // true
-var gte = 5 >= 5;       // true
+var eq: bool = 5 == 5;        // true
+var neq: bool = 5 != 3;       // true
+var lt: bool = 3 < 5;         // true
+var lte: bool = 5 <= 5;       // true
+var gt: bool = 5 > 3;         // true
+var gte: bool = 5 >= 5;       // true
 ```
 
 ### Logical Operators
@@ -234,9 +234,9 @@ var gte = 5 >= 5;       // true
 | `not`, `!` | Logical NOT |
 
 ```naml
-var both = true and false;    // false
-var either = true or false;   // true
-var negated = not true;       // false
+var both: bool = true and false;    // false
+var either: bool = true or false;   // true
+var negated: bool = not true;       // false
 ```
 
 ### Bitwise Operators
@@ -251,11 +251,11 @@ var negated = not true;       // false
 | `>>` | Right shift |
 
 ```naml
-var band = 5 & 3;       // 1
-var bor = 5 | 3;        // 7
-var bxor = 5 ^ 3;       // 6
-var lshift = 1 << 4;    // 16
-var rshift = 16 >> 2;   // 4
+var band: int = 5 & 3;       // 1
+var bor: int = 5 | 3;        // 7
+var bxor: int = 5 ^ 3;       // 6
+var lshift: int = 1 << 4;    // 16
+var rshift: int = 16 >> 2;   // 4
 ```
 
 ### Assignment Operators
@@ -273,7 +273,7 @@ var rshift = 16 >> 2;   // 4
 | `^=` | Bitwise XOR and assign |
 
 ```naml
-var x = 10;
+var x: int = 10;
 x += 5;     // x = 15
 x -= 3;     // x = 12
 x *= 2;     // x = 24
@@ -286,9 +286,11 @@ x *= 2;     // x = 24
 | `..` | Exclusive range |
 | `..=` | Inclusive range |
 
+Ranges are used in for loops:
+
 ```naml
-var exclusive = 0..5;    // 0, 1, 2, 3, 4
-var inclusive = 0..=5;   // 0, 1, 2, 3, 4, 5
+for (i in 0..5) { }     // 0, 1, 2, 3, 4
+for (i in 0..=5) { }    // 0, 1, 2, 3, 4, 5
 ```
 
 ### Other Operators
@@ -300,8 +302,8 @@ var inclusive = 0..=5;   // 0, 1, 2, 3, 4, 5
 | `is` | Type/variant check |
 
 ```naml
-var value = optional ?? default;
-var str = number as string;
+var value: int = optional ?? default;
+var str: string = number as string;
 ```
 
 ---
@@ -310,12 +312,12 @@ var str = number as string;
 
 ### Mutable Variables
 
-Use `var` to declare mutable variables:
+Use `var` to declare mutable variables. Type annotation is required:
 
 ```naml
 var x: int = 10;
-var y = 20;          // Type inferred
-var mut z = 30;      // Explicitly mutable
+var y: float = 3.14;
+var mut z: int = 30;   // Explicitly mutable (var is mutable by default)
 ```
 
 ### Variable with Else Block
@@ -323,7 +325,7 @@ var mut z = 30;      // Explicitly mutable
 Handle initialization failures:
 
 ```naml
-var value = get_optional() else {
+var value: int = get_optional() else {
     // Handle none case
     return -1;
 };
@@ -348,7 +350,7 @@ if (condition) {
 If as expression:
 
 ```naml
-var result = if (x > 0) { "positive" } else { "non-positive" };
+var result: string = if (x > 0) { "positive" } else { "non-positive" };
 ```
 
 ### While Loop
@@ -531,9 +533,9 @@ pub fn (mut self: Counter) reset() {
 ### Method Calls
 
 ```naml
-var point = Point { x: 10, y: 20 };
-var x = point.get_x();    // Method call
-var y = point.get_y();
+var point: Point = Point { x: 10, y: 20 };
+var x: int = point.get_x();    // Method call
+var y: int = point.get_y();
 ```
 
 ---
@@ -561,8 +563,8 @@ pub struct Rectangle {
 ### Struct Instantiation
 
 ```naml
-var point = Point { x: 10, y: 20 };
-var rect = Rectangle { width: 100, height: 50 };
+var point: Point = Point { x: 10, y: 20 };
+var rect: Rectangle = Rectangle { width: 100, height: 50 };
 ```
 
 ### Struct with Interface Implementation
@@ -593,8 +595,8 @@ pub struct Pair<A, B> {
 Usage:
 
 ```naml
-var int_box = Box<int> { value: 42 };
-var pair = Pair<string, int> { first: "age", second: 25 };
+var int_box: Box<int> = Box<int> { value: 42 };
+var pair: Pair<string, int> = Pair<string, int> { first: "age", second: 25 };
 ```
 
 ---
@@ -629,8 +631,8 @@ enum Result<T, E> {
 ### Enum Construction
 
 ```naml
-var status = Status::Active;
-var suspended = UserStatus::Suspended("Policy violation");
+var status: Status = Status::Active;
+var suspended: UserStatus = UserStatus::Suspended("Policy violation");
 ```
 
 ### Enum Pattern Matching
@@ -713,7 +715,7 @@ exception ValidationError {
 ```naml
 fn divide(a: int, b: int) -> int throws DivisionByZero {
     if (b == 0) {
-        var ex = DivisionByZero("Cannot divide by zero");
+        var ex: DivisionByZero = DivisionByZero("Cannot divide by zero");
         ex.dividend = a;
         throw ex;
     }
@@ -724,7 +726,7 @@ fn divide(a: int, b: int) -> int throws DivisionByZero {
 ### Catching Exceptions
 
 ```naml
-var result = divide(10, 0) catch e {
+var result: int = divide(10, 0) catch e {
     println("Error: ");
     println(e.message());
 } ?? -1;
@@ -733,7 +735,7 @@ var result = divide(10, 0) catch e {
 ### Try Expression
 
 ```naml
-var value = try risky_operation();
+var value: int = try risky_operation();
 ```
 
 ---
@@ -782,14 +784,14 @@ fn max<T: Comparable<T>>(a: T, b: T) -> T {
 ### Lambda Expressions
 
 ```naml
-var add = fn (a: int, b: int) -> int { a + b };
-var square = fn (x: int) -> int { x * x };
+var add: fn(int, int) -> int = fn (a: int, b: int) -> int { a + b };
+var square: fn(int) -> int = fn (x: int) -> int { x * x };
 ```
 
-### Type Inference in Lambdas
+### Lambdas with Explicit Types
 
 ```naml
-var double = fn (x) { x * 2 };
+var double: fn(int) -> int = fn (x: int) -> int { x * 2 };
 ```
 
 ### Lambdas as Parameters
@@ -799,7 +801,7 @@ fn apply(f: fn(int) -> int, x: int) -> int {
     return f(x);
 }
 
-var result = apply(fn (n) { n * n }, 5);  // 25
+var result: int = apply(fn (n: int) -> int { n * n }, 5);  // 25
 ```
 
 ---
@@ -833,7 +835,7 @@ spawn {
     ch.send(42);
 };
 
-var value = ch.receive();
+var value: int = ch.receive();
 ```
 
 ### Wait All
@@ -936,7 +938,7 @@ extern fn risky_c_func() -> int throws CError;
 
 ```naml
 // This is a single-line comment
-var x = 10;  // Inline comment
+var x: int = 10;  // Inline comment
 ```
 
 ### Block Comments
@@ -994,37 +996,30 @@ fn add(a: int, b: int) -> int {
 
 ## Type System
 
-### Type Inference
+### Required Type Annotations
 
-naml has powerful type inference:
-
-```naml
-var x = 42;                              // int
-var y = 3.14;                            // float
-var z = "hello";                         // string
-var pair = Pair { first: 1, second: 2 }; // Pair<int, int>
-```
-
-### Type Annotations
-
-Explicit type annotations when needed:
+naml requires explicit type annotations for all variable declarations:
 
 ```naml
 var x: int = 42;
+var y: float = 3.14;
+var z: string = "hello";
+var pair: Pair<int, int> = Pair { first: 1, second: 2 };
 var arr: [int] = [];
-var map: map<string, int>;
+var m: map<string, int>;
 ```
+
+This ensures code is always explicit and self-documenting.
 
 ---
 
 ## Best Practices
 
-1. **Use type inference** when types are obvious
-2. **Add type annotations** for function signatures and complex expressions
-3. **Handle errors** with exceptions and catch blocks
-4. **Use meaningful names** for variables and functions
-5. **Document public APIs** with documentation comments
-6. **Keep functions small** and focused on one task
+1. **Use descriptive type names** to make code self-documenting
+2. **Handle errors** with exceptions and catch blocks
+3. **Use meaningful names** for variables and functions
+4. **Document public APIs** with documentation comments
+5. **Keep functions small** and focused on one task
 
 ---
 
@@ -1057,7 +1052,7 @@ exception InvalidAge {
 
 fn create_person(name: string, age: int) -> Person throws InvalidAge {
     if (age < 0) {
-        var ex = InvalidAge("Age cannot be negative");
+        var ex: InvalidAge = InvalidAge("Age cannot be negative");
         ex.value = age;
         throw ex;
     }
@@ -1065,7 +1060,7 @@ fn create_person(name: string, age: int) -> Person throws InvalidAge {
 }
 
 fn main() {
-    var person = create_person("Alice", 25) catch e {
+    var person: Person = create_person("Alice", 25) catch e {
         println("Error creating person");
     } ?? Person { name: "Unknown", age: 0 };
 
@@ -1078,7 +1073,7 @@ fn main() {
     }
 
     // Using generics
-    var numbers = [1, 2, 3, 4, 5];
+    var numbers: [int] = [1, 2, 3, 4, 5];
     for (i, num in numbers) {
         print_int(num);
     }
@@ -1090,7 +1085,7 @@ fn main() {
         ch.send(42);
     };
 
-    var result = ch.receive();
+    var result: int = ch.receive();
     print_int(result);
 }
 ```

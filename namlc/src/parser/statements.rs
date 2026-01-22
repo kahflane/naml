@@ -54,13 +54,16 @@ fn parse_var_stmt<'a, 'ast>(
 
     let (input, name) = ident(input)?;
 
-    let (input, ty) = if check(TokenKind::Colon)(input) {
-        let (input, _) = token(TokenKind::Colon)(input)?;
-        let (input, ty) = parse_type(input)?;
-        (input, Some(ty))
-    } else {
-        (input, None)
-    };
+    // Type annotation is required: var x: Type = value;
+    if !check(TokenKind::Colon)(input) {
+        return Err(nom::Err::Error(PError {
+            input,
+            kind: PErrorKind::ExpectedTypeAnnotation,
+        }));
+    }
+    let (input, _) = token(TokenKind::Colon)(input)?;
+    let (input, parsed_ty) = parse_type(input)?;
+    let ty = Some(parsed_ty);
 
     let (input, init) = if check(TokenKind::Eq)(input) {
         let (input, _) = token(TokenKind::Eq)(input)?;
@@ -109,13 +112,16 @@ fn parse_const_stmt<'a, 'ast>(
     let (input, start) = keyword(Keyword::Const)(input)?;
     let (input, name) = ident(input)?;
 
-    let (input, ty) = if check(TokenKind::Colon)(input) {
-        let (input, _) = token(TokenKind::Colon)(input)?;
-        let (input, ty) = parse_type(input)?;
-        (input, Some(ty))
-    } else {
-        (input, None)
-    };
+    // Type annotation is required: const x: Type = value;
+    if !check(TokenKind::Colon)(input) {
+        return Err(nom::Err::Error(PError {
+            input,
+            kind: PErrorKind::ExpectedTypeAnnotation,
+        }));
+    }
+    let (input, _) = token(TokenKind::Colon)(input)?;
+    let (input, parsed_ty) = parse_type(input)?;
+    let ty = Some(parsed_ty);
 
     let (input, _) = token(TokenKind::Eq)(input)?;
     let (input, init) = parse_expression(arena, input)?;

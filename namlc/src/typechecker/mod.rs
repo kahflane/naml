@@ -674,7 +674,7 @@ mod tests {
     #[test]
     fn test_valid_if_statement() {
         let errors = check_source(
-            "fn main() { if (true) { var x = 1; } }",
+            "fn main() { if (true) { var x: int = 1; } }",
         );
         assert!(errors.is_empty());
     }
@@ -682,7 +682,7 @@ mod tests {
     #[test]
     fn test_invalid_condition() {
         let errors = check_source(
-            "fn main() { if (42) { var x = 1; } }",
+            "fn main() { if (42) { var x: int = 1; } }",
         );
         assert!(!errors.is_empty());
     }
@@ -724,9 +724,9 @@ mod tests {
     }
 
     #[test]
-    fn test_type_inference() {
+    fn test_type_annotation_required() {
         let errors = check_source(
-            "fn main() { var x = 42; var y: int = x; }",
+            "fn main() { var x: int = 42; var y: int = x; }",
         );
         assert!(errors.is_empty());
     }
@@ -734,7 +734,7 @@ mod tests {
     #[test]
     fn test_array_type() {
         let errors = check_source(
-            "fn main() { var arr = [1, 2, 3]; }",
+            "fn main() { var arr: [int] = [1, 2, 3]; }",
         );
         assert!(errors.is_empty());
     }
@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn test_lambda() {
         let errors = check_source(
-            "fn main() { var f = fn(x: int) -> int { return x + 1; }; }",
+            "fn main() { var f: fn(int) -> int = fn(x: int) -> int { return x + 1; }; }",
         );
         assert!(errors.is_empty());
     }
