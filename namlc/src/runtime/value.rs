@@ -91,7 +91,7 @@ pub struct NamlStruct {
 
 /// Allocate a new string on the heap
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_new(data: *const u8, len: usize) -> *mut NamlString {
+pub unsafe extern "C" fn naml_string_new(data: *const u8, len: usize) -> *mut NamlString {
     unsafe {
         let layout = Layout::from_size_align(
             std::mem::size_of::<NamlString>() + len,
@@ -116,7 +116,7 @@ pub extern "C" fn naml_string_new(data: *const u8, len: usize) -> *mut NamlStrin
 
 /// Increment reference count of a string
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_incref(s: *mut NamlString) {
+pub unsafe extern "C" fn naml_string_incref(s: *mut NamlString) {
     if !s.is_null() {
         unsafe { (*s).header.incref(); }
     }
@@ -124,7 +124,7 @@ pub extern "C" fn naml_string_incref(s: *mut NamlString) {
 
 /// Decrement reference count and free if zero
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_decref(s: *mut NamlString) {
+pub unsafe extern "C" fn naml_string_decref(s: *mut NamlString) {
     if !s.is_null() {
         unsafe {
             if (*s).header.decref() {
@@ -141,7 +141,7 @@ pub extern "C" fn naml_string_decref(s: *mut NamlString) {
 
 /// Get string length
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_len(s: *const NamlString) -> i64 {
+pub unsafe extern "C" fn naml_string_len(s: *const NamlString) -> i64 {
     if s.is_null() {
         0
     } else {
@@ -151,7 +151,7 @@ pub extern "C" fn naml_string_len(s: *const NamlString) -> i64 {
 
 /// Get pointer to string data (for printing)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_data(s: *const NamlString) -> *const u8 {
+pub unsafe extern "C" fn naml_string_data(s: *const NamlString) -> *const u8 {
     if s.is_null() {
         std::ptr::null()
     } else {
@@ -161,7 +161,7 @@ pub extern "C" fn naml_string_data(s: *const NamlString) -> *const u8 {
 
 /// Concatenate two strings
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_concat(a: *const NamlString, b: *const NamlString) -> *mut NamlString {
+pub unsafe extern "C" fn naml_string_concat(a: *const NamlString, b: *const NamlString) -> *mut NamlString {
     unsafe {
         let a_len = if a.is_null() { 0 } else { (*a).len };
         let b_len = if b.is_null() { 0 } else { (*b).len };
@@ -182,7 +182,7 @@ pub extern "C" fn naml_string_concat(a: *const NamlString, b: *const NamlString)
 
 /// Compare two strings for equality
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_eq(a: *const NamlString, b: *const NamlString) -> i64 {
+pub unsafe extern "C" fn naml_string_eq(a: *const NamlString, b: *const NamlString) -> i64 {
     unsafe {
         if a.is_null() && b.is_null() {
             return 1;
@@ -203,7 +203,7 @@ pub extern "C" fn naml_string_eq(a: *const NamlString, b: *const NamlString) -> 
 
 /// Print a NamlString (for debugging)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_print(s: *const NamlString) {
+pub unsafe extern "C" fn naml_string_print(s: *const NamlString) {
     if !s.is_null() {
         unsafe {
             let slice = std::slice::from_raw_parts((*s).data.as_ptr(), (*s).len);
@@ -216,9 +216,9 @@ pub extern "C" fn naml_string_print(s: *const NamlString) {
 
 /// Create a NamlString from a null-terminated C string pointer
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_from_cstr(cstr: *const i8) -> *mut NamlString {
+pub unsafe extern "C" fn naml_string_from_cstr(cstr: *const i8) -> *mut NamlString {
     if cstr.is_null() {
-        return naml_string_new(std::ptr::null(), 0);
+        return unsafe { naml_string_new(std::ptr::null(), 0) };
     }
     unsafe {
         let c_str = std::ffi::CStr::from_ptr(cstr);
@@ -231,19 +231,19 @@ pub extern "C" fn naml_string_from_cstr(cstr: *const i8) -> *mut NamlString {
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_int_to_string(n: i64) -> *mut NamlString {
     let s = n.to_string();
-    naml_string_new(s.as_ptr(), s.len())
+    unsafe { naml_string_new(s.as_ptr(), s.len()) }
 }
 
 /// Convert a float to a string
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_float_to_string(f: f64) -> *mut NamlString {
     let s = f.to_string();
-    naml_string_new(s.as_ptr(), s.len())
+    unsafe { naml_string_new(s.as_ptr(), s.len()) }
 }
 
 /// Convert a string to an integer (returns 0 on parse failure)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_to_int(s: *const NamlString) -> i64 {
+pub unsafe extern "C" fn naml_string_to_int(s: *const NamlString) -> i64 {
     if s.is_null() {
         return 0;
     }
@@ -255,7 +255,7 @@ pub extern "C" fn naml_string_to_int(s: *const NamlString) -> i64 {
 
 /// Convert a string to a float (returns 0.0 on parse failure)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_to_float(s: *const NamlString) -> f64 {
+pub unsafe extern "C" fn naml_string_to_float(s: *const NamlString) -> f64 {
     if s.is_null() {
         return 0.0;
     }
@@ -267,7 +267,7 @@ pub extern "C" fn naml_string_to_float(s: *const NamlString) -> f64 {
 
 /// Get character (as UTF-8 codepoint) at index
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_char_at(s: *const NamlString, index: i64) -> i64 {
+pub unsafe extern "C" fn naml_string_char_at(s: *const NamlString, index: i64) -> i64 {
     if s.is_null() {
         return 0;
     }
@@ -283,7 +283,7 @@ pub extern "C" fn naml_string_char_at(s: *const NamlString, index: i64) -> i64 {
 
 /// Get string length in characters (not bytes)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_string_char_len(s: *const NamlString) -> i64 {
+pub unsafe extern "C" fn naml_string_char_len(s: *const NamlString) -> i64 {
     if s.is_null() {
         return 0;
     }
@@ -294,7 +294,7 @@ pub extern "C" fn naml_string_char_len(s: *const NamlString) -> i64 {
 
 /// Allocate a new struct on the heap
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut NamlStruct {
+pub unsafe extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut NamlStruct {
     unsafe {
         let layout = Layout::from_size_align(
             std::mem::size_of::<NamlStruct>() + (field_count as usize) * std::mem::size_of::<i64>(),
@@ -322,7 +322,7 @@ pub extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut NamlSt
 
 /// Increment reference count of a struct
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_struct_incref(s: *mut NamlStruct) {
+pub unsafe extern "C" fn naml_struct_incref(s: *mut NamlStruct) {
     if !s.is_null() {
         unsafe { (*s).header.incref(); }
     }
@@ -330,7 +330,7 @@ pub extern "C" fn naml_struct_incref(s: *mut NamlStruct) {
 
 /// Decrement reference count and free if zero (for structs with no heap fields)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
+pub unsafe extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
     if !s.is_null() {
         unsafe {
             if (*s).header.decref() {
@@ -348,7 +348,7 @@ pub extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
 /// Free struct memory without refcount check (called by generated decref functions)
 /// Generated decref functions handle field cleanup before calling this.
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_struct_free(s: *mut NamlStruct) {
+pub unsafe extern "C" fn naml_struct_free(s: *mut NamlStruct) {
     if !s.is_null() {
         unsafe {
             let field_count = (*s).field_count;
@@ -363,7 +363,7 @@ pub extern "C" fn naml_struct_free(s: *mut NamlStruct) {
 
 /// Get field value by index
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_struct_get_field(s: *const NamlStruct, field_index: u32) -> i64 {
+pub unsafe extern "C" fn naml_struct_get_field(s: *const NamlStruct, field_index: u32) -> i64 {
     if s.is_null() {
         return 0;
     }
@@ -378,7 +378,7 @@ pub extern "C" fn naml_struct_get_field(s: *const NamlStruct, field_index: u32) 
 
 /// Set field value by index
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_struct_set_field(s: *mut NamlStruct, field_index: u32, value: i64) {
+pub unsafe extern "C" fn naml_struct_set_field(s: *mut NamlStruct, field_index: u32, value: i64) {
     if s.is_null() {
         return;
     }
@@ -396,10 +396,10 @@ mod tests {
 
     #[test]
     fn test_string_creation() {
-        let data = b"hello";
-        let s = naml_string_new(data.as_ptr(), data.len());
-        assert!(!s.is_null());
         unsafe {
+            let data = b"hello";
+            let s = naml_string_new(data.as_ptr(), data.len());
+            assert!(!s.is_null());
             assert_eq!((*s).len, 5);
             assert_eq!((*s).header.refcount(), 1);
             naml_string_decref(s);
@@ -408,11 +408,11 @@ mod tests {
 
     #[test]
     fn test_string_concat() {
-        let a = naml_string_new(b"hello ".as_ptr(), 6);
-        let b = naml_string_new(b"world".as_ptr(), 5);
-        let c = naml_string_concat(a, b);
-
         unsafe {
+            let a = naml_string_new(b"hello ".as_ptr(), 6);
+            let b = naml_string_new(b"world ".as_ptr(), 5);
+            let c = naml_string_concat(a, b);
+
             assert_eq!((*c).len, 11);
             assert_eq!((*c).as_str(), "hello world");
 

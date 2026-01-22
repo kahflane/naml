@@ -37,11 +37,10 @@ pub fn unify(a: &Type, b: &Type, span: Span) -> TypeResult<()> {
         | (Type::Unit, Type::Unit) => Ok(()),
 
         (Type::TypeVar(var), other) | (other, Type::TypeVar(var)) => {
-            if let Type::TypeVar(other_var) = other {
-                if var.id == other_var.id {
+            if let Type::TypeVar(other_var) = other
+                && var.id == other_var.id {
                     return Ok(());
                 }
-            }
 
             if other.contains_var(var.id) {
                 return Err(TypeError::Custom {

@@ -21,17 +21,13 @@ pub struct NamlMap {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[derive(Default)]
 pub struct MapEntry {
     pub key: i64,      // Pointer to NamlString or 0 if empty
     pub value: i64,    // The stored value
     pub occupied: bool,
 }
 
-impl Default for MapEntry {
-    fn default() -> Self {
-        Self { key: 0, value: 0, occupied: false }
-    }
-}
 
 fn hash_string(s: *const NamlString) -> u64 {
     if s.is_null() { return 0; }
@@ -60,7 +56,7 @@ fn string_eq(a: *const NamlString, b: *const NamlString) -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_new(capacity: usize) -> *mut NamlMap {
+pub unsafe extern "C" fn naml_map_new(capacity: usize) -> *mut NamlMap {
     let cap = if capacity < INITIAL_CAPACITY { INITIAL_CAPACITY } else { capacity };
     unsafe {
         let map_layout = Layout::new::<NamlMap>();
@@ -81,7 +77,7 @@ pub extern "C" fn naml_map_new(capacity: usize) -> *mut NamlMap {
 
 /// Set a primitive value in the map (no refcount management for values)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_set(map: *mut NamlMap, key: i64, value: i64) {
+pub unsafe extern "C" fn naml_map_set(map: *mut NamlMap, key: i64, value: i64) {
     if map.is_null() { return; }
     unsafe {
         if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
@@ -110,7 +106,7 @@ pub extern "C" fn naml_map_set(map: *mut NamlMap, key: i64, value: i64) {
 
 /// Set a string value in the map (decrefs old string value when updating)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_set_string(map: *mut NamlMap, key: i64, value: i64) {
+pub unsafe extern "C" fn naml_map_set_string(map: *mut NamlMap, key: i64, value: i64) {
     if map.is_null() { return; }
     unsafe {
         if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
@@ -143,7 +139,7 @@ pub extern "C" fn naml_map_set_string(map: *mut NamlMap, key: i64, value: i64) {
 
 /// Set an array value in the map (decrefs old array value when updating)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_set_array(map: *mut NamlMap, key: i64, value: i64) {
+pub unsafe extern "C" fn naml_map_set_array(map: *mut NamlMap, key: i64, value: i64) {
     if map.is_null() { return; }
     unsafe {
         if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
@@ -176,7 +172,7 @@ pub extern "C" fn naml_map_set_array(map: *mut NamlMap, key: i64, value: i64) {
 
 /// Set a map value in the map (decrefs old map value when updating)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_set_map(map: *mut NamlMap, key: i64, value: i64) {
+pub unsafe extern "C" fn naml_map_set_map(map: *mut NamlMap, key: i64, value: i64) {
     if map.is_null() { return; }
     unsafe {
         if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
@@ -209,7 +205,7 @@ pub extern "C" fn naml_map_set_map(map: *mut NamlMap, key: i64, value: i64) {
 
 /// Set a struct value in the map (decrefs old struct value when updating)
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_set_struct(map: *mut NamlMap, key: i64, value: i64) {
+pub unsafe extern "C" fn naml_map_set_struct(map: *mut NamlMap, key: i64, value: i64) {
     if map.is_null() { return; }
     unsafe {
         if ((*map).length + 1) as f64 / (*map).capacity as f64 > LOAD_FACTOR {
@@ -241,7 +237,7 @@ pub extern "C" fn naml_map_set_struct(map: *mut NamlMap, key: i64, value: i64) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_get(map: *const NamlMap, key: i64) -> i64 {
+pub unsafe extern "C" fn naml_map_get(map: *const NamlMap, key: i64) -> i64 {
     if map.is_null() { return 0; }
     unsafe {
         let hash = hash_string(key as *const NamlString);
@@ -261,7 +257,7 @@ pub extern "C" fn naml_map_get(map: *const NamlMap, key: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_contains(map: *const NamlMap, key: i64) -> i64 {
+pub unsafe extern "C" fn naml_map_contains(map: *const NamlMap, key: i64) -> i64 {
     if map.is_null() { return 0; }
     unsafe {
         let hash = hash_string(key as *const NamlString);
@@ -281,17 +277,17 @@ pub extern "C" fn naml_map_contains(map: *const NamlMap, key: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_len(map: *const NamlMap) -> i64 {
+pub unsafe extern "C" fn naml_map_len(map: *const NamlMap) -> i64 {
     if map.is_null() { 0 } else { unsafe { (*map).length as i64 } }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_incref(map: *mut NamlMap) {
+pub unsafe extern "C" fn naml_map_incref(map: *mut NamlMap) {
     if !map.is_null() { unsafe { (*map).header.incref(); } }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_decref(map: *mut NamlMap) {
+pub unsafe extern "C" fn naml_map_decref(map: *mut NamlMap) {
     if map.is_null() { return; }
     unsafe {
         if (*map).header.decref() {
@@ -311,7 +307,7 @@ pub extern "C" fn naml_map_decref(map: *mut NamlMap) {
 
 /// Decrement map reference count and also decref string values
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_decref_strings(map: *mut NamlMap) {
+pub unsafe extern "C" fn naml_map_decref_strings(map: *mut NamlMap) {
     if map.is_null() { return; }
     unsafe {
         if (*map).header.decref() {
@@ -336,7 +332,7 @@ pub extern "C" fn naml_map_decref_strings(map: *mut NamlMap) {
 
 /// Decrement map reference count and also decref array values
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_decref_arrays(map: *mut NamlMap) {
+pub unsafe extern "C" fn naml_map_decref_arrays(map: *mut NamlMap) {
     if map.is_null() { return; }
     unsafe {
         if (*map).header.decref() {
@@ -361,7 +357,7 @@ pub extern "C" fn naml_map_decref_arrays(map: *mut NamlMap) {
 
 /// Decrement map reference count and also decref nested map values
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_decref_maps(map: *mut NamlMap) {
+pub unsafe extern "C" fn naml_map_decref_maps(map: *mut NamlMap) {
     if map.is_null() { return; }
     unsafe {
         if (*map).header.decref() {
@@ -386,7 +382,7 @@ pub extern "C" fn naml_map_decref_maps(map: *mut NamlMap) {
 
 /// Decrement map reference count and also decref struct values
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_map_decref_structs(map: *mut NamlMap) {
+pub unsafe extern "C" fn naml_map_decref_structs(map: *mut NamlMap) {
     if map.is_null() { return; }
     unsafe {
         if (*map).header.decref() {

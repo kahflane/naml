@@ -19,8 +19,17 @@
 
 use std::collections::HashMap;
 
+use lasso::Spur;
+
 use crate::source::Span;
 use super::types::Type;
+
+#[derive(Debug, Clone)]
+pub struct MonomorphizationInfo {
+    pub function_name: Spur,
+    pub type_args: Vec<Type>,
+    pub mangled_name: String,
+}
 
 #[derive(Debug, Clone)]
 pub struct ExprTypeInfo {
@@ -52,12 +61,16 @@ impl ExprTypeInfo {
 #[derive(Debug, Default)]
 pub struct TypeAnnotations {
     expr_types: HashMap<Span, ExprTypeInfo>,
+    monomorphizations: HashMap<String, MonomorphizationInfo>,
+    call_site_instantiations: HashMap<Span, String>,
 }
 
 impl TypeAnnotations {
     pub fn new() -> Self {
         Self {
             expr_types: HashMap::new(),
+            monomorphizations: HashMap::new(),
+            call_site_instantiations: HashMap::new(),
         }
     }
 
@@ -80,13 +93,13 @@ impl TypeAnnotations {
     pub fn needs_clone(&self, span: Span) -> bool {
         self.expr_types
             .get(&span)
-            .map_or(false, |info| info.needs_clone)
+            .is_some_and(|info| info.needs_clone)
     }
 
     pub fn is_lvalue(&self, span: Span) -> bool {
         self.expr_types
             .get(&span)
-            .map_or(false, |info| info.is_lvalue)
+            .is_some_and(|info| info.is_lvalue)
     }
 
     pub fn len(&self) -> usize {
@@ -95,6 +108,34 @@ impl TypeAnnotations {
 
     pub fn is_empty(&self) -> bool {
         self.expr_types.is_empty()
+    }
+
+    pub fn record_monomorphization(
+        &mut self,
+        call_span: Span,
+        function_name: Spur,
+        type_args: Vec<Type>,
+        mangled_name: String,
+    ) {
+        let info = MonomorphizationInfo {
+            function_name,
+            type_args,
+            mangled_name: mangled_name.clone(),
+        };
+        self.monomorphizations.insert(mangled_name.clone(), info);
+        self.call_site_instantiations.insert(call_span, mangled_name);
+    }
+
+    pub fn get_monomorphizations(&self) -> &HashMap<String, MonomorphizationInfo> {
+        &self.monomorphizations
+    }
+
+    pub fn get_call_instantiation(&self, span: Span) -> Option<&String> {
+        self.call_site_instantiations.get(&span)
+    }
+
+    pub fn get_monomorphization_info(&self, mangled_name: &str) -> Option<&MonomorphizationInfo> {
+        self.monomorphizations.get(mangled_name)
     }
 }
 
