@@ -20,12 +20,14 @@ pub mod array;
 pub mod scheduler;
 pub mod channel;
 pub mod map;
+pub mod bytes;
 
 pub use value::*;
 pub use array::*;
 pub use scheduler::*;
 pub use channel::*;
 pub use map::*;
+pub use bytes::*;
 
 use std::cell::Cell;
 use std::io::Write;

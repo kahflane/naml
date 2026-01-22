@@ -187,6 +187,25 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_string_eq", crate::runtime::naml_string_eq as *const u8);
         builder.symbol("naml_string_incref", crate::runtime::naml_string_incref as *const u8);
         builder.symbol("naml_string_decref", crate::runtime::naml_string_decref as *const u8);
+        builder.symbol("naml_string_char_at", crate::runtime::naml_string_char_at as *const u8);
+        builder.symbol("naml_string_char_len", crate::runtime::naml_string_char_len as *const u8);
+
+        // Type conversion operations
+        builder.symbol("naml_int_to_string", crate::runtime::naml_int_to_string as *const u8);
+        builder.symbol("naml_float_to_string", crate::runtime::naml_float_to_string as *const u8);
+        builder.symbol("naml_string_to_int", crate::runtime::naml_string_to_int as *const u8);
+        builder.symbol("naml_string_to_float", crate::runtime::naml_string_to_float as *const u8);
+
+        // Bytes operations
+        builder.symbol("naml_bytes_new", crate::runtime::naml_bytes_new as *const u8);
+        builder.symbol("naml_bytes_from", crate::runtime::naml_bytes_from as *const u8);
+        builder.symbol("naml_bytes_len", crate::runtime::naml_bytes_len as *const u8);
+        builder.symbol("naml_bytes_get", crate::runtime::naml_bytes_get as *const u8);
+        builder.symbol("naml_bytes_set", crate::runtime::naml_bytes_set as *const u8);
+        builder.symbol("naml_bytes_incref", crate::runtime::naml_bytes_incref as *const u8);
+        builder.symbol("naml_bytes_decref", crate::runtime::naml_bytes_decref as *const u8);
+        builder.symbol("naml_bytes_to_string", crate::runtime::naml_bytes_to_string as *const u8);
+        builder.symbol("naml_string_to_bytes", crate::runtime::naml_string_to_bytes as *const u8);
 
         let module = JITModule::new(builder);
         let ctx = module.make_context();
@@ -1714,86 +1733,276 @@ fn compile_statement(
         }
 
         Statement::For(for_stmt) => {
-            // Compile the iterable (should be an array)
-            let arr_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
-
-            // Get array length
-            let len = call_array_len(ctx, builder, arr_ptr)?;
-
-            // Create index variable
-            let idx_var = Variable::new(ctx.var_counter);
-            ctx.var_counter += 1;
-            builder.declare_var(idx_var, cranelift::prelude::types::I64);
-            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-            builder.def_var(idx_var, zero);
-
-            // Create value variable
-            let val_var = Variable::new(ctx.var_counter);
-            ctx.var_counter += 1;
-            builder.declare_var(val_var, cranelift::prelude::types::I64);
-            let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
-            ctx.variables.insert(val_name, val_var);
-
-            // Optionally create index binding
-            if let Some(ref idx_ident) = for_stmt.index {
-                let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
-                ctx.variables.insert(idx_name, idx_var);
-            }
-
-            // Create blocks
-            let header_block = builder.create_block();
-            let body_block = builder.create_block();
-            let exit_block = builder.create_block();
-
-            // Store exit block for break statements
-            let prev_loop_exit = ctx.loop_exit_block.take();
-            let prev_loop_header = ctx.loop_header_block.take();
-            ctx.loop_exit_block = Some(exit_block);
-            ctx.loop_header_block = Some(header_block);
-
-            builder.ins().jump(header_block, &[]);
-
-            // Header: check if idx < len
-            builder.switch_to_block(header_block);
-            let idx_val = builder.use_var(idx_var);
-            let cond = builder.ins().icmp(IntCC::SignedLessThan, idx_val, len);
-            builder.ins().brif(cond, body_block, &[], exit_block, &[]);
-
-            // Body
-            builder.switch_to_block(body_block);
-            builder.seal_block(body_block);
-            ctx.block_terminated = false;
-
-            // Get current element
-            let idx_val = builder.use_var(idx_var);
-            let elem = call_array_get(ctx, builder, arr_ptr, idx_val)?;
-            builder.def_var(val_var, elem);
-
-            // Compile body
-            for stmt in &for_stmt.body.statements {
-                compile_statement(ctx, builder, stmt)?;
-                if ctx.block_terminated {
-                    break;
+            // Check if iterable is a range expression (binary op with Range or RangeIncl)
+            let range_info = match &for_stmt.iterable {
+                Expression::Binary(bin) if matches!(bin.op, BinaryOp::Range | BinaryOp::RangeIncl) => {
+                    Some((bin.left, bin.right, matches!(bin.op, BinaryOp::RangeIncl)))
                 }
-            }
+                Expression::Range(range_expr) => {
+                    // Handle Expression::Range if it exists
+                    range_expr.start.zip(range_expr.end.as_ref()).map(|(s, e)| (s, *e, range_expr.inclusive))
+                }
+                _ => None
+            };
 
-            // Increment index
-            if !ctx.block_terminated {
-                let idx_val = builder.use_var(idx_var);
-                let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
-                let next_idx = builder.ins().iadd(idx_val, one);
-                builder.def_var(idx_var, next_idx);
+            // Check if iterable is a string (via type annotation, string literal, or heap type)
+            let is_string_literal = matches!(
+                &for_stmt.iterable,
+                Expression::Literal(LiteralExpr { value: Literal::String(_), .. })
+            );
+
+            // Also check if it's a string variable by looking at var_heap_types
+            let is_string_var = if let Expression::Identifier(ident) = &for_stmt.iterable {
+                let var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+                matches!(ctx.var_heap_types.get(&var_name), Some(HeapType::String))
+            } else {
+                false
+            };
+
+            let is_string = is_string_literal || is_string_var || matches!(
+                ctx.annotations.get_type(for_stmt.iterable.span()),
+                Some(Type::String)
+            );
+
+            if let Some((start_expr, end_expr, inclusive)) = range_info {
+                // Handle range iteration directly without array allocation
+                // Get start and end values
+                let start = compile_expression(ctx, builder, start_expr)?;
+                let end = compile_expression(ctx, builder, end_expr)?;
+
+                // Create index variable (this is both the loop counter and the value)
+                let idx_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(idx_var, cranelift::prelude::types::I64);
+                builder.def_var(idx_var, start);
+
+                // Bind the value variable to the same as index
+                let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
+                ctx.variables.insert(val_name, idx_var);
+
+                // Optionally create separate index binding (for iteration count from 0)
+                let iter_var = if for_stmt.index.is_some() {
+                    let iter_var = Variable::new(ctx.var_counter);
+                    ctx.var_counter += 1;
+                    builder.declare_var(iter_var, cranelift::prelude::types::I64);
+                    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    builder.def_var(iter_var, zero);
+                    if let Some(ref idx_ident) = for_stmt.index {
+                        let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
+                        ctx.variables.insert(idx_name, iter_var);
+                    }
+                    Some(iter_var)
+                } else {
+                    None
+                };
+
+                let header_block = builder.create_block();
+                let body_block = builder.create_block();
+                let exit_block = builder.create_block();
+
+                let prev_loop_exit = ctx.loop_exit_block.take();
+                let prev_loop_header = ctx.loop_header_block.take();
+                ctx.loop_exit_block = Some(exit_block);
+                ctx.loop_header_block = Some(header_block);
+
                 builder.ins().jump(header_block, &[]);
+
+                // Header: check if idx < end (or <= for inclusive)
+                builder.switch_to_block(header_block);
+                let idx_val = builder.use_var(idx_var);
+                let cond = if inclusive {
+                    builder.ins().icmp(IntCC::SignedLessThanOrEqual, idx_val, end)
+                } else {
+                    builder.ins().icmp(IntCC::SignedLessThan, idx_val, end)
+                };
+                builder.ins().brif(cond, body_block, &[], exit_block, &[]);
+
+                // Body
+                builder.switch_to_block(body_block);
+                builder.seal_block(body_block);
+                ctx.block_terminated = false;
+
+                for stmt in &for_stmt.body.statements {
+                    compile_statement(ctx, builder, stmt)?;
+                    if ctx.block_terminated {
+                        break;
+                    }
+                }
+
+                // Increment index
+                if !ctx.block_terminated {
+                    let idx_val = builder.use_var(idx_var);
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    let next_idx = builder.ins().iadd(idx_val, one);
+                    builder.def_var(idx_var, next_idx);
+
+                    // Also increment iteration counter if present
+                    if let Some(iter_v) = iter_var {
+                        let iter_val = builder.use_var(iter_v);
+                        let next_iter = builder.ins().iadd(iter_val, one);
+                        builder.def_var(iter_v, next_iter);
+                    }
+
+                    builder.ins().jump(header_block, &[]);
+                }
+
+                builder.seal_block(header_block);
+                builder.switch_to_block(exit_block);
+                builder.seal_block(exit_block);
+                ctx.block_terminated = false;
+
+                ctx.loop_exit_block = prev_loop_exit;
+                ctx.loop_header_block = prev_loop_header;
+            } else if is_string {
+                // Handle string character iteration
+                let raw_str_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
+
+                // If the iterable is a string literal, convert it to NamlString*
+                let str_ptr = if matches!(&for_stmt.iterable, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                    // Convert C string to NamlString*
+                    call_string_from_cstr(ctx, builder, raw_str_ptr)?
+                } else {
+                    raw_str_ptr
+                };
+
+                let len = call_string_char_len(ctx, builder, str_ptr)?;
+
+                // Create index variable
+                let idx_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(idx_var, cranelift::prelude::types::I64);
+                let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                builder.def_var(idx_var, zero);
+
+                // Create character variable (holds codepoint as int)
+                let char_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(char_var, cranelift::prelude::types::I64);
+                let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
+                ctx.variables.insert(val_name, char_var);
+
+                // Bind index if requested
+                if let Some(ref idx_ident) = for_stmt.index {
+                    let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
+                    ctx.variables.insert(idx_name, idx_var);
+                }
+
+                let header_block = builder.create_block();
+                let body_block = builder.create_block();
+                let exit_block = builder.create_block();
+
+                let prev_loop_exit = ctx.loop_exit_block.take();
+                let prev_loop_header = ctx.loop_header_block.take();
+                ctx.loop_exit_block = Some(exit_block);
+                ctx.loop_header_block = Some(header_block);
+
+                builder.ins().jump(header_block, &[]);
+
+                builder.switch_to_block(header_block);
+                let idx_val = builder.use_var(idx_var);
+                let cond = builder.ins().icmp(IntCC::SignedLessThan, idx_val, len);
+                builder.ins().brif(cond, body_block, &[], exit_block, &[]);
+
+                builder.switch_to_block(body_block);
+                builder.seal_block(body_block);
+                ctx.block_terminated = false;
+
+                // Get character at current index
+                let idx_val = builder.use_var(idx_var);
+                let char_code = call_string_char_at(ctx, builder, str_ptr, idx_val)?;
+                builder.def_var(char_var, char_code);
+
+                for stmt in &for_stmt.body.statements {
+                    compile_statement(ctx, builder, stmt)?;
+                    if ctx.block_terminated {
+                        break;
+                    }
+                }
+
+                if !ctx.block_terminated {
+                    let idx_val = builder.use_var(idx_var);
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    let next_idx = builder.ins().iadd(idx_val, one);
+                    builder.def_var(idx_var, next_idx);
+                    builder.ins().jump(header_block, &[]);
+                }
+
+                builder.seal_block(header_block);
+                builder.switch_to_block(exit_block);
+                builder.seal_block(exit_block);
+                ctx.block_terminated = false;
+
+                ctx.loop_exit_block = prev_loop_exit;
+                ctx.loop_header_block = prev_loop_header;
+            } else {
+                // Original array iteration code
+                let arr_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
+                let len = call_array_len(ctx, builder, arr_ptr)?;
+
+                let idx_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(idx_var, cranelift::prelude::types::I64);
+                let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                builder.def_var(idx_var, zero);
+
+                let val_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                builder.declare_var(val_var, cranelift::prelude::types::I64);
+                let val_name = ctx.interner.resolve(&for_stmt.value.symbol).to_string();
+                ctx.variables.insert(val_name, val_var);
+
+                if let Some(ref idx_ident) = for_stmt.index {
+                    let idx_name = ctx.interner.resolve(&idx_ident.symbol).to_string();
+                    ctx.variables.insert(idx_name, idx_var);
+                }
+
+                let header_block = builder.create_block();
+                let body_block = builder.create_block();
+                let exit_block = builder.create_block();
+
+                let prev_loop_exit = ctx.loop_exit_block.take();
+                let prev_loop_header = ctx.loop_header_block.take();
+                ctx.loop_exit_block = Some(exit_block);
+                ctx.loop_header_block = Some(header_block);
+
+                builder.ins().jump(header_block, &[]);
+
+                builder.switch_to_block(header_block);
+                let idx_val = builder.use_var(idx_var);
+                let cond = builder.ins().icmp(IntCC::SignedLessThan, idx_val, len);
+                builder.ins().brif(cond, body_block, &[], exit_block, &[]);
+
+                builder.switch_to_block(body_block);
+                builder.seal_block(body_block);
+                ctx.block_terminated = false;
+
+                let idx_val = builder.use_var(idx_var);
+                let elem = call_array_get(ctx, builder, arr_ptr, idx_val)?;
+                builder.def_var(val_var, elem);
+
+                for stmt in &for_stmt.body.statements {
+                    compile_statement(ctx, builder, stmt)?;
+                    if ctx.block_terminated {
+                        break;
+                    }
+                }
+
+                if !ctx.block_terminated {
+                    let idx_val = builder.use_var(idx_var);
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    let next_idx = builder.ins().iadd(idx_val, one);
+                    builder.def_var(idx_var, next_idx);
+                    builder.ins().jump(header_block, &[]);
+                }
+
+                builder.seal_block(header_block);
+                builder.switch_to_block(exit_block);
+                builder.seal_block(exit_block);
+                ctx.block_terminated = false;
+
+                ctx.loop_exit_block = prev_loop_exit;
+                ctx.loop_header_block = prev_loop_header;
             }
-
-            builder.seal_block(header_block);
-            builder.switch_to_block(exit_block);
-            builder.seal_block(exit_block);
-            ctx.block_terminated = false;
-
-            // Restore previous loop context
-            ctx.loop_exit_block = prev_loop_exit;
-            ctx.loop_header_block = prev_loop_header;
         }
 
         Statement::Loop(loop_stmt) => {
@@ -2839,6 +3048,9 @@ fn compile_expression(
                         Some(Type::Float) => {
                             Ok(builder.ins().fcvt_to_sint(cranelift::prelude::types::I64, value))
                         }
+                        Some(Type::String) => {
+                            call_string_to_int(ctx, builder, value)
+                        }
                         Some(Type::Uint) | Some(Type::Int) => Ok(value),
                         _ => Ok(value)
                     }
@@ -2860,7 +3072,34 @@ fn compile_expression(
                         Some(Type::Uint) => {
                             Ok(builder.ins().fcvt_from_uint(cranelift::prelude::types::F64, value))
                         }
+                        Some(Type::String) => {
+                            call_string_to_float(ctx, builder, value)
+                        }
                         Some(Type::Float) => Ok(value),
+                        _ => Ok(value)
+                    }
+                }
+                NamlType::String => {
+                    match source_type {
+                        Some(Type::Int) | Some(Type::Uint) => {
+                            call_int_to_string(ctx, builder, value)
+                        }
+                        Some(Type::Float) => {
+                            call_float_to_string(ctx, builder, value)
+                        }
+                        Some(Type::Bytes) => {
+                            call_bytes_to_string(ctx, builder, value)
+                        }
+                        Some(Type::String) => Ok(value),
+                        _ => Ok(value)
+                    }
+                }
+                NamlType::Bytes => {
+                    match source_type {
+                        Some(Type::String) => {
+                            call_string_to_bytes(ctx, builder, value)
+                        }
+                        Some(Type::Bytes) => Ok(value),
                         _ => Ok(value)
                     }
                 }
@@ -3035,45 +3274,50 @@ fn compile_print_call(
         return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
     }
 
-    for (i, arg) in args.iter().enumerate() {
-        match arg {
-            Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) => {
-                let s = ctx.interner.resolve(spur);
-                let ptr = compile_string_literal(ctx, builder, s)?;
+    // Check if first arg is a format string with {}
+    if let Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) = &args[0] {
+        let format_str = ctx.interner.resolve(spur);
+        if format_str.contains("{}") {
+            // Format string mode
+            let mut arg_idx = 1;
+            let mut last_end = 0;
+
+            for (start, _) in format_str.match_indices("{}") {
+                // Print literal part before placeholder
+                if start > last_end {
+                    let literal_part = &format_str[last_end..start];
+                    let ptr = compile_string_literal(ctx, builder, literal_part)?;
+                    call_print_str(ctx, builder, ptr)?;
+                }
+
+                // Print the argument
+                if arg_idx < args.len() {
+                    let arg = &args[arg_idx];
+                    print_arg(ctx, builder, arg)?;
+                    arg_idx += 1;
+                }
+
+                last_end = start + 2;
+            }
+
+            // Print remaining literal after last placeholder
+            if last_end < format_str.len() {
+                let remaining = &format_str[last_end..];
+                let ptr = compile_string_literal(ctx, builder, remaining)?;
                 call_print_str(ctx, builder, ptr)?;
             }
-            Expression::Literal(LiteralExpr { value: Literal::Int(n), .. }) => {
-                let val = builder.ins().iconst(cranelift::prelude::types::I64, *n);
-                call_print_int(ctx, builder, val)?;
+
+            if newline {
+                call_print_newline(ctx, builder)?;
             }
-            Expression::Literal(LiteralExpr { value: Literal::Float(f), .. }) => {
-                let val = builder.ins().f64const(*f);
-                call_print_float(ctx, builder, val)?;
-            }
-            _ => {
-                let val = compile_expression(ctx, builder, arg)?;
-                // Check type from annotations to call appropriate print function
-                let expr_type = ctx.annotations.get_type(arg.span());
-                match expr_type {
-                    Some(Type::String) => {
-                        // String variables now hold NamlString* (boxed strings)
-                        call_print_naml_string(ctx, builder, val)?;
-                    }
-                    Some(Type::Float) => {
-                        call_print_float(ctx, builder, val)?;
-                    }
-                    _ => {
-                        // Default: check Cranelift value type for F64, otherwise int
-                        let val_type = builder.func.dfg.value_type(val);
-                        if val_type == cranelift::prelude::types::F64 {
-                            call_print_float(ctx, builder, val)?;
-                        } else {
-                            call_print_int(ctx, builder, val)?;
-                        }
-                    }
-                }
-            }
+
+            return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
         }
+    }
+
+    // Original behavior for non-format strings
+    for (i, arg) in args.iter().enumerate() {
+        print_arg(ctx, builder, arg)?;
 
         if i < args.len() - 1 {
             let space = compile_string_literal(ctx, builder, " ")?;
@@ -3086,6 +3330,52 @@ fn compile_print_call(
     }
 
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn print_arg(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arg: &Expression<'_>,
+) -> Result<(), CodegenError> {
+    match arg {
+        Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) => {
+            let s = ctx.interner.resolve(spur);
+            let ptr = compile_string_literal(ctx, builder, s)?;
+            call_print_str(ctx, builder, ptr)?;
+        }
+        Expression::Literal(LiteralExpr { value: Literal::Int(n), .. }) => {
+            let val = builder.ins().iconst(cranelift::prelude::types::I64, *n);
+            call_print_int(ctx, builder, val)?;
+        }
+        Expression::Literal(LiteralExpr { value: Literal::Float(f), .. }) => {
+            let val = builder.ins().f64const(*f);
+            call_print_float(ctx, builder, val)?;
+        }
+        _ => {
+            let val = compile_expression(ctx, builder, arg)?;
+            // Check type from annotations to call appropriate print function
+            let expr_type = ctx.annotations.get_type(arg.span());
+            match expr_type {
+                Some(Type::String) => {
+                    // String variables now hold NamlString* (boxed strings)
+                    call_print_naml_string(ctx, builder, val)?;
+                }
+                Some(Type::Float) => {
+                    call_print_float(ctx, builder, val)?;
+                }
+                _ => {
+                    // Default: check Cranelift value type for F64, otherwise int
+                    let val_type = builder.func.dfg.value_type(val);
+                    if val_type == cranelift::prelude::types::F64 {
+                        call_print_float(ctx, builder, val)?;
+                    } else {
+                        call_print_int(ctx, builder, val)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn emit_incref(
@@ -3324,6 +3614,160 @@ fn call_string_equals(
 
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
     let call = builder.ins().call(func_ref, &[a, b]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_int_to_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_int_to_string", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_int_to_string: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_float_to_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::F64));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_float_to_string", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_float_to_string: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_to_int(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_to_int", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_int: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_to_float(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::F64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_to_float", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_float: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_char_len(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    str_ptr: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_char_len", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_char_len: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[str_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_char_at(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    str_ptr: Value,
+    index: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_char_at", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_char_at: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[str_ptr, index]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_string_to_bytes(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    str_ptr: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_to_bytes", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_bytes: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[str_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_bytes_to_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    bytes_ptr: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_bytes_to_string", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_bytes_to_string: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[bytes_ptr]);
     Ok(builder.inst_results(call)[0])
 }
 
@@ -3845,7 +4289,21 @@ fn compile_method_call(
 
     match method_name {
         "len" => {
-            call_array_len(ctx, builder, recv)
+            // Check receiver type to dispatch to correct len function
+            let receiver_type = ctx.annotations.get_type(receiver.span());
+            if matches!(receiver_type, Some(Type::String)) {
+                call_string_char_len(ctx, builder, recv)
+            } else {
+                call_array_len(ctx, builder, recv)
+            }
+        }
+        "char_at" => {
+            // String char_at method
+            if args.is_empty() {
+                return Err(CodegenError::JitCompile("char_at requires an index argument".to_string()));
+            }
+            let idx = compile_expression(ctx, builder, &args[0])?;
+            call_string_char_at(ctx, builder, recv, idx)
         }
         "push" => {
             if args.is_empty() {

@@ -227,6 +227,71 @@ pub extern "C" fn naml_string_from_cstr(cstr: *const i8) -> *mut NamlString {
     }
 }
 
+/// Convert an integer to a string
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_int_to_string(n: i64) -> *mut NamlString {
+    let s = n.to_string();
+    naml_string_new(s.as_ptr(), s.len())
+}
+
+/// Convert a float to a string
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_float_to_string(f: f64) -> *mut NamlString {
+    let s = f.to_string();
+    naml_string_new(s.as_ptr(), s.len())
+}
+
+/// Convert a string to an integer (returns 0 on parse failure)
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_string_to_int(s: *const NamlString) -> i64 {
+    if s.is_null() {
+        return 0;
+    }
+    unsafe {
+        let str_val = (*s).as_str();
+        str_val.parse::<i64>().unwrap_or(0)
+    }
+}
+
+/// Convert a string to a float (returns 0.0 on parse failure)
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_string_to_float(s: *const NamlString) -> f64 {
+    if s.is_null() {
+        return 0.0;
+    }
+    unsafe {
+        let str_val = (*s).as_str();
+        str_val.parse::<f64>().unwrap_or(0.0)
+    }
+}
+
+/// Get character (as UTF-8 codepoint) at index
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_string_char_at(s: *const NamlString, index: i64) -> i64 {
+    if s.is_null() {
+        return 0;
+    }
+    unsafe {
+        let str_val = (*s).as_str();
+        if let Some(c) = str_val.chars().nth(index as usize) {
+            c as i64
+        } else {
+            0
+        }
+    }
+}
+
+/// Get string length in characters (not bytes)
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_string_char_len(s: *const NamlString) -> i64 {
+    if s.is_null() {
+        return 0;
+    }
+    unsafe {
+        (*s).as_str().chars().count() as i64
+    }
+}
+
 /// Allocate a new struct on the heap
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut NamlStruct {

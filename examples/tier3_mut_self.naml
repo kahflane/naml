@@ -1,0 +1,80 @@
+///
+/// Tier 3 Test: Mutable Self Parameters
+///
+
+struct Counter {
+    value: int
+}
+
+// Method with mutable self - can modify fields
+pub fn (mut self: Counter) increment() {
+    self.value = self.value + 1;
+}
+
+pub fn (mut self: Counter) add(amount: int) {
+    self.value = self.value + amount;
+}
+
+// Method with immutable self - read only
+pub fn (self: Counter) get_value() -> int {
+    return self.value;
+}
+
+pub fn (self: Counter) is_zero() -> bool {
+    return self.value == 0;
+}
+
+struct Point {
+    x: int,
+    y: int
+}
+
+pub fn (mut self: Point) translate(dx: int, dy: int) {
+    self.x = self.x + dx;
+    self.y = self.y + dy;
+}
+
+pub fn (self: Point) distance_squared() -> int {
+    return self.x * self.x + self.y * self.y;
+}
+
+fn main() {
+    println("=== Mutable Self Tests ===");
+
+    var c: Counter = Counter { value: 0 };
+
+    print("Initial value: ");
+    println(c.get_value());
+
+    c.increment();
+    print("After increment: ");
+    println(c.get_value());
+
+    c.add(5);
+    print("After add(5): ");
+    println(c.get_value());
+
+    c.increment();
+    c.increment();
+    print("After 2 more increments: ");
+    println(c.get_value());
+
+    print("Is zero? ");
+    if (c.is_zero()) {
+        println("yes");
+    } else {
+        println("no");
+    }
+
+    var p: Point = Point { x: 3, y: 4 };
+    print("Point distance squared: ");
+    println(p.distance_squared());
+
+    p.translate(1, 1);
+    print("After translate(1,1) - x: ");
+    print(p.x);
+    print(", y: ");
+    println(p.y);
+
+    println("=== Mutable Self Tests Complete ===");
+}

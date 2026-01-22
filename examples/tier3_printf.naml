@@ -1,0 +1,36 @@
+///
+/// Tier 3 Test: Printf Format Strings
+///
+
+fn main() {
+    println("=== Printf Format String Tests ===");
+
+    var name: string = "Alice";
+    var age: int = 30;
+    var score: float = 95.5;
+
+    // Basic format string
+    println("Hello, {}!", name);
+
+    // Multiple placeholders
+    println("{} is {} years old", name, age);
+
+    // Mixed types
+    println("{} scored {} points", name, score);
+
+    // Numbers in format
+    println("Sum of {} + {} = {}", 10, 20, 30);
+
+    // Without newline
+    print("Loading: {}%", 50);
+    println(" complete");
+
+    // Format string without placeholders still works
+    println("No placeholders here");
+
+    // Regular print without format string
+    print(name);
+    println(" says hi");
+
+    println("=== Printf Tests Complete ===");
+}

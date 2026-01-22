@@ -1,0 +1,45 @@
+///
+/// Tier 3 Test: String Character Iteration
+///
+
+fn main() {
+    println("=== String Iteration Tests ===");
+
+    var s: string = "Hi";
+    println("Got string");
+    println(s);
+    println("Printed string");
+
+    // Test len method
+    println("Testing len...");
+    var length: int = s.len();
+    print("Length: ");
+    println(length);
+
+    // Test char_at method
+    println("Testing char_at...");
+    var first: int = s.char_at(0);
+    var second: int = s.char_at(1);
+    print("First char code: ");
+    println(first);
+    print("Second char code: ");
+    println(second);
+
+    // Test longer string
+    var hello: string = "Hello";
+    print("'Hello' length: ");
+    println(hello.len());
+
+    // Iterate via index
+    println("Characters via index:");
+    var i: int = 0;
+    while (i < hello.len()) {
+        print("  Char ");
+        print(i);
+        print(": code ");
+        println(hello.char_at(i));
+        i = i + 1;
+    }
+
+    println("=== String Iteration Tests Complete ===");
+}

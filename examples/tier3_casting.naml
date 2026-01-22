@@ -1,0 +1,44 @@
+///
+/// Tier 3 Test: Type Casting
+///
+
+fn main() {
+    println("=== Type Casting Tests ===");
+
+    // int to string
+    var n: int = 42;
+    var s: string = n as string;
+    print("int 42 as string: ");
+    println(s);
+
+    // float to string
+    var f: float = 3.14;
+    var fs: string = f as string;
+    print("float 3.14 as string: ");
+    println(fs);
+
+    // string to int
+    var str_num: string = "123";
+    var parsed: int = str_num as int;
+    print("string '123' as int: ");
+    println(parsed);
+
+    // string to float
+    var str_float: string = "2.718";
+    var parsed_f: float = str_float as float;
+    print("string '2.718' as float: ");
+    println(parsed_f);
+
+    // Verify arithmetic works after conversion
+    print("Parsed int + 7 = ");
+    println(parsed + 7);
+
+    // int to float to string roundtrip
+    var num: int = 100;
+    var as_float: float = num as float;
+    var as_str: string = as_float as string;
+    print("int 100 -> float -> string: ");
+    println(as_str);
+
+    println("=== Casting Tests Complete ===");
+}
