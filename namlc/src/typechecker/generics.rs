@@ -73,7 +73,6 @@ fn find_method_in_interface(interface: &InterfaceDef, method_name: Spur) -> Opti
                 params: method_def.params.iter().map(|(_, ty)| ty.clone()).collect(),
                 returns: method_def.return_ty.clone(),
                 throws: method_def.throws.clone(),
-                is_async: method_def.is_async,
             });
         }
     }
@@ -229,8 +228,7 @@ mod tests {
                     type_params: vec![],
                     params: vec![],
                     return_ty: Type::Int,
-                    throws: None,
-                    is_async: false,
+                    throws: vec![],
                 }],
                 is_public: true,
                 span: Span::dummy(),

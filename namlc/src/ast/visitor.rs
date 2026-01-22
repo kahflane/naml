@@ -68,8 +68,8 @@ pub fn walk_item<'ast, V: Visitor<'ast>>(v: &mut V, item: &Item<'ast>) {
             if let Some(ref ret) = f.return_ty {
                 v.visit_type(ret);
             }
-            if let Some(ref throws) = f.throws {
-                v.visit_type(throws);
+            for throws_ty in &f.throws {
+                v.visit_type(throws_ty);
             }
             if let Some(ref body) = f.body {
                 for stmt in &body.statements {
@@ -380,9 +380,6 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
                 v.visit_expr(tail);
             }
         }
-        Expression::Await(e) => {
-            v.visit_expr(e.expr);
-        }
         Expression::Try(e) => {
             v.visit_expr(e.expr);
         }
@@ -395,6 +392,10 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
             if let Some(ref tail) = e.handler.tail {
                 v.visit_expr(tail);
             }
+        }
+        Expression::OrDefault(e) => {
+            v.visit_expr(e.expr);
+            v.visit_expr(e.default);
         }
         Expression::Cast(e) => {
             v.visit_expr(e.expr);

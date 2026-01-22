@@ -101,8 +101,7 @@ pub struct FunctionItem<'ast> {
     pub generics: Vec<GenericParam>,
     pub params: Vec<Parameter>,
     pub return_ty: Option<NamlType>,
-    pub throws: Option<NamlType>,
-    pub is_async: bool,
+    pub throws: Vec<NamlType>,
     pub is_public: bool,
     pub body: Option<BlockStmt<'ast>>,
     pub platforms: Option<Platforms>,
@@ -143,8 +142,7 @@ pub struct InterfaceMethod {
     pub generics: Vec<GenericParam>,
     pub params: Vec<Parameter>,
     pub return_ty: Option<NamlType>,
-    pub throws: Option<NamlType>,
-    pub is_async: bool,
+    pub throws: Vec<NamlType>,
     pub span: Span,
 }
 
@@ -221,7 +219,7 @@ pub struct ExternItem {
     pub name: Ident,
     pub params: Vec<Parameter>,
     pub return_ty: Option<NamlType>,
-    pub throws: Option<NamlType>,
+    pub throws: Vec<NamlType>,
     pub link_name: Option<Ident>,
     pub span: Span,
 }
@@ -244,8 +242,7 @@ mod tests {
             generics: vec![],
             params: vec![],
             return_ty: None,
-            throws: None,
-            is_async: false,
+            throws: vec![],
             is_public: false,
             body: Some(BlockStmt::empty(Span::dummy())),
             platforms: None,

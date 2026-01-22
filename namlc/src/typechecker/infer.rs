@@ -22,7 +22,7 @@ use crate::source::Spanned;
 
 use super::env::TypeEnv;
 use super::error::TypeError;
-use super::symbols::SymbolTable;
+use super::symbols::{SymbolTable, TypeDef};
 use super::typed_ast::{ExprTypeInfo, TypeAnnotations};
 use super::types::{FunctionType, Type};
 use super::unify::{fresh_type_var, unify};
@@ -56,9 +56,9 @@ impl<'a> TypeInferrer<'a> {
             Expression::Block(block) => self.infer_block(block),
             Expression::Lambda(lambda) => self.infer_lambda(lambda),
             Expression::Spawn(spawn) => self.infer_spawn(spawn),
-            Expression::Await(await_expr) => self.infer_await(await_expr),
             Expression::Try(try_expr) => self.infer_try(try_expr),
             Expression::Catch(catch) => self.infer_catch(catch),
+            Expression::OrDefault(or_default) => self.infer_or_default(or_default),
             Expression::Cast(cast) => self.infer_cast(cast),
             Expression::Range(range) => self.infer_range(range),
             Expression::Grouped(grouped) => self.infer_expr(&grouped.inner),
@@ -190,8 +190,7 @@ impl<'a> TypeInferrer<'a> {
                                     return Type::Function(FunctionType {
                                         params: field_types.clone(),
                                         returns: Box::new(Type::Enum(enum_ty)),
-                                        throws: None,
-                                        is_async: false,
+                                        throws: vec![],
                                         is_variadic: false,
                                     });
                                 }
@@ -217,10 +216,26 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_binary(&mut self, bin: &ast::BinaryExpr) -> Type {
+        use ast::BinaryOp::*;
+
+        // Handle `is` operator specially - RHS is a type name, not an expression
+        if bin.op == Is {
+            let _left_ty = self.infer_expr(&bin.left);
+            if let ast::Expression::Identifier(ident) = &bin.right {
+                if self.symbols.get_type(ident.ident.symbol).is_some() {
+                    return Type::Bool;
+                }
+            }
+            self.errors.push(TypeError::Custom {
+                message: "'is' operator requires a type name on the right side".to_string(),
+                span: bin.right.span(),
+            });
+            return Type::Bool;
+        }
+
         let left_ty = self.infer_expr(&bin.left);
         let right_ty = self.infer_expr(&bin.right);
 
-        use ast::BinaryOp::*;
         match bin.op {
             Add => {
                 let left_resolved = left_ty.resolve();
@@ -350,6 +365,24 @@ impl<'a> TypeInferrer<'a> {
             }
 
             Is => Type::Bool,
+
+            NullCoalesce => {
+                let left_resolved = left_ty.resolve();
+                match &left_resolved {
+                    Type::Option(inner) => {
+                        if let Err(e) = unify(inner, &right_ty, bin.span) {
+                            self.errors.push(e);
+                        }
+                        right_ty.resolve()
+                    }
+                    _ => {
+                        if let Err(e) = unify(&left_ty, &right_ty, bin.span) {
+                            self.errors.push(e);
+                        }
+                        right_ty.resolve()
+                    }
+                }
+            }
         }
     }
 
@@ -392,8 +425,25 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_call(&mut self, call: &ast::CallExpr) -> Type {
-        // Check if callee is an identifier referring to a generic function
+        // Check if callee is an identifier referring to a generic function or exception
         if let ast::Expression::Identifier(ident) = call.callee {
+            // Check for exception constructor: ExceptionType("message")
+            if let Some(TypeDef::Exception(exc_def)) = self.symbols.get_type(ident.ident.symbol) {
+                if call.args.len() != 1 {
+                    self.errors.push(TypeError::WrongArgCount {
+                        expected: 1,
+                        found: call.args.len(),
+                        span: call.span,
+                    });
+                    return Type::Error;
+                }
+                let arg_ty = self.infer_expr(&call.args[0]);
+                if let Err(e) = unify(&arg_ty, &Type::String, call.args[0].span()) {
+                    self.errors.push(e);
+                }
+                return Type::Exception(exc_def.name);
+            }
+
             if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
                 if !func_sig.type_params.is_empty() {
                     return self.infer_generic_call(call, func_sig);
@@ -685,6 +735,31 @@ impl<'a> TypeInferrer<'a> {
             }
         }
 
+        // Handle built-in exception methods
+        if let Type::Exception(_) = &resolved {
+            let method_name = self.interner.resolve(&call.method.symbol);
+            return match method_name {
+                "message" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::String
+                }
+                _ => {
+                    self.errors.push(TypeError::UndefinedMethod {
+                        ty: resolved.to_string(),
+                        method: method_name.to_string(),
+                        span: call.span,
+                    });
+                    Type::Error
+                }
+            };
+        }
+
         let type_name = match &resolved {
             Type::Struct(s) => s.name,
             Type::Enum(e) => e.name,
@@ -845,6 +920,27 @@ impl<'a> TypeInferrer<'a> {
                         field: field_name,
                         span: field.span,
                     });
+                    Type::Error
+                }
+            }
+            Type::Exception(name) => {
+                if let Some(TypeDef::Exception(def)) = self.symbols.get_type(name) {
+                    let field_name_str = self.interner.resolve(&field.field.symbol);
+                    if field_name_str == "message" {
+                        return Type::String;
+                    }
+                    for (f_name, f_ty) in &def.fields {
+                        if *f_name == field.field.symbol {
+                            return f_ty.clone();
+                        }
+                    }
+                    self.errors.push(TypeError::UndefinedField {
+                        ty: resolved.to_string(),
+                        field: field_name_str.to_string(),
+                        span: field.span,
+                    });
+                    Type::Error
+                } else {
                     Type::Error
                 }
             }
@@ -1045,16 +1141,32 @@ impl<'a> TypeInferrer<'a> {
             param_types.push(ty);
         }
 
+        let expected_return_ty = if let Some(ret) = &lambda.return_ty {
+            self.convert_ast_type(ret)
+        } else {
+            fresh_type_var(self.next_var_id)
+        };
+
+        self.env
+            .enter_function(expected_return_ty.clone(), vec![], &[]);
+
         let body_ty = self.infer_expr(&lambda.body);
 
-        let return_ty = if let Some(ret) = &lambda.return_ty {
-            let expected = self.convert_ast_type(ret);
-            if let Err(e) = unify(&body_ty, &expected, lambda.span) {
-                self.errors.push(e);
+        self.env.exit_function();
+
+        let return_ty = if lambda.return_ty.is_some() {
+            if let Err(e) = unify(&body_ty, &expected_return_ty, lambda.span) {
+                if !matches!(body_ty, Type::Unit) {
+                    self.errors.push(e);
+                }
             }
-            expected
+            expected_return_ty
         } else {
-            body_ty
+            if let Err(_) = unify(&body_ty, &expected_return_ty, lambda.span) {
+                body_ty
+            } else {
+                expected_return_ty.resolve()
+            }
         };
 
         self.env.pop_scope();
@@ -1062,8 +1174,7 @@ impl<'a> TypeInferrer<'a> {
         Type::Function(FunctionType {
             params: param_types,
             returns: Box::new(return_ty),
-            throws: None,
-            is_async: false,
+            throws: vec![],
             is_variadic: false,
         })
     }
@@ -1071,29 +1182,6 @@ impl<'a> TypeInferrer<'a> {
     fn infer_spawn(&mut self, spawn: &ast::SpawnExpr) -> Type {
         let body_ty = self.infer_block(&spawn.body);
         Type::Promise(Box::new(body_ty))
-    }
-
-    fn infer_await(&mut self, await_expr: &ast::AwaitExpr) -> Type {
-        if !self.env.is_async() {
-            self.errors
-                .push(TypeError::AwaitOutsideAsync { span: await_expr.span });
-        }
-
-        let expr_ty = self.infer_expr(&await_expr.expr);
-        let resolved = expr_ty.resolve();
-
-        match resolved {
-            Type::Promise(inner) => (*inner).clone(),
-            Type::Error => Type::Error,
-            _ => {
-                self.errors.push(TypeError::type_mismatch(
-                    "promise<_>",
-                    resolved.to_string(),
-                    await_expr.span,
-                ));
-                Type::Error
-            }
-        }
     }
 
     fn infer_try(&mut self, try_expr: &ast::TryExpr) -> Type {
@@ -1104,10 +1192,13 @@ impl<'a> TypeInferrer<'a> {
     fn infer_catch(&mut self, catch: &ast::CatchExpr) -> Type {
         let expr_ty = self.infer_expr(&catch.expr);
 
+        // Determine the exception type from the expression being caught
+        let exception_ty = self.get_throws_type(&catch.expr);
+
         self.env.push_scope();
 
         let error_spur = catch.error_binding.symbol;
-        self.env.define(error_spur, Type::Error, true);
+        self.env.define(error_spur, exception_ty, true);
 
         for stmt in &catch.handler.statements {
             self.check_stmt(stmt);
@@ -1119,6 +1210,45 @@ impl<'a> TypeInferrer<'a> {
         self.env.pop_scope();
 
         expr_ty
+    }
+
+    /// Get the exception type that an expression can throw
+    fn get_throws_type(&self, expr: &Expression) -> Type {
+        match expr {
+            Expression::Call(call) => {
+                // Check if callee is a function with throws
+                if let Expression::Identifier(ident) = call.callee {
+                    if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
+                        if let Some(first_throw) = func_sig.throws.first() {
+                            return first_throw.clone();
+                        }
+                    }
+                }
+                Type::Error
+            }
+            Expression::MethodCall(_method_call) => {
+                // For method calls, we'd need to look up the method's throws
+                // For now, return Error as fallback
+                Type::Error
+            }
+            _ => Type::Error,
+        }
+    }
+
+    fn infer_or_default(&mut self, or_default: &ast::OrDefaultExpr) -> Type {
+        let expr_ty = self.infer_expr(&or_default.expr);
+        let default_ty = self.infer_expr(&or_default.default);
+
+        let inner_ty = match expr_ty.resolve() {
+            Type::Option(inner) => *inner,
+            other => other,
+        };
+
+        if let Err(e) = unify(&inner_ty, &default_ty, or_default.span) {
+            self.errors.push(e);
+        }
+
+        inner_ty
     }
 
     fn infer_cast(&mut self, cast: &ast::CastExpr) -> Type {
@@ -1574,8 +1704,7 @@ impl<'a> TypeInferrer<'a> {
                 Type::Function(FunctionType {
                     params: param_types,
                     returns: Box::new(self.convert_ast_type(returns)),
-                    throws: None,
-                    is_async: false,
+                    throws: vec![],
                     is_variadic: false,
                 })
             }

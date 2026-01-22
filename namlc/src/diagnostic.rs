@@ -177,11 +177,6 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "not inside a loop".to_string(),
             Some("continue can only be used inside loops".to_string()),
         ),
-        TypeError::AwaitOutsideAsync { .. } => (
-            "await outside of async function".to_string(),
-            "not in async context".to_string(),
-            Some("mark the function as 'async'".to_string()),
-        ),
         TypeError::PlatformMismatch { feature, platform, .. } => (
             format!("feature '{}' not available on '{}'", feature, platform),
             format!("not on {}", platform),
@@ -207,6 +202,14 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             message.clone(),
             "error".to_string(),
             None,
+        ),
+        TypeError::MissingInterfaceMethod { struct_name, interface_name, method_name, .. } => (
+            format!(
+                "struct '{}' is missing method '{}' required by interface '{}'",
+                struct_name, method_name, interface_name
+            ),
+            format!("missing method '{}'", method_name),
+            Some(format!("implement '{}' for struct '{}'", method_name, struct_name)),
         ),
     }
 }

@@ -1,0 +1,76 @@
+// Interfaces Example
+// Demonstrates interface definitions, struct implementations, and method calls
+
+// Define an interface with a required method
+interface Describable {
+    fn describe() -> string;
+}
+
+// Define another interface for printable items
+interface Printable {
+    fn to_string() -> string;
+}
+
+// A Point struct that implements the Describable interface
+struct Point implements Describable {
+    x: int,
+    y: int,
+}
+
+// Method to get x coordinate
+pub fn (self: Point) get_x() -> int {
+    return self.x;
+}
+
+// Method to get y coordinate
+pub fn (self: Point) get_y() -> int {
+    return self.y;
+}
+
+// Implementation of the Describable interface method
+pub fn (self: Point) describe() -> string {
+    return "Point";
+}
+
+// A Rectangle struct with multiple methods
+struct Rectangle {
+    width: int,
+    height: int,
+}
+
+// Method to calculate area
+pub fn (self: Rectangle) area() -> int {
+    return self.width * self.height;
+}
+
+// Method to calculate perimeter
+pub fn (self: Rectangle) perimeter() -> int {
+    return 2 * (self.width + self.height);
+}
+
+// Method to check if it's a square
+pub fn (self: Rectangle) is_square() -> bool {
+    return self.width == self.height;
+}
+
+fn main() {
+    // Create a Point and call its methods
+    var p = Point { x: 10, y: 20 };
+    println("Point coordinates:");
+    println(p.get_x());
+    println(p.get_y());
+    println(p.describe());
+
+    println("");
+
+    // Create a Rectangle and call its methods
+    var rect = Rectangle { width: 5, height: 10 };
+    println("Rectangle properties:");
+    println(rect.area());
+    println(rect.perimeter());
+
+    // Create a square
+    var square = Rectangle { width: 4, height: 4 };
+    println("Square area:");
+    println(square.area());
+}

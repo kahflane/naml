@@ -146,9 +146,8 @@ fn parse_atom<'a, 'ast>(
         Some(TokenKind::LBrace) => parse_block_or_map(arena, input),
         Some(TokenKind::Keyword(Keyword::If)) => parse_if_expr(arena, input),
         Some(TokenKind::Keyword(Keyword::Spawn)) => parse_spawn_expr(arena, input),
-        Some(TokenKind::Keyword(Keyword::Await)) => parse_await_expr(arena, input),
         Some(TokenKind::Keyword(Keyword::Try)) => parse_try_expr(arena, input),
-        Some(TokenKind::Pipe | TokenKind::PipePipe) => parse_lambda_expr(arena, input),
+        Some(TokenKind::Keyword(Keyword::Fn)) => parse_lambda_expr(arena, input),
         _ => Err(nom::Err::Error(PError {
             input,
             kind: PErrorKind::ExpectedExpr,
@@ -562,23 +561,6 @@ fn parse_spawn_expr<'a, 'ast>(
     ))
 }
 
-fn parse_await_expr<'a, 'ast>(
-    arena: &'ast AstArena,
-    input: TokenStream<'a>,
-) -> PResult<'a, Expression<'ast>> {
-    let (input, start) = keyword(Keyword::Await)(input)?;
-    let (input, expr) = parse_unary(arena, input)?;
-    let span = start.span.merge(expr.span());
-
-    Ok((
-        input,
-        Expression::Await(AwaitExpr {
-            expr: arena.alloc(expr),
-            span,
-        }),
-    ))
-}
-
 fn parse_try_expr<'a, 'ast>(
     arena: &'ast AstArena,
     input: TokenStream<'a>,
@@ -600,17 +582,11 @@ fn parse_lambda_expr<'a, 'ast>(
     arena: &'ast AstArena,
     input: TokenStream<'a>,
 ) -> PResult<'a, Expression<'ast>> {
-    let start_span = input.current_span();
+    let (input, start) = keyword(Keyword::Fn)(input)?;
 
-    let (input, params) = if check(TokenKind::PipePipe)(input) {
-        let (input, _) = token(TokenKind::PipePipe)(input)?;
-        (input, Vec::new())
-    } else {
-        let (input, _) = token(TokenKind::Pipe)(input)?;
-        let (input, params) = parse_lambda_params(input)?;
-        let (input, _) = token(TokenKind::Pipe)(input)?;
-        (input, params)
-    };
+    let (input, _) = token(TokenKind::LParen)(input)?;
+    let (input, params) = parse_lambda_params(input)?;
+    let (input, _) = token(TokenKind::RParen)(input)?;
 
     let (input, return_ty) = if check(TokenKind::Arrow)(input) {
         let (input, _) = token(TokenKind::Arrow)(input)?;
@@ -620,8 +596,10 @@ fn parse_lambda_expr<'a, 'ast>(
         (input, None)
     };
 
-    let (input, body) = parse_expression(arena, input)?;
-    let span = start_span.merge(body.span());
+    let (input, brace_start) = token(TokenKind::LBrace)(input)?;
+    let (input, body) = parse_block_inner(arena, input, brace_start.span)?;
+    let body_span = body.span();
+    let span = start.span.merge(body_span);
 
     Ok((
         input,
@@ -638,7 +616,7 @@ fn parse_lambda_params(input: TokenStream) -> PResult<Vec<LambdaParam>> {
     let mut params = Vec::new();
     let mut input = input;
 
-    if check(TokenKind::Pipe)(input) {
+    if check(TokenKind::RParen)(input) {
         return Ok((input, params));
     }
 
@@ -756,16 +734,29 @@ fn parse_field_or_method<'a, 'ast>(
 
         let (input, end) = token(TokenKind::RParen)(input)?;
 
-        Ok((
-            input,
-            Expression::MethodCall(MethodCallExpr {
-                receiver: arena.alloc(base),
-                method: field,
-                type_args: Vec::new(),
-                args,
-                span: start_span.merge(end.span),
-            }),
-        ))
+        let method_name = input.span_text(field.span);
+        if method_name == "or_default" && args.len() == 1 {
+            let default_expr = args.into_iter().next().unwrap();
+            Ok((
+                input,
+                Expression::OrDefault(OrDefaultExpr {
+                    expr: arena.alloc(base),
+                    default: arena.alloc(default_expr),
+                    span: start_span.merge(end.span),
+                }),
+            ))
+        } else {
+            Ok((
+                input,
+                Expression::MethodCall(MethodCallExpr {
+                    receiver: arena.alloc(base),
+                    method: field,
+                    type_args: Vec::new(),
+                    args,
+                    span: start_span.merge(end.span),
+                }),
+            ))
+        }
     } else {
         Ok((
             input,
@@ -850,6 +841,7 @@ fn peek_binary_op(input: TokenStream) -> Option<BinaryOp> {
         Some(TokenKind::GtGt) => Some(BinaryOp::Shr),
         Some(TokenKind::DotDot) => Some(BinaryOp::Range),
         Some(TokenKind::DotDotEq) => Some(BinaryOp::RangeIncl),
+        Some(TokenKind::QuestionQuestion) => Some(BinaryOp::NullCoalesce),
         _ => None,
     }
 }

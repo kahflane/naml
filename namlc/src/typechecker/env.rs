@@ -7,7 +7,6 @@
 //! - Whether variables are mutable
 //! - The current function's return type (for return statement checking)
 //! - Loop nesting (for break/continue validation)
-//! - Async context (for await validation)
 //!
 //! Scopes are managed as a stack, pushed when entering blocks and popped
 //! when leaving them.
@@ -84,8 +83,7 @@ impl Default for Scope {
 #[derive(Debug, Clone)]
 pub struct FunctionContext {
     pub return_ty: Type,
-    pub throws: Option<Type>,
-    pub is_async: bool,
+    pub throws: Vec<Type>,
     pub type_params: HashMap<Spur, TypeParamBinding>,
 }
 
@@ -168,8 +166,7 @@ impl TypeEnv {
     pub fn enter_function(
         &mut self,
         return_ty: Type,
-        throws: Option<Type>,
-        is_async: bool,
+        throws: Vec<Type>,
         type_params: &[TypeParam],
     ) {
         let type_param_map = type_params
@@ -188,7 +185,6 @@ impl TypeEnv {
         self.function_stack.push(FunctionContext {
             return_ty,
             throws,
-            is_async,
             type_params: type_param_map,
         });
     }
@@ -225,10 +221,6 @@ impl TypeEnv {
 
     pub fn expected_return_type(&self) -> Option<&Type> {
         self.function_stack.last().map(|f| &f.return_ty)
-    }
-
-    pub fn is_async(&self) -> bool {
-        self.function_stack.last().map_or(false, |f| f.is_async)
     }
 }
 
@@ -315,13 +307,11 @@ mod tests {
     #[test]
     fn test_function_context() {
         let mut env = TypeEnv::new();
-        assert!(!env.is_async());
 
-        env.enter_function(Type::Int, None, true, &[]);
-        assert!(env.is_async());
+        env.enter_function(Type::Int, vec![], &[]);
         assert_eq!(env.expected_return_type(), Some(&Type::Int));
 
         env.exit_function();
-        assert!(!env.is_async());
+        assert_eq!(env.expected_return_type(), None);
     }
 }

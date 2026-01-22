@@ -14,7 +14,7 @@
 //! - Atoms: literals, identifiers, grouped expressions
 //! - Operators: binary, unary operations
 //! - Access: field access, indexing, method calls
-//! - Control: if expressions, blocks, spawn, await
+//! - Control: if expressions, blocks, spawn
 //! - Constructors: array literals, map literals, lambdas
 //!
 
@@ -41,9 +41,9 @@ pub enum Expression<'ast> {
     Block(BlockExpr<'ast>),
     Lambda(LambdaExpr<'ast>),
     Spawn(SpawnExpr<'ast>),
-    Await(AwaitExpr<'ast>),
     Try(TryExpr<'ast>),
     Catch(CatchExpr<'ast>),
+    OrDefault(OrDefaultExpr<'ast>),
     Cast(CastExpr<'ast>),
     Range(RangeExpr<'ast>),
     Grouped(GroupedExpr<'ast>),
@@ -69,9 +69,9 @@ impl<'ast> Spanned for Expression<'ast> {
             Expression::Block(e) => e.span,
             Expression::Lambda(e) => e.span,
             Expression::Spawn(e) => e.span,
-            Expression::Await(e) => e.span,
             Expression::Try(e) => e.span,
             Expression::Catch(e) => e.span,
+            Expression::OrDefault(e) => e.span,
             Expression::Cast(e) => e.span,
             Expression::Range(e) => e.span,
             Expression::Grouped(e) => e.span,
@@ -220,12 +220,6 @@ pub struct SpawnExpr<'ast> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AwaitExpr<'ast> {
-    pub expr: &'ast Expression<'ast>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct TryExpr<'ast> {
     pub expr: &'ast Expression<'ast>,
     pub span: Span,
@@ -236,6 +230,13 @@ pub struct CatchExpr<'ast> {
     pub expr: &'ast Expression<'ast>,
     pub error_binding: Ident,
     pub handler: &'ast BlockExpr<'ast>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrDefaultExpr<'ast> {
+    pub expr: &'ast Expression<'ast>,
+    pub default: &'ast Expression<'ast>,
     pub span: Span,
 }
 

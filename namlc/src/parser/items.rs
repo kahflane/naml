@@ -9,7 +9,7 @@ use nom::multi::separated_list0;
 
 use crate::ast::*;
 use crate::lexer::{Keyword, TokenKind};
-use crate::source::{Span, Spanned};
+use crate::source::Spanned;
 
 use super::combinators::*;
 use super::expressions::parse_block;
@@ -35,9 +35,6 @@ pub fn parse_item<'a, 'ast>(
     };
 
     match input.first().map(|t| t.kind) {
-        Some(TokenKind::Keyword(Keyword::Async)) => {
-            parse_function_item(arena, input, is_public, platforms)
-        }
         Some(TokenKind::Keyword(Keyword::Fn)) => {
             parse_function_item(arena, input, is_public, platforms)
         }
@@ -108,13 +105,6 @@ fn parse_function_item<'a, 'ast>(
     is_public: bool,
     platforms: Option<Platforms>,
 ) -> PResult<'a, Item<'ast>> {
-    let (input, is_async) = if check_keyword(Keyword::Async)(input) {
-        let (input, _) = keyword(Keyword::Async)(input)?;
-        (input, true)
-    } else {
-        (input, false)
-    };
-
     let (input, start) = keyword(Keyword::Fn)(input)?;
 
     let (input, receiver) = if check(TokenKind::LParen)(input) {
@@ -147,19 +137,26 @@ fn parse_function_item<'a, 'ast>(
     let (input, throws) = if check_keyword(Keyword::Throws)(input) {
         let (input, _) = keyword(Keyword::Throws)(input)?;
         if check(TokenKind::LBrace)(input) || check(TokenKind::Semicolon)(input) {
-            (
-                input,
-                Some(NamlType::Named(Ident::new(
-                    lasso::Spur::default(),
-                    Span::dummy(),
-                ))),
-            )
+            (input, vec![])
         } else {
-            let (input, ty) = parse_type(input)?;
-            (input, Some(ty))
+            let mut throws_types = Vec::new();
+            let (mut input, first_ty) = parse_type(input)?;
+            throws_types.push(first_ty);
+
+            while check(TokenKind::Comma)(input) {
+                let (new_input, _) = token(TokenKind::Comma)(input)?;
+                if check(TokenKind::LBrace)(new_input) || check(TokenKind::Semicolon)(new_input) {
+                    break;
+                }
+                let (new_input, ty) = parse_type(new_input)?;
+                throws_types.push(ty);
+                input = new_input;
+            }
+
+            (input, throws_types)
         }
     } else {
-        (input, None)
+        (input, vec![])
     };
 
     let (input, body, end_span) = if check(TokenKind::LBrace)(input) {
@@ -185,7 +182,6 @@ fn parse_function_item<'a, 'ast>(
             params,
             return_ty,
             throws,
-            is_async,
             is_public,
             body,
             platforms,
@@ -449,14 +445,7 @@ fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<Interf
             break;
         }
 
-        let (new_input, is_async) = if check_keyword(Keyword::Async)(input) {
-            let (i, _) = keyword(Keyword::Async)(input)?;
-            (i, true)
-        } else {
-            (input, false)
-        };
-
-        let (new_input, start) = keyword(Keyword::Fn)(new_input)?;
+        let (new_input, start) = keyword(Keyword::Fn)(input)?;
         let (new_input, name) = ident(new_input)?;
 
         let (new_input, generics) = if check(TokenKind::Lt)(new_input) {
@@ -483,21 +472,29 @@ fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<Interf
         let new_input = new_input;
 
         let (new_input, throws) = if check_keyword(Keyword::Throws)(new_input) {
-            let (i, _) = keyword(Keyword::Throws)(new_input)?;
+            let (mut i, _) = keyword(Keyword::Throws)(new_input)?;
             if check(TokenKind::Semicolon)(i) {
-                (
-                    i,
-                    Some(NamlType::Named(Ident::new(
-                        lasso::Spur::default(),
-                        Span::dummy(),
-                    ))),
-                )
+                (i, vec![])
             } else {
-                let (i, ty) = parse_type(i)?;
-                (i, Some(ty))
+                let mut throws_types = Vec::new();
+                let (new_i, first_ty) = parse_type(i)?;
+                throws_types.push(first_ty);
+                i = new_i;
+
+                while check(TokenKind::Comma)(i) {
+                    let (new_i, _) = token(TokenKind::Comma)(i)?;
+                    if check(TokenKind::Semicolon)(new_i) {
+                        break;
+                    }
+                    let (new_i, ty) = parse_type(new_i)?;
+                    throws_types.push(ty);
+                    i = new_i;
+                }
+
+                (i, throws_types)
             }
         } else {
-            (new_input, None)
+            (new_input, vec![])
         };
 
         let (new_input, end) = token(TokenKind::Semicolon)(new_input)?;
@@ -508,7 +505,6 @@ fn parse_interface_methods<'a>(input: TokenStream<'a>) -> PResult<'a, Vec<Interf
             params,
             return_ty,
             throws,
-            is_async,
             span: start.span.merge(end.span),
         });
 
@@ -702,21 +698,29 @@ fn parse_extern_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>
     };
 
     let (input, throws) = if check_keyword(Keyword::Throws)(input) {
-        let (input, _) = keyword(Keyword::Throws)(input)?;
-        if check(TokenKind::Semicolon)(input) {
-            (
-                input,
-                Some(NamlType::Named(Ident::new(
-                    lasso::Spur::default(),
-                    Span::dummy(),
-                ))),
-            )
+        let (mut input, _) = keyword(Keyword::Throws)(input)?;
+        if check(TokenKind::Semicolon)(input) || check_keyword(Keyword::As)(input) {
+            (input, vec![])
         } else {
-            let (input, ty) = parse_type(input)?;
-            (input, Some(ty))
+            let mut throws_types = Vec::new();
+            let (new_input, first_ty) = parse_type(input)?;
+            throws_types.push(first_ty);
+            input = new_input;
+
+            while check(TokenKind::Comma)(input) {
+                let (new_input, _) = token(TokenKind::Comma)(input)?;
+                if check(TokenKind::Semicolon)(new_input) || check_keyword(Keyword::As)(new_input) {
+                    break;
+                }
+                let (new_input, ty) = parse_type(new_input)?;
+                throws_types.push(ty);
+                input = new_input;
+            }
+
+            (input, throws_types)
         }
     } else {
-        (input, None)
+        (input, vec![])
     };
 
     let (input, link_name) = if check_keyword(Keyword::As)(input) {

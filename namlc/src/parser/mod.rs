@@ -207,12 +207,7 @@ mod tests {
 
     #[test]
     fn test_parse_lambda_in_call() {
-        assert_parses("fn test() { map_array(arr, |x: int| x * 2); }");
-    }
-
-    #[test]
-    fn test_parse_async_fn() {
-        assert_parses("pub async fn get() -> int throws Error { return 0; }");
+        assert_parses("fn test() { map_array(arr, fn(x: int) -> int { return x * 2; }); }");
     }
 
     #[test]

@@ -89,8 +89,7 @@ impl<'a> TypeChecker<'a> {
                     type_params: vec![],
                     params: vec![],
                     return_ty,
-                    throws: None,
-                    is_async: false,
+                    throws: vec![],
                     is_public: true,
                     is_variadic,
                     span: Span::dummy(),
@@ -105,8 +104,7 @@ impl<'a> TypeChecker<'a> {
                 type_params: vec![],
                 params: vec![(spur, Type::Int)], // ms parameter
                 return_ty: Type::Unit,
-                throws: None,
-                is_async: false,
+                throws: vec![],
                 is_public: true,
                 is_variadic: false,
                 span: Span::dummy(),
@@ -127,8 +125,7 @@ impl<'a> TypeChecker<'a> {
                 type_params: vec![type_param.clone()],
                 params: vec![(spur, Type::Int)], // capacity parameter
                 return_ty: Type::Channel(Box::new(Type::Generic(t_spur, vec![]))),
-                throws: None,
-                is_async: false,
+                throws: vec![],
                 is_public: true,
                 is_variadic: false,
                 span: Span::dummy(),
@@ -138,8 +135,52 @@ impl<'a> TypeChecker<'a> {
 
     pub fn check(&mut self, file: &SourceFile) -> Vec<TypeError> {
         self.collect_definitions(file);
+        self.validate_interface_implementations();
         self.check_items(file);
         std::mem::take(&mut self.errors)
+    }
+
+    fn validate_interface_implementations(&mut self) {
+        let structs: Vec<_> = self.symbols.all_types()
+            .filter_map(|(_, def)| {
+                if let TypeDef::Struct(s) = def {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for struct_def in structs {
+            for impl_ty in &struct_def.implements {
+                let interface_name = match impl_ty {
+                    Type::Generic(name, _) => *name,
+                    Type::Interface(i) => i.name,
+                    _ => continue,
+                };
+
+                let interface_def = match self.symbols.get_type(interface_name) {
+                    Some(TypeDef::Interface(i)) => i.clone(),
+                    _ => continue,
+                };
+
+                for required_method in &interface_def.methods {
+                    let method_name_str = self.interner.resolve(&required_method.name);
+                    let has_method = self.symbols.get_method(struct_def.name, required_method.name);
+
+                    if has_method.is_none() {
+                        let struct_name = self.interner.resolve(&struct_def.name).to_string();
+                        let interface_name_str = self.interner.resolve(&interface_name).to_string();
+                        self.errors.push(TypeError::MissingInterfaceMethod {
+                            struct_name,
+                            interface_name: interface_name_str,
+                            method_name: method_name_str.to_string(),
+                            span: struct_def.span,
+                        });
+                    }
+                }
+            }
+        }
     }
 
     fn collect_definitions(&mut self, file: &SourceFile) {
@@ -184,14 +225,7 @@ impl<'a> TypeChecker<'a> {
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
 
-        // Wrap async function return types in promise<T>
-        let return_ty = if func.is_async {
-            Type::Promise(Box::new(return_ty))
-        } else {
-            return_ty
-        };
-
-        let throws = func.throws.as_ref().map(|t| self.convert_type(t));
+        let throws = func.throws.iter().map(|t| self.convert_type(t)).collect();
 
         self.symbols.define_function(FunctionSig {
             name: func.name.symbol,
@@ -199,7 +233,6 @@ impl<'a> TypeChecker<'a> {
             params,
             return_ty,
             throws,
-            is_async: func.is_async,
             is_public: func.is_public,
             is_variadic: false,
             span: func.span,
@@ -219,7 +252,7 @@ impl<'a> TypeChecker<'a> {
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
 
-        let throws = ext.throws.as_ref().map(|t| self.convert_type(t));
+        let throws = ext.throws.iter().map(|t| self.convert_type(t)).collect();
 
         self.symbols.define_function(FunctionSig {
             name: ext.name.symbol,
@@ -227,7 +260,6 @@ impl<'a> TypeChecker<'a> {
             params,
             return_ty,
             throws,
-            is_async: false,
             is_public: true,
             is_variadic: false,
             span: ext.span,
@@ -265,14 +297,7 @@ impl<'a> TypeChecker<'a> {
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
 
-        // Wrap async method return types in promise<T>
-        let return_ty = if func.is_async {
-            Type::Promise(Box::new(return_ty))
-        } else {
-            return_ty
-        };
-
-        let throws = func.throws.as_ref().map(|t| self.convert_type(t));
+        let throws = func.throws.iter().map(|t| self.convert_type(t)).collect();
 
         self.symbols.define_method(
             type_name,
@@ -284,7 +309,6 @@ impl<'a> TypeChecker<'a> {
                 params,
                 return_ty,
                 throws,
-                is_async: func.is_async,
                 is_public: func.is_public,
                 span: func.span,
             },
@@ -390,7 +414,7 @@ impl<'a> TypeChecker<'a> {
                     .as_ref()
                     .map(|t| self.convert_type(t))
                     .unwrap_or(Type::Unit);
-                let throws = m.throws.as_ref().map(|t| self.convert_type(t));
+                let throws = m.throws.iter().map(|t| self.convert_type(t)).collect();
 
                 InterfaceMethodDef {
                     name: m.name.symbol,
@@ -398,7 +422,6 @@ impl<'a> TypeChecker<'a> {
                     params,
                     return_ty,
                     throws,
-                    is_async: m.is_async,
                 }
             })
             .collect();
@@ -469,7 +492,7 @@ impl<'a> TypeChecker<'a> {
             .map(|t| self.convert_type(t))
             .unwrap_or(Type::Unit);
 
-        let throws = func.throws.as_ref().map(|t| self.convert_type(t));
+        let throws = func.throws.iter().map(|t| self.convert_type(t)).collect();
 
         // Get type params from the function signature (if it was collected)
         let type_params = if func.receiver.is_some() {
@@ -494,7 +517,7 @@ impl<'a> TypeChecker<'a> {
         };
 
         self.env
-            .enter_function(return_ty, throws, func.is_async, &type_params);
+            .enter_function(return_ty, throws, &type_params);
         self.env.push_scope();
 
         if let Some(recv) = &func.receiver {
@@ -556,7 +579,7 @@ impl<'a> TypeChecker<'a> {
                         TypeDef::Interface(i) => {
                             Type::Interface(self.symbols.to_interface_type(i))
                         }
-                        TypeDef::Exception(_) => Type::Generic(ident.symbol, Vec::new()),
+                        TypeDef::Exception(e) => Type::Exception(e.name),
                     }
                 } else {
                     Type::Generic(ident.symbol, Vec::new())
@@ -571,8 +594,7 @@ impl<'a> TypeChecker<'a> {
                 Type::Function(types::FunctionType {
                     params: param_types,
                     returns: Box::new(self.convert_type(returns)),
-                    throws: None,
-                    is_async: false,
+                    throws: vec![],
                     is_variadic: false,
                 })
             }
@@ -588,6 +610,7 @@ pub fn check(file: &SourceFile, interner: &Rodeo) -> Vec<TypeError> {
 pub fn check_with_types(file: &SourceFile, interner: &Rodeo) -> TypeCheckResult {
     let mut checker = TypeChecker::new(interner);
     checker.collect_definitions(file);
+    checker.validate_interface_implementations();
     checker.check_items(file);
 
     TypeCheckResult {
@@ -683,14 +706,6 @@ mod tests {
     }
 
     #[test]
-    fn test_await_outside_async() {
-        let errors = check_source(
-            "fn main() { await foo; }",
-        );
-        assert!(!errors.is_empty());
-    }
-
-    #[test]
     fn test_valid_struct() {
         let errors = check_source(
             "struct Point { x: int, y: int }
@@ -728,7 +743,7 @@ mod tests {
     #[test]
     fn test_lambda() {
         let errors = check_source(
-            "fn main() { var f = |x: int| x + 1; }",
+            "fn main() { var f = fn(x: int) -> int { return x + 1; }; }",
         );
         assert!(errors.is_empty());
     }
