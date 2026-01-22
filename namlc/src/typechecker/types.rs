@@ -42,7 +42,6 @@ pub enum Type {
     Option(Box<Type>),
     Map(Box<Type>, Box<Type>),
     Channel(Box<Type>),
-    Promise(Box<Type>),
 
     Struct(StructType),
     Enum(EnumType),
@@ -176,10 +175,6 @@ impl Type {
         Type::Channel(Box::new(inner))
     }
 
-    pub fn promise(inner: Type) -> Self {
-        Type::Promise(Box::new(inner))
-    }
-
     pub fn function(params: Vec<Type>, returns: Type) -> Self {
         Type::Function(FunctionType {
             params,
@@ -223,7 +218,6 @@ impl Type {
             Type::Option(inner) => Type::Option(Box::new(inner.resolve())),
             Type::Map(k, v) => Type::Map(Box::new(k.resolve()), Box::new(v.resolve())),
             Type::Channel(inner) => Type::Channel(Box::new(inner.resolve())),
-            Type::Promise(inner) => Type::Promise(Box::new(inner.resolve())),
             Type::Function(f) => Type::Function(FunctionType {
                 params: f.params.iter().map(|p| p.resolve()).collect(),
                 returns: Box::new(f.returns.resolve()),
@@ -246,9 +240,7 @@ impl Type {
                 false
             }
             Type::Array(elem) | Type::FixedArray(elem, _) => elem.contains_var(var_id),
-            Type::Option(inner) | Type::Channel(inner) | Type::Promise(inner) => {
-                inner.contains_var(var_id)
-            }
+            Type::Option(inner) | Type::Channel(inner) => inner.contains_var(var_id),
             Type::Map(k, v) => k.contains_var(var_id) || v.contains_var(var_id),
             Type::Function(f) => {
                 f.params.iter().any(|p| p.contains_var(var_id))
@@ -283,7 +275,6 @@ impl Type {
                 Box::new(v.substitute(substitutions)),
             ),
             Type::Channel(inner) => Type::Channel(Box::new(inner.substitute(substitutions))),
-            Type::Promise(inner) => Type::Promise(Box::new(inner.substitute(substitutions))),
             Type::Function(f) => Type::Function(FunctionType {
                 params: f.params.iter().map(|p| p.substitute(substitutions)).collect(),
                 returns: Box::new(f.returns.substitute(substitutions)),
@@ -310,7 +301,6 @@ impl fmt::Display for Type {
             Type::Option(inner) => write!(f, "option<{}>", inner),
             Type::Map(k, v) => write!(f, "map<{}, {}>", k, v),
             Type::Channel(inner) => write!(f, "channel<{}>", inner),
-            Type::Promise(inner) => write!(f, "promise<{}>", inner),
             Type::Struct(s) => write!(f, "struct:{:?}", s.name),
             Type::Enum(e) => write!(f, "enum:{:?}", e.name),
             Type::Interface(i) => write!(f, "interface:{:?}", i.name),

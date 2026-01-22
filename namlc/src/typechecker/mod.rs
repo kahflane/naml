@@ -570,7 +570,6 @@ impl<'a> TypeChecker<'a> {
                 Box::new(self.convert_type(v)),
             ),
             ast::NamlType::Channel(inner) => Type::Channel(Box::new(self.convert_type(inner))),
-            ast::NamlType::Promise(inner) => Type::Promise(Box::new(self.convert_type(inner))),
             ast::NamlType::Named(ident) => {
                 if let Some(def) = self.symbols.get_type(ident.symbol) {
                     match def {

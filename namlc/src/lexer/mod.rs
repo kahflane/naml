@@ -407,7 +407,6 @@ pub enum Keyword {
     Option,
     Map,
     Channel,
-    Promise,
     Platforms,
     Native,
     Server,
@@ -911,7 +910,6 @@ impl<'a> Lexer<'a> {
         match (word1, word2, b6) {
             (0x61666564, 0x6C75, b't') => TokenKind::Keyword(Keyword::Default),  // "default"
             (0x6E616863, 0x656E, b'l') => TokenKind::Keyword(Keyword::Channel),  // "channel"
-            (0x6D6F7270, 0x7369, b'e') => TokenKind::Keyword(Keyword::Promise),  // "promise"
             (0x776F7262, 0x6573, b'r') => TokenKind::Keyword(Keyword::Browser),  // "browser"
             _ => TokenKind::Ident,
         }

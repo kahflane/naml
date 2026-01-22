@@ -29,7 +29,6 @@ pub fn naml_to_cranelift(ty: &NamlType) -> Type {
         NamlType::Option(_) => types::I64,
         NamlType::Map(_, _) => types::I64,
         NamlType::Channel(_) => types::I64,
-        NamlType::Promise(_) => types::I64,
 
         NamlType::Named(_) => types::I64,
         NamlType::Generic(_, _) => types::I64,

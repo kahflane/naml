@@ -47,7 +47,6 @@ pub enum NamlType {
     Option(Box<NamlType>),
     Map(Box<NamlType>, Box<NamlType>),
     Channel(Box<NamlType>),
-    Promise(Box<NamlType>),
 
     Named(Ident),
     Generic(Ident, Vec<NamlType>),
@@ -79,10 +78,6 @@ impl NamlType {
 
     pub fn channel(inner: NamlType) -> Self {
         NamlType::Channel(Box::new(inner))
-    }
-
-    pub fn promise(inner: NamlType) -> Self {
-        NamlType::Promise(Box::new(inner))
     }
 
     pub fn function(params: Vec<NamlType>, returns: NamlType) -> Self {

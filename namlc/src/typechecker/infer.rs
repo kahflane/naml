@@ -137,7 +137,6 @@ impl<'a> TypeInferrer<'a> {
             Type::Option(inner) => format!("Option_{}", self.mangle_type(inner)),
             Type::Map(k, v) => format!("Map_{}_{}", self.mangle_type(k), self.mangle_type(v)),
             Type::Channel(inner) => format!("Channel_{}", self.mangle_type(inner)),
-            Type::Promise(inner) => format!("Promise_{}", self.mangle_type(inner)),
             Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
             Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
@@ -1295,8 +1294,10 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_spawn(&mut self, spawn: &ast::SpawnExpr) -> Type {
-        let body_ty = self.infer_block(spawn.body);
-        Type::Promise(Box::new(body_ty))
+        // Infer the block body for type checking purposes
+        let _body_ty = self.infer_block(spawn.body);
+        // Spawn runs concurrently and doesn't return a value
+        Type::Unit
     }
 
     fn infer_try(&mut self, try_expr: &ast::TryExpr) -> Type {
@@ -1786,9 +1787,6 @@ impl<'a> TypeInferrer<'a> {
             ),
             ast::NamlType::Channel(inner) => {
                 Type::Channel(Box::new(self.convert_ast_type(inner)))
-            }
-            ast::NamlType::Promise(inner) => {
-                Type::Promise(Box::new(self.convert_ast_type(inner)))
             }
             ast::NamlType::Named(ident) => {
                 // Look up the name to see if it's a known type (struct, enum, etc.)

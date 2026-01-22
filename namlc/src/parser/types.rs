@@ -31,7 +31,6 @@ pub fn parse_type(input: TokenStream) -> PResult<NamlType> {
         Some(TokenKind::Keyword(Keyword::Option)) => parse_option_type(input),
         Some(TokenKind::Keyword(Keyword::Map)) => parse_map_type(input),
         Some(TokenKind::Keyword(Keyword::Channel)) => parse_channel_type(input),
-        Some(TokenKind::Keyword(Keyword::Promise)) => parse_promise_type(input),
         // Function type
         Some(TokenKind::Keyword(Keyword::Fn)) => parse_fn_type(input),
         // Array type
@@ -82,14 +81,6 @@ fn parse_channel_type(input: TokenStream) -> PResult<NamlType> {
     let (input, inner) = parse_type(input)?;
     let (input, _) = parse_gt(input)?;
     Ok((input, NamlType::channel(inner)))
-}
-
-fn parse_promise_type(input: TokenStream) -> PResult<NamlType> {
-    let (input, _) = keyword(Keyword::Promise)(input)?;
-    let (input, _) = token(TokenKind::Lt)(input)?;
-    let (input, inner) = parse_type(input)?;
-    let (input, _) = parse_gt(input)?;
-    Ok((input, NamlType::promise(inner)))
 }
 
 fn parse_fn_type(input: TokenStream) -> PResult<NamlType> {

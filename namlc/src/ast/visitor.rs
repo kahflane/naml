@@ -428,7 +428,6 @@ pub fn walk_type<'ast, V: Visitor<'ast>>(v: &mut V, ty: &NamlType) {
             v.visit_type(val);
         }
         NamlType::Channel(inner) => v.visit_type(inner),
-        NamlType::Promise(inner) => v.visit_type(inner),
         NamlType::Named(ident) => v.visit_ident(ident),
         NamlType::Generic(ident, args) => {
             v.visit_ident(ident);
