@@ -826,14 +826,33 @@ impl<'a> TypeInferrer<'a> {
                 return Type::Error;
             }
 
+            // Build substitution map for generic type arguments
+            use std::collections::HashMap;
+            let substitutions: HashMap<lasso::Spur, Type> = if let Type::Generic(_, type_args) = &resolved {
+                // Look up the struct definition to get type parameter names
+                if let Some(TypeDef::Struct(struct_def)) = self.symbols.get_type(type_name) {
+                    struct_def.type_params.iter()
+                        .zip(type_args.iter())
+                        .map(|(param, arg)| (param.name, arg.clone()))
+                        .collect()
+                } else {
+                    HashMap::new()
+                }
+            } else {
+                HashMap::new()
+            };
+
             for (arg, (_, param_ty)) in call.args.iter().zip(method.params.iter()) {
                 let arg_ty = self.infer_expr(arg);
-                if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
+                // Substitute type parameters in the parameter type
+                let substituted_param_ty = param_ty.substitute(&substitutions);
+                if let Err(e) = unify(&arg_ty, &substituted_param_ty, arg.span()) {
                     self.errors.push(e);
                 }
             }
 
-            method.return_ty.clone()
+            // Substitute type parameters in the return type
+            method.return_ty.substitute(&substitutions)
         } else {
             let method = self.interner.resolve(&call.method.symbol).to_string();
             self.errors.push(TypeError::UndefinedMethod {

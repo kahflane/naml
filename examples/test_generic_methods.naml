@@ -1,0 +1,47 @@
+///
+/// Test: Generic Methods on Types
+///
+
+pub struct Box<T> {
+    pub value: T
+}
+
+pub fn (self: Box<T>) get_value() -> T {
+    return self.value;
+}
+
+pub struct Pair<A, B> {
+    pub first: A,
+    pub second: B
+}
+
+pub fn (self: Pair<A, B>) get_first() -> A {
+    return self.first;
+}
+
+pub fn (self: Pair<A, B>) get_second() -> B {
+    return self.second;
+}
+
+fn main() {
+    println("=== Generic Method Tests ===");
+
+    // Test Box<int>
+    var int_box: Box<int> = Box { value: 42 };
+    print("Box<int>.get_value(): ");
+    println(int_box.get_value());
+
+    // Test Box<string>
+    var str_box: Box<string> = Box { value: "hello" };
+    print("Box<string>.get_value(): ");
+    println(str_box.get_value());
+
+    // Test Pair<int, string>
+    var pair: Pair<int, string> = Pair { first: 1, second: "one" };
+    print("Pair.get_first(): ");
+    println(pair.get_first());
+    print("Pair.get_second(): ");
+    println(pair.get_second());
+
+    println("=== Generic Method Tests Complete ===");
+}

@@ -1240,10 +1240,11 @@ impl<'a> JitCompiler<'a> {
         let receiver = func.receiver.as_ref()
             .ok_or_else(|| CodegenError::JitCompile("Method must have receiver".to_string()))?;
 
-        // Get receiver type name
+        // Get receiver type name (handles both Named and Generic types)
         let receiver_type_name = match &receiver.ty {
             crate::ast::NamlType::Named(ident) => self.interner.resolve(&ident.symbol).to_string(),
-            _ => return Err(CodegenError::JitCompile("Method receiver must be a named type".to_string())),
+            crate::ast::NamlType::Generic(ident, _) => self.interner.resolve(&ident.symbol).to_string(),
+            _ => return Err(CodegenError::JitCompile("Method receiver must be a named or generic type".to_string())),
         };
 
         let method_name = self.interner.resolve(&func.name.symbol);
@@ -1280,7 +1281,8 @@ impl<'a> JitCompiler<'a> {
 
         let receiver_type_name = match &receiver.ty {
             crate::ast::NamlType::Named(ident) => self.interner.resolve(&ident.symbol).to_string(),
-            _ => return Err(CodegenError::JitCompile("Method receiver must be a named type".to_string())),
+            crate::ast::NamlType::Generic(ident, _) => self.interner.resolve(&ident.symbol).to_string(),
+            _ => return Err(CodegenError::JitCompile("Method receiver must be a named or generic type".to_string())),
         };
 
         let method_name = self.interner.resolve(&func.name.symbol);
