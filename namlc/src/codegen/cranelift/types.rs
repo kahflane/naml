@@ -13,6 +13,7 @@ use cranelift::prelude::types;
 use cranelift::prelude::Type;
 
 use crate::ast::NamlType;
+use crate::typechecker::types::Type as TcType;
 
 pub fn naml_to_cranelift(ty: &NamlType) -> Type {
     match ty {
@@ -35,6 +36,33 @@ pub fn naml_to_cranelift(ty: &NamlType) -> Type {
         NamlType::Function { .. } => types::I64,
         NamlType::Decimal { .. } => types::I64,
         NamlType::Inferred => types::I64,
+    }
+}
+
+/// Convert typechecker Type to Cranelift type
+pub fn tc_type_to_cranelift(ty: &TcType) -> Type {
+    match ty {
+        TcType::Int => types::I64,
+        TcType::Uint => types::I64,
+        TcType::Float => types::F64,
+        TcType::Bool => types::I64,
+        TcType::String => types::I64,
+        TcType::Bytes => types::I64,
+        TcType::Unit => types::I64,
+        TcType::Array(_) => types::I64,
+        TcType::FixedArray(_, _) => types::I64,
+        TcType::Option(_) => types::I64,
+        TcType::Map(_, _) => types::I64,
+        TcType::Channel(_) => types::I64,
+        TcType::Struct(_) => types::I64,
+        TcType::Enum(_) => types::I64,
+        TcType::Interface(_) => types::I64,
+        TcType::Exception(_) => types::I64,
+        TcType::Function(_) => types::I64,
+        TcType::TypeVar(_) => types::I64,
+        TcType::Generic(_, _) => types::I64,
+        TcType::Error => types::I64,
+        TcType::Never => types::I64,
     }
 }
 

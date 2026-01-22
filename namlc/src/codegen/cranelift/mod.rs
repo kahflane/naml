@@ -1627,6 +1627,13 @@ fn compile_statement(
             let var_name = ctx.interner.resolve(&var_stmt.name.symbol).to_string();
             let ty = if let Some(ref naml_ty) = var_stmt.ty {
                 types::naml_to_cranelift(naml_ty)
+            } else if let Some(ref init) = var_stmt.init {
+                // Try to get the inferred type from type annotations
+                if let Some(tc_type) = ctx.annotations.get_type(init.span()) {
+                    types::tc_type_to_cranelift(tc_type)
+                } else {
+                    cranelift::prelude::types::I64
+                }
             } else {
                 cranelift::prelude::types::I64
             };
@@ -3430,36 +3437,105 @@ fn compile_binary_op(
     lhs: Value,
     rhs: Value,
 ) -> Result<Value, CodegenError> {
+    // Check if operands are floats
+    let lhs_type = builder.func.dfg.value_type(lhs);
+    let is_float = lhs_type == cranelift::prelude::types::F64;
+
     let result = match op {
-        BinaryOp::Add => builder.ins().iadd(lhs, rhs),
-        BinaryOp::Sub => builder.ins().isub(lhs, rhs),
-        BinaryOp::Mul => builder.ins().imul(lhs, rhs),
-        BinaryOp::Div => builder.ins().sdiv(lhs, rhs),
-        BinaryOp::Mod => builder.ins().srem(lhs, rhs),
+        BinaryOp::Add => {
+            if is_float {
+                builder.ins().fadd(lhs, rhs)
+            } else {
+                builder.ins().iadd(lhs, rhs)
+            }
+        }
+        BinaryOp::Sub => {
+            if is_float {
+                builder.ins().fsub(lhs, rhs)
+            } else {
+                builder.ins().isub(lhs, rhs)
+            }
+        }
+        BinaryOp::Mul => {
+            if is_float {
+                builder.ins().fmul(lhs, rhs)
+            } else {
+                builder.ins().imul(lhs, rhs)
+            }
+        }
+        BinaryOp::Div => {
+            if is_float {
+                builder.ins().fdiv(lhs, rhs)
+            } else {
+                builder.ins().sdiv(lhs, rhs)
+            }
+        }
+        BinaryOp::Mod => {
+            if is_float {
+                // Floating point remainder - fmod equivalent
+                // a % b = a - (trunc(a / b) * b)
+                let div = builder.ins().fdiv(lhs, rhs);
+                let trunc = builder.ins().trunc(div);
+                let prod = builder.ins().fmul(trunc, rhs);
+                builder.ins().fsub(lhs, prod)
+            } else {
+                builder.ins().srem(lhs, rhs)
+            }
+        }
 
         BinaryOp::Eq => {
-            let cmp = builder.ins().icmp(IntCC::Equal, lhs, rhs);
-            builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            if is_float {
+                let cmp = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            } else {
+                let cmp = builder.ins().icmp(IntCC::Equal, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            }
         }
         BinaryOp::NotEq => {
-            let cmp = builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
-            builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            if is_float {
+                let cmp = builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            } else {
+                let cmp = builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            }
         }
         BinaryOp::Lt => {
-            let cmp = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
-            builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            if is_float {
+                let cmp = builder.ins().fcmp(FloatCC::LessThan, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            } else {
+                let cmp = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            }
         }
         BinaryOp::LtEq => {
-            let cmp = builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs);
-            builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            if is_float {
+                let cmp = builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            } else {
+                let cmp = builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            }
         }
         BinaryOp::Gt => {
-            let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
-            builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            if is_float {
+                let cmp = builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            } else {
+                let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            }
         }
         BinaryOp::GtEq => {
-            let cmp = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
-            builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            if is_float {
+                let cmp = builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            } else {
+                let cmp = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
+                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+            }
         }
 
         BinaryOp::And => builder.ins().band(lhs, rhs),
