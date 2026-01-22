@@ -228,7 +228,7 @@ mod tests {
                     type_params: vec![],
                     params: vec![],
                     return_ty: Type::Int,
-                    throws: None,
+                    throws: vec![],
                 }],
                 is_public: true,
                 span: Span::dummy(),

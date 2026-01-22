@@ -133,6 +133,14 @@ pub enum TypeError {
 
     #[error("{message}")]
     Custom { message: String, span: Span },
+
+    #[error("struct '{struct_name}' is missing method '{method_name}' required by interface '{interface_name}'")]
+    MissingInterfaceMethod {
+        struct_name: String,
+        interface_name: String,
+        method_name: String,
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -162,6 +170,7 @@ impl TypeError {
             TypeError::BoundNotSatisfied { span, .. } => *span,
             TypeError::NoBoundForMethod { span, .. } => *span,
             TypeError::Custom { span, .. } => *span,
+            TypeError::MissingInterfaceMethod { span, .. } => *span,
         }
     }
 

@@ -83,7 +83,7 @@ impl Default for Scope {
 #[derive(Debug, Clone)]
 pub struct FunctionContext {
     pub return_ty: Type,
-    pub throws: Option<Type>,
+    pub throws: Vec<Type>,
     pub type_params: HashMap<Spur, TypeParamBinding>,
 }
 
@@ -166,7 +166,7 @@ impl TypeEnv {
     pub fn enter_function(
         &mut self,
         return_ty: Type,
-        throws: Option<Type>,
+        throws: Vec<Type>,
         type_params: &[TypeParam],
     ) {
         let type_param_map = type_params
@@ -308,7 +308,7 @@ mod tests {
     fn test_function_context() {
         let mut env = TypeEnv::new();
 
-        env.enter_function(Type::Int, None, &[]);
+        env.enter_function(Type::Int, vec![], &[]);
         assert_eq!(env.expected_return_type(), Some(&Type::Int));
 
         env.exit_function();

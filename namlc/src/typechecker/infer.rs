@@ -735,6 +735,31 @@ impl<'a> TypeInferrer<'a> {
             }
         }
 
+        // Handle built-in exception methods
+        if let Type::Exception(_) = &resolved {
+            let method_name = self.interner.resolve(&call.method.symbol);
+            return match method_name {
+                "message" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::String
+                }
+                _ => {
+                    self.errors.push(TypeError::UndefinedMethod {
+                        ty: resolved.to_string(),
+                        method: method_name.to_string(),
+                        span: call.span,
+                    });
+                    Type::Error
+                }
+            };
+        }
+
         let type_name = match &resolved {
             Type::Struct(s) => s.name,
             Type::Enum(e) => e.name,
@@ -1167,10 +1192,13 @@ impl<'a> TypeInferrer<'a> {
     fn infer_catch(&mut self, catch: &ast::CatchExpr) -> Type {
         let expr_ty = self.infer_expr(&catch.expr);
 
+        // Determine the exception type from the expression being caught
+        let exception_ty = self.get_throws_type(&catch.expr);
+
         self.env.push_scope();
 
         let error_spur = catch.error_binding.symbol;
-        self.env.define(error_spur, Type::Error, true);
+        self.env.define(error_spur, exception_ty, true);
 
         for stmt in &catch.handler.statements {
             self.check_stmt(stmt);
@@ -1182,6 +1210,29 @@ impl<'a> TypeInferrer<'a> {
         self.env.pop_scope();
 
         expr_ty
+    }
+
+    /// Get the exception type that an expression can throw
+    fn get_throws_type(&self, expr: &Expression) -> Type {
+        match expr {
+            Expression::Call(call) => {
+                // Check if callee is a function with throws
+                if let Expression::Identifier(ident) = call.callee {
+                    if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
+                        if let Some(first_throw) = func_sig.throws.first() {
+                            return first_throw.clone();
+                        }
+                    }
+                }
+                Type::Error
+            }
+            Expression::MethodCall(_method_call) => {
+                // For method calls, we'd need to look up the method's throws
+                // For now, return Error as fallback
+                Type::Error
+            }
+            _ => Type::Error,
+        }
     }
 
     fn infer_or_default(&mut self, or_default: &ast::OrDefaultExpr) -> Type {

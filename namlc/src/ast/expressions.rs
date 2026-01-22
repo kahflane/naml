@@ -43,6 +43,7 @@ pub enum Expression<'ast> {
     Spawn(SpawnExpr<'ast>),
     Try(TryExpr<'ast>),
     Catch(CatchExpr<'ast>),
+    OrDefault(OrDefaultExpr<'ast>),
     Cast(CastExpr<'ast>),
     Range(RangeExpr<'ast>),
     Grouped(GroupedExpr<'ast>),
@@ -70,6 +71,7 @@ impl<'ast> Spanned for Expression<'ast> {
             Expression::Spawn(e) => e.span,
             Expression::Try(e) => e.span,
             Expression::Catch(e) => e.span,
+            Expression::OrDefault(e) => e.span,
             Expression::Cast(e) => e.span,
             Expression::Range(e) => e.span,
             Expression::Grouped(e) => e.span,
@@ -228,6 +230,13 @@ pub struct CatchExpr<'ast> {
     pub expr: &'ast Expression<'ast>,
     pub error_binding: Ident,
     pub handler: &'ast BlockExpr<'ast>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrDefaultExpr<'ast> {
+    pub expr: &'ast Expression<'ast>,
+    pub default: &'ast Expression<'ast>,
     pub span: Span,
 }
 

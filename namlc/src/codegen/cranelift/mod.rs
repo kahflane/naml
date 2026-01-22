@@ -175,6 +175,12 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_map_decref_maps", crate::runtime::naml_map_decref_maps as *const u8);
         builder.symbol("naml_map_decref_structs", crate::runtime::naml_map_decref_structs as *const u8);
 
+        // Exception handling
+        builder.symbol("naml_exception_set", crate::runtime::naml_exception_set as *const u8);
+        builder.symbol("naml_exception_get", crate::runtime::naml_exception_get as *const u8);
+        builder.symbol("naml_exception_clear", crate::runtime::naml_exception_clear as *const u8);
+        builder.symbol("naml_exception_check", crate::runtime::naml_exception_check as *const u8);
+
         // String operations
         builder.symbol("naml_string_from_cstr", crate::runtime::naml_string_from_cstr as *const u8);
         builder.symbol("naml_string_print", crate::runtime::naml_string_print as *const u8);
@@ -1544,9 +1550,10 @@ fn compile_statement(
                     // For exceptions: offset 0 is message, then fields at 8, 16, etc.
                     // For structs: fields at 0, 8, 16, etc.
                     if let Expression::Identifier(ident) = &*field_expr.base {
-                        let var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+                        let _var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
                         // Get the type annotation to determine struct/exception type
-                        if let Some(type_ann) = ctx.annotations.get_type(ident.ident.span) {
+                        // Note: use ident.span (IdentExpr span), not ident.ident.span (Ident span)
+                        if let Some(type_ann) = ctx.annotations.get_type(ident.span) {
                             if let crate::typechecker::Type::Exception(exc_name) = type_ann {
                                 let exc_name_str = ctx.interner.resolve(&exc_name).to_string();
                                 if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
@@ -1924,12 +1931,15 @@ fn compile_statement(
         }
 
         Statement::Throw(throw_stmt) => {
-            // Compile the exception value (for side effects, e.g., struct creation)
-            compile_expression(ctx, builder, &throw_stmt.value)?;
+            // Compile the exception value
+            let exception_ptr = compile_expression(ctx, builder, &throw_stmt.value)?;
 
-            // For now, throw causes a trap/abort
-            // Full exception unwinding will be implemented later
-            builder.ins().trap(TrapCode::unwrap_user(1));
+            // Set the current exception in thread-local storage
+            call_exception_set(ctx, builder, exception_ptr)?;
+
+            // Return 0 (indicates exception) from the function
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            builder.ins().return_(&[zero]);
             ctx.block_terminated = true;
         }
 
@@ -2343,27 +2353,28 @@ fn compile_expression(
                 }
                 // Check for exception constructor: ExceptionType("message")
                 else if ctx.struct_defs.contains_key(func_name) {
-                    // Exception constructor - allocate struct and store message
+                    // Exception constructor - allocate on heap (exceptions outlive stack frames)
                     let struct_def = ctx.struct_defs.get(func_name).unwrap();
                     let num_fields = struct_def.fields.len();
                     // Exception has implicit message field + defined fields
                     // Total size: 8 bytes for message pointer + 8 bytes per field
                     let size = 8 + (num_fields * 8);
 
-                    let slot = builder.create_sized_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        size as u32,
-                        8,
-                    ));
-                    let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
+                    // Allocate on heap since exceptions can escape the current stack frame
+                    let size_val = builder.ins().iconst(cranelift::prelude::types::I64, size as i64);
+                    let exception_ptr = call_alloc_closure_data(ctx, builder, size_val)?;
 
                     // Store message string at offset 0
                     if !call.args.is_empty() {
-                        let message = compile_expression(ctx, builder, &call.args[0])?;
-                        builder.ins().store(MemFlags::new(), message, slot_addr, 0);
+                        let mut message = compile_expression(ctx, builder, &call.args[0])?;
+                        // Convert string literal to NamlString
+                        if matches!(&call.args[0], Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                            message = call_string_from_cstr(ctx, builder, message)?;
+                        }
+                        builder.ins().store(MemFlags::new(), message, exception_ptr, 0);
                     }
 
-                    Ok(slot_addr)
+                    Ok(exception_ptr)
                 }
                 else {
                     Err(CodegenError::JitCompile(format!("Unknown function: {}", func_name)))
@@ -2518,8 +2529,9 @@ fn compile_expression(
             let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
 
             // Use type annotation to determine correct field offset
+            // Note: use ident.span (IdentExpr span), not ident.ident.span (Ident span)
             if let Expression::Identifier(ident) = &*field_expr.base {
-                if let Some(type_ann) = ctx.annotations.get_type(ident.ident.span) {
+                if let Some(type_ann) = ctx.annotations.get_type(ident.span) {
                     if let crate::typechecker::Type::Exception(exc_name) = type_ann {
                         let exc_name_str = ctx.interner.resolve(&exc_name).to_string();
                         if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
@@ -2699,9 +2711,70 @@ fn compile_expression(
         }
 
         Expression::Catch(catch_expr) => {
-            // For now, catch just evaluates the inner expression
-            // Full exception handling will be implemented later
-            compile_expression(ctx, builder, &catch_expr.expr)
+            // Compile the expression that might throw
+            let result = compile_expression(ctx, builder, &catch_expr.expr)?;
+
+            // Check if an exception occurred
+            let has_exception = call_exception_check(ctx, builder)?;
+
+            // Create blocks for branching
+            let exception_block = builder.create_block();
+            let no_exception_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Branch based on exception check
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            let has_ex = builder.ins().icmp(IntCC::NotEqual, has_exception, zero);
+            builder.ins().brif(has_ex, exception_block, &[], no_exception_block, &[]);
+
+            // Exception block: get exception, bind to variable, run handler
+            builder.switch_to_block(exception_block);
+            builder.seal_block(exception_block);
+
+            // Get the exception pointer and bind to the error variable
+            let exception_ptr = call_exception_get(ctx, builder)?;
+            let error_var_name = ctx.interner.resolve(&catch_expr.error_binding.symbol).to_string();
+
+            // Check if variable already exists (for multiple catch blocks with same binding name)
+            let error_var = if let Some(&existing_var) = ctx.variables.get(&error_var_name) {
+                existing_var
+            } else {
+                let new_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                ctx.variables.insert(error_var_name, new_var);
+                builder.declare_var(new_var, cranelift::prelude::types::I64);
+                new_var
+            };
+            builder.def_var(error_var, exception_ptr);
+
+            // Clear the exception so it doesn't propagate
+            call_exception_clear(ctx, builder)?;
+
+            // Compile the handler block
+            for stmt in &catch_expr.handler.statements {
+                compile_statement(ctx, builder, stmt)?;
+                if ctx.block_terminated {
+                    break;
+                }
+            }
+
+            // If handler didn't return/throw, jump to merge with 0 (none)
+            if !ctx.block_terminated {
+                builder.ins().jump(merge_block, &[zero]);
+            }
+            ctx.block_terminated = false;
+
+            // No exception block: jump to merge with the result
+            builder.switch_to_block(no_exception_block);
+            builder.seal_block(no_exception_block);
+            builder.ins().jump(merge_block, &[result]);
+
+            // Merge block
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            let final_result = builder.block_params(merge_block)[0];
+            Ok(final_result)
         }
 
         Expression::OrDefault(or_default_expr) => {
@@ -3836,6 +3909,22 @@ fn compile_method_call(
             call_map_set(ctx, builder, recv, key, value)?;
             Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
         }
+        "message" => {
+            // Exception message() method - load string from offset 0
+            let receiver_type = ctx.annotations.get_type(receiver.span());
+            if matches!(receiver_type, Some(Type::Exception(_))) {
+                // Exception message is stored at offset 0
+                let message_ptr = builder.ins().load(
+                    cranelift::prelude::types::I64,
+                    MemFlags::new(),
+                    recv,
+                    0,
+                );
+                Ok(message_ptr)
+            } else {
+                Err(CodegenError::JitCompile("message() is only available on exception types".to_string()))
+            }
+        }
         _ => {
             // Try to look up user-defined method
             let receiver_type = ctx.annotations.get_type(receiver.span());
@@ -4036,6 +4125,75 @@ extern "C" fn naml_print_int(val: i64) {
 
 extern "C" fn naml_print_float(val: f64) {
     print!("{}", val);
+}
+
+// Exception handling helper functions
+fn call_exception_set(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    exception_ptr: Value,
+) -> Result<(), CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_exception_set", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_set: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[exception_ptr]);
+    Ok(())
+}
+
+fn call_exception_get(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+
+    let mut sig = ctx.module.make_signature();
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_exception_get", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_get: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_exception_clear(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<(), CodegenError> {
+    let sig = ctx.module.make_signature();
+
+    let func_id = ctx.module
+        .declare_function("naml_exception_clear", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_clear: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[]);
+    Ok(())
+}
+
+fn call_exception_check(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<Value, CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_exception_check", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_check: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[]);
+    Ok(builder.inst_results(call)[0])
 }
 
 extern "C" fn naml_print_str(ptr: *const i8) {

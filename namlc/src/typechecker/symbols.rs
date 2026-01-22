@@ -27,7 +27,7 @@ pub struct FunctionSig {
     pub type_params: Vec<TypeParam>,
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
-    pub throws: Option<Type>,
+    pub throws: Vec<Type>,
     pub is_public: bool,
     pub is_variadic: bool,
     pub span: Span,
@@ -41,7 +41,7 @@ pub struct MethodSig {
     pub type_params: Vec<TypeParam>,
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
-    pub throws: Option<Type>,
+    pub throws: Vec<Type>,
     pub is_public: bool,
     pub span: Span,
 }
@@ -89,7 +89,7 @@ pub struct InterfaceMethodDef {
     pub type_params: Vec<TypeParam>,
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
-    pub throws: Option<Type>,
+    pub throws: Vec<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +147,10 @@ impl SymbolTable {
             .find(|m| m.name == method_name)
     }
 
+    pub fn all_types(&self) -> impl Iterator<Item = (&Spur, &TypeDef)> {
+        self.types.iter()
+    }
+
     pub fn to_struct_type(&self, def: &StructDef) -> StructType {
         StructType {
             name: def.name,
@@ -201,7 +205,7 @@ impl SymbolTable {
         FunctionType {
             params: sig.params.iter().map(|(_, ty)| ty.clone()).collect(),
             returns: Box::new(sig.return_ty.clone()),
-            throws: sig.throws.clone().map(Box::new),
+            throws: sig.throws.clone(),
             is_variadic: sig.is_variadic,
         }
     }
@@ -230,7 +234,7 @@ mod tests {
             type_params: vec![],
             params: vec![],
             return_ty: Type::Unit,
-            throws: None,
+            throws: vec![],
             is_public: true,
             is_variadic: false,
             span: Span::dummy(),
@@ -283,7 +287,7 @@ mod tests {
                 type_params: vec![],
                 params: vec![],
                 return_ty: Type::Float,
-                throws: None,
+                throws: vec![],
                 is_public: true,
                 span: Span::dummy(),
             },

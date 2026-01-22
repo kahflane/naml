@@ -203,6 +203,14 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "error".to_string(),
             None,
         ),
+        TypeError::MissingInterfaceMethod { struct_name, interface_name, method_name, .. } => (
+            format!(
+                "struct '{}' is missing method '{}' required by interface '{}'",
+                struct_name, method_name, interface_name
+            ),
+            format!("missing method '{}'", method_name),
+            Some(format!("implement '{}' for struct '{}'", method_name, struct_name)),
+        ),
     }
 }
 

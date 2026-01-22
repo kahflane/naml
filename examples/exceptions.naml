@@ -1,5 +1,5 @@
 // Exceptions Example
-// Demonstrates exception syntax parsing and null coalescing operator
+// Demonstrates full exception handling with throw and catch
 
 // Define custom exception types
 exception DivisionByZero {
@@ -11,10 +11,23 @@ exception InvalidInput {
     reason: string,
 }
 
-// Simple division without throwing (for testing basic flow)
-fn safe_divide(a: int, b: int) -> int {
+// Function that throws on divide by zero
+fn divide(a: int, b: int) -> int throws DivisionByZero {
     if (b == 0) {
-        return 0;
+        var ex = DivisionByZero("Cannot divide by zero");
+        ex.dividend = a;
+        throw ex;
+    }
+    return a / b;
+}
+
+// Function that throws on negative input
+fn safe_divide(a: int, b: int) -> int throws DivisionByZero, InvalidInput {
+    if (a < 0) {
+        throw InvalidInput("Dividend must be non-negative");
+    }
+    if (b == 0) {
+        throw DivisionByZero("Cannot divide by zero");
     }
     return a / b;
 }
@@ -24,39 +37,45 @@ fn main() {
     println("============================");
     println("");
 
-    // Example 1: Normal division with catch (no exception thrown)
+    // Example 1: Normal division (no exception)
     println("Example 1: Normal division");
-    var result1 = safe_divide(10, 2) catch e {
+    var result1 = divide(10, 2) catch e {
         println("Error caught!");
     } ?? -999;
     println("10 / 2 =");
     println(result1);
     println("");
 
-    // Example 2: Division with zero divisor (returns 0, not exception)
-    println("Example 2: Division with zero divisor");
-    var result2 = safe_divide(10, 0) catch e {
-        println("This won't run");
+    // Example 2: Division by zero with catch
+    println("Example 2: Division by zero with catch");
+    var result2 = divide(10, 0) catch e {
+        println("Caught exception!");
+        println("Exception message:");
+        println(e.message());
+        println("Exception dividend field:");
+        println(e.dividend);
     } ?? -1;
-    println("10 / 0 =");
+    println("10 / 0 (default -1) =");
     println(result2);
     println("");
 
-    // Example 3: Testing ?? with a variable
-    println("Example 3: Null coalescing");
-    var x = 42;
-    var result3 = x ?? 0;
-    println("x ?? 0 =");
+    // Example 3: Multiple exception types
+    println("Example 3: Negative input");
+    var result3 = safe_divide(-5, 2) catch e {
+        println("Caught exception!");
+    } ?? 0;
+    println("Result (default 0):");
     println(result3);
     println("");
 
-    // Example 4: Exception constructor (syntax test)
-    println("Example 4: Exception constructor");
-    var ex = DivisionByZero("Test exception");
-    ex.dividend = 100;
-    println("Exception created with dividend:");
-    println(ex.dividend);
-    println("");
+    // Example 4: Nested function with throw
+    println("Example 4: Another division by zero");
+    var result4 = safe_divide(10, 0) catch e {
+        println("Division by zero caught!");
+    } ?? -2;
+    println("Result (default -2):");
+    println(result4);
 
+    println("");
     println("Examples completed!");
 }
