@@ -147,7 +147,7 @@ fn parse_atom<'a, 'ast>(
         Some(TokenKind::Keyword(Keyword::If)) => parse_if_expr(arena, input),
         Some(TokenKind::Keyword(Keyword::Spawn)) => parse_spawn_expr(arena, input),
         Some(TokenKind::Keyword(Keyword::Try)) => parse_try_expr(arena, input),
-        Some(TokenKind::Pipe | TokenKind::PipePipe) => parse_lambda_expr(arena, input),
+        Some(TokenKind::Keyword(Keyword::Fn)) => parse_lambda_expr(arena, input),
         _ => Err(nom::Err::Error(PError {
             input,
             kind: PErrorKind::ExpectedExpr,
@@ -582,17 +582,11 @@ fn parse_lambda_expr<'a, 'ast>(
     arena: &'ast AstArena,
     input: TokenStream<'a>,
 ) -> PResult<'a, Expression<'ast>> {
-    let start_span = input.current_span();
+    let (input, start) = keyword(Keyword::Fn)(input)?;
 
-    let (input, params) = if check(TokenKind::PipePipe)(input) {
-        let (input, _) = token(TokenKind::PipePipe)(input)?;
-        (input, Vec::new())
-    } else {
-        let (input, _) = token(TokenKind::Pipe)(input)?;
-        let (input, params) = parse_lambda_params(input)?;
-        let (input, _) = token(TokenKind::Pipe)(input)?;
-        (input, params)
-    };
+    let (input, _) = token(TokenKind::LParen)(input)?;
+    let (input, params) = parse_lambda_params(input)?;
+    let (input, _) = token(TokenKind::RParen)(input)?;
 
     let (input, return_ty) = if check(TokenKind::Arrow)(input) {
         let (input, _) = token(TokenKind::Arrow)(input)?;
@@ -602,8 +596,10 @@ fn parse_lambda_expr<'a, 'ast>(
         (input, None)
     };
 
-    let (input, body) = parse_expression(arena, input)?;
-    let span = start_span.merge(body.span());
+    let (input, brace_start) = token(TokenKind::LBrace)(input)?;
+    let (input, body) = parse_block_inner(arena, input, brace_start.span)?;
+    let body_span = body.span();
+    let span = start.span.merge(body_span);
 
     Ok((
         input,
@@ -620,7 +616,7 @@ fn parse_lambda_params(input: TokenStream) -> PResult<Vec<LambdaParam>> {
     let mut params = Vec::new();
     let mut input = input;
 
-    if check(TokenKind::Pipe)(input) {
+    if check(TokenKind::RParen)(input) {
         return Ok((input, params));
     }
 

@@ -698,7 +698,7 @@ mod tests {
     #[test]
     fn test_lambda() {
         let errors = check_source(
-            "fn main() { var f = |x: int| x + 1; }",
+            "fn main() { var f = fn(x: int) -> int { return x + 1; }; }",
         );
         assert!(errors.is_empty());
     }

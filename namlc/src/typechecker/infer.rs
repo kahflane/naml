@@ -1043,16 +1043,32 @@ impl<'a> TypeInferrer<'a> {
             param_types.push(ty);
         }
 
+        let expected_return_ty = if let Some(ret) = &lambda.return_ty {
+            self.convert_ast_type(ret)
+        } else {
+            fresh_type_var(self.next_var_id)
+        };
+
+        self.env
+            .enter_function(expected_return_ty.clone(), None, &[]);
+
         let body_ty = self.infer_expr(&lambda.body);
 
-        let return_ty = if let Some(ret) = &lambda.return_ty {
-            let expected = self.convert_ast_type(ret);
-            if let Err(e) = unify(&body_ty, &expected, lambda.span) {
-                self.errors.push(e);
+        self.env.exit_function();
+
+        let return_ty = if lambda.return_ty.is_some() {
+            if let Err(e) = unify(&body_ty, &expected_return_ty, lambda.span) {
+                if !matches!(body_ty, Type::Unit) {
+                    self.errors.push(e);
+                }
             }
-            expected
+            expected_return_ty
         } else {
-            body_ty
+            if let Err(_) = unify(&body_ty, &expected_return_ty, lambda.span) {
+                body_ty
+            } else {
+                expected_return_ty.resolve()
+            }
         };
 
         self.env.pop_scope();

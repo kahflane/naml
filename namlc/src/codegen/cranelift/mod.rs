@@ -63,6 +63,17 @@ pub struct SpawnBlockInfo {
 
 unsafe impl Send for SpawnBlockInfo {}
 
+#[derive(Clone)]
+pub struct LambdaInfo {
+    pub id: u32,
+    pub func_name: String,
+    pub captured_vars: Vec<String>,
+    pub param_names: Vec<String>,
+    pub body_ptr: *const crate::ast::Expression<'static>,
+}
+
+unsafe impl Send for LambdaInfo {}
+
 pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
     #[allow(dead_code)]
@@ -78,6 +89,8 @@ pub struct JitCompiler<'a> {
     next_type_id: u32,
     spawn_counter: u32,
     spawn_blocks: HashMap<u32, SpawnBlockInfo>,
+    lambda_counter: u32,
+    lambda_blocks: HashMap<u32, LambdaInfo>,
 }
 
 impl<'a> JitCompiler<'a> {
@@ -206,6 +219,8 @@ impl<'a> JitCompiler<'a> {
             next_type_id: 0,
             spawn_counter: 0,
             spawn_blocks: HashMap::new(),
+            lambda_counter: 0,
+            lambda_blocks: HashMap::new(),
         })
     }
 
@@ -303,6 +318,17 @@ impl<'a> JitCompiler<'a> {
         // Compile spawn trampolines (must be done before regular functions)
         for info in self.spawn_blocks.clone().values() {
             self.compile_spawn_trampoline(info)?;
+        }
+
+        // Declare lambda functions
+        for (id, info) in &self.lambda_blocks.clone() {
+            self.declare_lambda_function(info)?;
+            let _ = id; // suppress unused warning
+        }
+
+        // Compile lambda functions (must be done before regular functions)
+        for info in self.lambda_blocks.clone().values() {
+            self.compile_lambda_function(info)?;
         }
 
         for item in &ast.items {
@@ -589,6 +615,32 @@ impl<'a> JitCompiler<'a> {
                 // Also scan inside spawn block for nested spawns
                 self.scan_for_spawn_blocks_expr(&spawn_expr.body)?;
             }
+            Expression::Lambda(lambda_expr) => {
+                // Found a lambda - collect captured variables
+                let captured = self.collect_captured_vars_for_lambda(lambda_expr);
+                let id = self.lambda_counter;
+                self.lambda_counter += 1;
+                let func_name = format!("__lambda_{}", id);
+
+                // Collect parameter names
+                let param_names: Vec<String> = lambda_expr.params.iter()
+                    .map(|p| self.interner.resolve(&p.name.symbol).to_string())
+                    .collect();
+
+                // Store raw pointer to body for deferred lambda compilation
+                let body_ptr = lambda_expr.body as *const crate::ast::Expression<'_> as *const crate::ast::Expression<'static>;
+
+                self.lambda_blocks.insert(id, LambdaInfo {
+                    id,
+                    func_name,
+                    captured_vars: captured,
+                    param_names,
+                    body_ptr,
+                });
+
+                // Scan lambda body for nested spawns/lambdas
+                self.scan_expression_for_spawns(&lambda_expr.body)?;
+            }
             Expression::Binary(bin) => {
                 self.scan_expression_for_spawns(&bin.left)?;
                 self.scan_expression_for_spawns(&bin.right)?;
@@ -663,6 +715,22 @@ impl<'a> JitCompiler<'a> {
         let mut captured = Vec::new();
         let mut defined = std::collections::HashSet::new();
         self.collect_vars_in_block_expr(block, &mut captured, &mut defined);
+        captured
+    }
+
+    fn collect_captured_vars_for_lambda(&self, lambda: &crate::ast::LambdaExpr<'_>) -> Vec<String> {
+        let mut captured = Vec::new();
+        let mut defined = std::collections::HashSet::new();
+
+        // Lambda parameters are defined within the lambda scope
+        for param in &lambda.params {
+            let name = self.interner.resolve(&param.name.symbol).to_string();
+            defined.insert(name);
+        }
+
+        // Collect from body (which is an Expression - typically a Block)
+        self.collect_vars_in_expression(&lambda.body, &mut captured, &defined);
+
         captured
     }
 
@@ -782,6 +850,25 @@ impl<'a> JitCompiler<'a> {
             Expression::Grouped(grouped) => {
                 self.collect_vars_in_expression(&grouped.inner, captured, defined);
             }
+            Expression::Block(block) => {
+                // Create a new defined set for block scope
+                let mut block_defined = defined.clone();
+                for stmt in &block.statements {
+                    self.collect_vars_in_statement(stmt, captured, &mut block_defined);
+                }
+                if let Some(tail) = block.tail {
+                    self.collect_vars_in_expression(tail, captured, &block_defined);
+                }
+            }
+            Expression::Lambda(lambda) => {
+                // Lambda creates its own scope - capture variables from outer scope
+                let mut lambda_defined = defined.clone();
+                for param in &lambda.params {
+                    let name = self.interner.resolve(&param.name.symbol).to_string();
+                    lambda_defined.insert(name);
+                }
+                self.collect_vars_in_expression(&lambda.body, captured, &lambda_defined);
+            }
             _ => {}
         }
     }
@@ -833,6 +920,8 @@ impl<'a> JitCompiler<'a> {
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
             current_spawn_id: 0, // Not used in trampolines
+            lambda_blocks: &self.lambda_blocks,
+            current_lambda_id: 0,
             annotations: self.annotations,
         };
 
@@ -875,6 +964,117 @@ impl<'a> JitCompiler<'a> {
         self.module
             .define_function(func_id, &mut self.ctx)
             .map_err(|e| CodegenError::JitCompile(format!("Failed to define trampoline '{}': {}", info.func_name, e)))?;
+
+        self.module.clear_context(&mut self.ctx);
+
+        Ok(())
+    }
+
+    fn declare_lambda_function(&mut self, info: &LambdaInfo) -> Result<FuncId, CodegenError> {
+        let mut sig = self.module.make_signature();
+
+        // First parameter: closure data pointer
+        sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+
+        // Lambda parameters (all as i64 for now)
+        for _ in &info.param_names {
+            sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+        }
+
+        // Return type (i64 for now)
+        sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+        let func_id = self.module
+            .declare_function(&info.func_name, Linkage::Local, &sig)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to declare lambda '{}': {}", info.func_name, e)))?;
+
+        self.functions.insert(info.func_name.clone(), func_id);
+
+        Ok(func_id)
+    }
+
+    fn compile_lambda_function(&mut self, info: &LambdaInfo) -> Result<(), CodegenError> {
+        let func_id = *self.functions.get(&info.func_name)
+            .ok_or_else(|| CodegenError::JitCompile(format!("Lambda '{}' not declared", info.func_name)))?;
+
+        self.ctx.func.signature = self.module.declarations().get_function_decl(func_id).signature.clone();
+        self.ctx.func.name = cranelift_codegen::ir::UserFuncName::user(0, func_id.as_u32());
+
+        let mut builder_ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
+
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        builder.seal_block(entry_block);
+
+        let block_params = builder.block_params(entry_block).to_vec();
+        // First param is closure data pointer
+        let data_ptr = block_params[0];
+
+        let mut ctx = CompileContext {
+            interner: self.interner,
+            module: &mut self.module,
+            functions: &self.functions,
+            struct_defs: &self.struct_defs,
+            enum_defs: &self.enum_defs,
+            extern_fns: &self.extern_fns,
+            variables: HashMap::new(),
+            var_heap_types: HashMap::new(),
+            var_counter: 0,
+            block_terminated: false,
+            loop_exit_block: None,
+            loop_header_block: None,
+            spawn_blocks: &self.spawn_blocks,
+            current_spawn_id: 0,
+            lambda_blocks: &self.lambda_blocks,
+            current_lambda_id: 0,
+            annotations: self.annotations,
+        };
+
+        // Load captured variables from closure data
+        for (i, var_name) in info.captured_vars.iter().enumerate() {
+            let var = Variable::new(ctx.var_counter);
+            ctx.var_counter += 1;
+            builder.declare_var(var, cranelift::prelude::types::I64);
+
+            // Load value from closure data: data_ptr + (i * 8)
+            let offset = builder.ins().iconst(cranelift::prelude::types::I64, (i * 8) as i64);
+            let addr = builder.ins().iadd(data_ptr, offset);
+            let val = builder.ins().load(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                addr,
+                0,
+            );
+            builder.def_var(var, val);
+            ctx.variables.insert(var_name.clone(), var);
+        }
+
+        // Define lambda parameters (starting from param 1, since param 0 is closure data)
+        for (i, param_name) in info.param_names.iter().enumerate() {
+            let var = Variable::new(ctx.var_counter);
+            ctx.var_counter += 1;
+            builder.declare_var(var, cranelift::prelude::types::I64);
+            // Parameter i+1 because param 0 is the closure data
+            builder.def_var(var, block_params[i + 1]);
+            ctx.variables.insert(param_name.clone(), var);
+        }
+
+        // Compile the lambda body (which is an Expression)
+        let body = unsafe { &*info.body_ptr };
+        let result = compile_expression(&mut ctx, &mut builder, body)?;
+
+        // Return the result
+        if !ctx.block_terminated {
+            builder.ins().return_(&[result]);
+        }
+
+        builder.finalize();
+
+        self.module
+            .define_function(func_id, &mut self.ctx)
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to define lambda '{}': {}", info.func_name, e)))?;
 
         self.module.clear_context(&mut self.ctx);
 
@@ -936,6 +1136,8 @@ impl<'a> JitCompiler<'a> {
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
             current_spawn_id: 0,
+            lambda_blocks: &self.lambda_blocks,
+            current_lambda_id: 0,
             annotations: self.annotations,
         };
 
@@ -1059,6 +1261,8 @@ struct CompileContext<'a> {
     loop_header_block: Option<Block>,
     spawn_blocks: &'a HashMap<u32, SpawnBlockInfo>,
     current_spawn_id: u32,
+    lambda_blocks: &'a HashMap<u32, LambdaInfo>,
+    current_lambda_id: u32,
     annotations: &'a TypeAnnotations,
 }
 
@@ -1807,6 +2011,53 @@ fn compile_expression(
                 else if let Some(extern_fn) = ctx.extern_fns.get(func_name).cloned() {
                     compile_extern_call(ctx, builder, &extern_fn, &call.args)
                 }
+                // Check for closure (lambda) variable
+                else if let Some(&var) = ctx.variables.get(func_name) {
+                    // This is a closure call - load the closure struct
+                    let closure_ptr = builder.use_var(var);
+
+                    // Load function pointer from offset 0
+                    let func_ptr = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        closure_ptr,
+                        0,
+                    );
+
+                    // Load data pointer from offset 8
+                    let data_ptr = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        closure_ptr,
+                        8,
+                    );
+
+                    // Build signature for indirect call: (closure_data_ptr, ...args) -> i64
+                    let mut sig = ctx.module.make_signature();
+                    sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // closure data
+                    for _ in &call.args {
+                        sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+                    }
+                    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+                    let sig_ref = builder.import_signature(sig);
+
+                    // Build arguments: first is data_ptr, then actual args
+                    let mut args = vec![data_ptr];
+                    for arg in &call.args {
+                        args.push(compile_expression(ctx, builder, arg)?);
+                    }
+
+                    // Indirect call through function pointer
+                    let call_inst = builder.ins().call_indirect(sig_ref, func_ptr, &args);
+                    let results = builder.inst_results(call_inst);
+
+                    if results.is_empty() {
+                        Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+                    } else {
+                        Ok(results[0])
+                    }
+                }
                 else {
                     Err(CodegenError::JitCompile(format!("Unknown function: {}", func_name)))
                 }
@@ -1864,6 +2115,32 @@ fn compile_expression(
 
         Expression::Grouped(grouped) => {
             compile_expression(ctx, builder, &grouped.inner)
+        }
+
+        Expression::Block(block) => {
+            // Compile all statements in the block
+            for stmt in &block.statements {
+                compile_statement(ctx, builder, stmt)?;
+                if ctx.block_terminated {
+                    // Block already terminated (e.g., return statement)
+                    // The block already has a terminator - create an unreachable block for any remaining code
+                    let unreachable_block = builder.create_block();
+                    builder.switch_to_block(unreachable_block);
+                    builder.seal_block(unreachable_block);
+                    // Create a dummy value FIRST (before the trap)
+                    let dummy = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    // Then terminate with trap (using unwrap_user trap code for unreachable)
+                    builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(1));
+                    return Ok(dummy);
+                }
+            }
+            // If there's a tail expression, compile and return it
+            if let Some(tail) = &block.tail {
+                compile_expression(ctx, builder, tail)
+            } else {
+                // Return unit/0 for blocks with no tail expression
+                Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+            }
         }
 
         Expression::Array(arr_expr) => {
@@ -2008,6 +2285,64 @@ fn compile_expression(
 
             // Store inner value at offset 8
             builder.ins().store(MemFlags::new(), inner_val, slot_addr, 8);
+
+            Ok(slot_addr)
+        }
+
+        Expression::Lambda(_lambda_expr) => {
+            // Get lambda info from the tracked lambdas
+            let lambda_id = ctx.current_lambda_id;
+            ctx.current_lambda_id += 1;
+
+            let info = ctx.lambda_blocks.get(&lambda_id)
+                .ok_or_else(|| CodegenError::JitCompile(format!("Lambda {} not found", lambda_id)))?
+                .clone();
+
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            // Calculate closure data size (8 bytes per captured variable)
+            let data_size = info.captured_vars.len() * 8;
+            let data_size_val = builder.ins().iconst(cranelift::prelude::types::I64, data_size as i64);
+
+            // Allocate closure data
+            let data_ptr = if data_size > 0 {
+                call_alloc_closure_data(ctx, builder, data_size_val)?
+            } else {
+                builder.ins().iconst(ptr_type, 0)
+            };
+
+            // Store captured variables in closure data (by value)
+            for (i, var_name) in info.captured_vars.iter().enumerate() {
+                if let Some(&var) = ctx.variables.get(var_name) {
+                    let val = builder.use_var(var);
+                    let offset = builder.ins().iconst(ptr_type, (i * 8) as i64);
+                    let addr = builder.ins().iadd(data_ptr, offset);
+                    builder.ins().store(MemFlags::new(), val, addr, 0);
+                }
+            }
+
+            // Get function pointer
+            let lambda_func_id = ctx.functions.get(&info.func_name)
+                .ok_or_else(|| CodegenError::JitCompile(format!("Lambda function '{}' not found", info.func_name)))?;
+            let func_ref = ctx.module.declare_func_in_func(*lambda_func_id, builder.func);
+            let func_addr = builder.ins().func_addr(ptr_type, func_ref);
+
+            // Allocate closure struct on stack: 24 bytes (func_ptr, data_ptr, data_size)
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                24,
+                0,
+            ));
+            let slot_addr = builder.ins().stack_addr(ptr_type, slot, 0);
+
+            // Store function pointer at offset 0
+            builder.ins().store(MemFlags::new(), func_addr, slot_addr, 0);
+
+            // Store data pointer at offset 8
+            builder.ins().store(MemFlags::new(), data_ptr, slot_addr, 8);
+
+            // Store data size at offset 16
+            builder.ins().store(MemFlags::new(), data_size_val, slot_addr, 16);
 
             Ok(slot_addr)
         }
