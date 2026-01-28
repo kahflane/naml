@@ -8,23 +8,6 @@
 
 mod types;
 
-fn timing_enabled() -> bool {
-    std::env::var("NAML_TIMING").is_ok()
-}
-
-macro_rules! timed {
-    ($name:expr, $body:expr) => {{
-        if timing_enabled() {
-            let start = std::time::Instant::now();
-            let result = $body;
-            eprintln!("  {}: {:.2}ms", $name, start.elapsed().as_secs_f64() * 1000.0);
-            result
-        } else {
-            $body
-        }
-    }};
-}
-
 use std::collections::{HashMap, HashSet};
 
 use cranelift::prelude::*;
@@ -431,8 +414,6 @@ impl<'a> JitCompiler<'a> {
     }
 
     pub fn compile(&mut self, ast: &'a SourceFile<'a>) -> Result<(), CodegenError> {
-        let compile_start = std::time::Instant::now();
-
         // First pass: collect struct definitions with field heap types
         for item in &ast.items {
             if let crate::ast::Item::Struct(struct_item) = item {
@@ -559,8 +540,6 @@ impl<'a> JitCompiler<'a> {
             self.compile_lambda_function(info)?;
         }
 
-        let decl_start = std::time::Instant::now();
-
         // Declare all functions first (standalone and methods)
         // Skip generic functions - they will be monomorphized
         for item in &ast.items {
@@ -581,12 +560,6 @@ impl<'a> JitCompiler<'a> {
         // Process monomorphizations - declare and compile specialized versions
         self.process_monomorphizations()?;
 
-        if timing_enabled() {
-            eprintln!("    declare functions: {:.2}ms", decl_start.elapsed().as_secs_f64() * 1000.0);
-        }
-
-        let compile_funcs_start = std::time::Instant::now();
-
         // Compile standalone functions (skip generic functions)
         for item in &ast.items {
             if let Item::Function(f) = item
@@ -601,11 +574,6 @@ impl<'a> JitCompiler<'a> {
                 && f.receiver.is_some() && f.body.is_some() {
                     self.compile_method(f)?;
                 }
-        }
-
-        if timing_enabled() {
-            eprintln!("    compile functions: {:.2}ms", compile_funcs_start.elapsed().as_secs_f64() * 1000.0);
-            eprintln!("  total compile: {:.2}ms", compile_start.elapsed().as_secs_f64() * 1000.0);
         }
 
         Ok(())
@@ -1767,27 +1735,16 @@ impl<'a> JitCompiler<'a> {
     }
 
     pub fn run_main(&mut self) -> Result<(), CodegenError> {
-        let finalize_start = std::time::Instant::now();
-
         self.module.finalize_definitions()
             .map_err(|e| CodegenError::JitCompile(format!("Failed to finalize: {}", e)))?;
-
-        if timing_enabled() {
-            eprintln!("  finalize definitions: {:.2}ms", finalize_start.elapsed().as_secs_f64() * 1000.0);
-        }
 
         let main_id = self.functions.get("main")
             .ok_or_else(|| CodegenError::Execution("No main function found".to_string()))?;
 
         let main_ptr = self.module.get_finalized_function(*main_id);
 
-        let exec_start = std::time::Instant::now();
         let main_fn: fn() = unsafe { std::mem::transmute(main_ptr) };
         main_fn();
-
-        if timing_enabled() {
-            eprintln!("  execute main: {:.2}ms", exec_start.elapsed().as_secs_f64() * 1000.0);
-        }
 
         Ok(())
     }

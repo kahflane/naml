@@ -24,3 +24,4 @@ settings.local.json
 
 .worktrees/
 benches/
+scripts/
