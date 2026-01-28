@@ -31,7 +31,7 @@ fn main() {
     var numbers: [int] = [1,2,3,4];
     var first: int = numbers[0];      // Indexing
     var len: int = numbers.len();     // Length
-    print("Length {}",len);
+    print("Length {}\n",len);
     numbers.push(6);                   // Append
     var last: option<int> = numbers.pop();    // Remove last
     print("{} \n",last ?? -1);

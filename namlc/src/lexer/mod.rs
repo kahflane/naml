@@ -695,8 +695,31 @@ impl<'a> Lexer<'a> {
             let symbol = self.interner.get_or_intern(text);
             Token::with_symbol(kind, span, symbol)
         } else if kind == TokenKind::StringLit {
-            let text = &self.source[(start as usize + 1)..(end as usize - 1)];
-            let symbol = self.interner.get_or_intern(text);
+            let raw = &self.source[(start as usize + 1)..(end as usize - 1)];
+            let text = if raw.contains('\\') {
+                let mut result = String::with_capacity(raw.len());
+                let mut chars = raw.chars();
+                while let Some(c) = chars.next() {
+                    if c == '\\' {
+                        match chars.next() {
+                            Some('n') => result.push('\n'),
+                            Some('t') => result.push('\t'),
+                            Some('r') => result.push('\r'),
+                            Some('\\') => result.push('\\'),
+                            Some('"') => result.push('"'),
+                            Some('0') => result.push('\0'),
+                            Some(other) => { result.push('\\'); result.push(other); }
+                            None => result.push('\\'),
+                        }
+                    } else {
+                        result.push(c);
+                    }
+                }
+                std::borrow::Cow::Owned(result)
+            } else {
+                std::borrow::Cow::Borrowed(raw)
+            };
+            let symbol = self.interner.get_or_intern(text.as_ref());
             Token::with_symbol(kind, span, symbol)
         } else {
             Token::new(kind, span)
