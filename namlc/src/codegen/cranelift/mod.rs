@@ -8,10 +8,27 @@
 
 mod types;
 
+fn timing_enabled() -> bool {
+    std::env::var("NAML_TIMING").is_ok()
+}
+
+macro_rules! timed {
+    ($name:expr, $body:expr) => {{
+        if timing_enabled() {
+            let start = std::time::Instant::now();
+            let result = $body;
+            eprintln!("  {}: {:.2}ms", $name, start.elapsed().as_secs_f64() * 1000.0);
+            result
+        } else {
+            $body
+        }
+    }};
+}
+
 use std::collections::{HashMap, HashSet};
 
 use cranelift::prelude::*;
-use cranelift_codegen::ir::AtomicRmwOp;
+use cranelift_codegen::ir::{AtomicRmwOp, FuncRef};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataDescription, FuncId, Linkage, Module};
 use lasso::Rodeo;
@@ -74,6 +91,12 @@ pub struct LambdaInfo {
 
 unsafe impl Send for LambdaInfo {}
 
+// NamlArray struct layout offsets (must match runtime/array.rs)
+// NamlArray: header(16) + len(8) + capacity(8) + data(8)
+const ARRAY_LEN_OFFSET: i32 = 16;
+const ARRAY_CAPACITY_OFFSET: i32 = 24;
+const ARRAY_DATA_OFFSET: i32 = 32;
+
 pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
     annotations: &'a TypeAnnotations,
@@ -81,6 +104,7 @@ pub struct JitCompiler<'a> {
     module: JITModule,
     ctx: codegen::Context,
     functions: HashMap<String, FuncId>,
+    runtime_funcs: HashMap<String, FuncId>,
     struct_defs: HashMap<String, StructDef>,
     enum_defs: HashMap<String, EnumDef>,
     exception_names: HashSet<String>,
@@ -249,13 +273,14 @@ impl<'a> JitCompiler<'a> {
             size: 16, // 8 (tag+pad) + 8 (data)
         });
 
-        Ok(Self {
+        let mut compiler = Self {
             interner,
             annotations,
             symbols,
             module,
             ctx,
             functions: HashMap::new(),
+            runtime_funcs: HashMap::new(),
             struct_defs: HashMap::new(),
             enum_defs,
             exception_names: HashSet::new(),
@@ -266,10 +291,148 @@ impl<'a> JitCompiler<'a> {
             lambda_counter: 0,
             lambda_blocks: HashMap::new(),
             generic_functions: HashMap::new(),
-        })
+        };
+        compiler.declare_runtime_functions()?;
+        Ok(compiler)
+    }
+
+    fn declare_runtime_functions(&mut self) -> Result<(), CodegenError> {
+        let ptr = self.module.target_config().pointer_type();
+        let i64t = cranelift::prelude::types::I64;
+        let f64t = cranelift::prelude::types::F64;
+        let i32t = cranelift::prelude::types::I32;
+
+        let declare = |module: &mut JITModule, cache: &mut HashMap<String, FuncId>,
+                       name: &str, params: &[cranelift::prelude::Type], returns: &[cranelift::prelude::Type]| -> Result<(), CodegenError> {
+            let mut sig = module.make_signature();
+            for &p in params { sig.params.push(AbiParam::new(p)); }
+            for &r in returns { sig.returns.push(AbiParam::new(r)); }
+            let func_id = module
+                .declare_function(name, Linkage::Import, &sig)
+                .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", name, e)))?;
+            cache.insert(name.to_string(), func_id);
+            Ok(())
+        };
+
+        // Print functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_print_int", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_print_float", &[f64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_print_str", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_print", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_print_newline", &[], &[])?;
+
+        // String functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_concat", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_eq", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_from_cstr", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_char_len", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_char_at", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_decref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_bytes", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_to_string", &[ptr], &[ptr])?;
+
+        // Type conversion
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_int_to_string", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_float_to_string", &[f64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_int", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_float", &[ptr], &[f64t])?;
+
+        // I/O
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_read_line", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_read_key", &[], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_clear_screen", &[], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_set_cursor", &[i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_hide_cursor", &[], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_show_cursor", &[], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_terminal_width", &[], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_terminal_height", &[], &[i64t])?;
+
+        // Array functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_new", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_from", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_push", &[ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_get", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_set", &[ptr, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_len", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_pop", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref_strings", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref_arrays", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref_maps", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref_structs", &[ptr], &[])?;
+
+        // Map functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_new", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_set", &[ptr, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_set_string", &[ptr, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_set_array", &[ptr, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_set_map", &[ptr, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_set_struct", &[ptr, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_get", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_contains", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_len", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_decref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_decref_strings", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_decref_arrays", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_decref_maps", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_map_decref_structs", &[ptr], &[])?;
+
+        // Struct functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_struct_new", &[i32t, i32t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_struct_get_field", &[ptr, i32t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_struct_set_field", &[ptr, i32t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_struct_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_struct_decref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_struct_free", &[ptr], &[])?;
+
+        // Channel functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_channel_new", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_channel_send", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_channel_receive", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_channel_close", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_channel_len", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_channel_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_channel_decref", &[ptr], &[])?;
+
+        // Scheduler/runtime
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_spawn", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_spawn_closure", &[ptr, ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_alloc_closure_data", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_wait_all", &[], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_sleep", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_random", &[i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_random_float", &[], &[f64t])?;
+
+        // Diagnostics
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_warn", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_error", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_panic", &[ptr], &[])?;
+
+        // Exception handling
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_exception_set", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_exception_get", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_exception_clear", &[], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_exception_check", &[], &[i64t])?;
+
+        // Bytes operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_new", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_from", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_len", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_get", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_set", &[ptr, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_decref", &[ptr], &[])?;
+
+        Ok(())
     }
 
     pub fn compile(&mut self, ast: &'a SourceFile<'a>) -> Result<(), CodegenError> {
+        let compile_start = std::time::Instant::now();
+
         // First pass: collect struct definitions with field heap types
         for item in &ast.items {
             if let crate::ast::Item::Struct(struct_item) = item {
@@ -396,6 +559,8 @@ impl<'a> JitCompiler<'a> {
             self.compile_lambda_function(info)?;
         }
 
+        let decl_start = std::time::Instant::now();
+
         // Declare all functions first (standalone and methods)
         // Skip generic functions - they will be monomorphized
         for item in &ast.items {
@@ -416,6 +581,12 @@ impl<'a> JitCompiler<'a> {
         // Process monomorphizations - declare and compile specialized versions
         self.process_monomorphizations()?;
 
+        if timing_enabled() {
+            eprintln!("    declare functions: {:.2}ms", decl_start.elapsed().as_secs_f64() * 1000.0);
+        }
+
+        let compile_funcs_start = std::time::Instant::now();
+
         // Compile standalone functions (skip generic functions)
         for item in &ast.items {
             if let Item::Function(f) = item
@@ -430,6 +601,11 @@ impl<'a> JitCompiler<'a> {
                 && f.receiver.is_some() && f.body.is_some() {
                     self.compile_method(f)?;
                 }
+        }
+
+        if timing_enabled() {
+            eprintln!("    compile functions: {:.2}ms", compile_funcs_start.elapsed().as_secs_f64() * 1000.0);
+            eprintln!("  total compile: {:.2}ms", compile_start.elapsed().as_secs_f64() * 1000.0);
         }
 
         Ok(())
@@ -560,9 +736,6 @@ impl<'a> JitCompiler<'a> {
         // - fields[]: i64 (offset 24+)
         let base_field_offset: i32 = 24; // sizeof(HeapHeader) + type_id + field_count
 
-        let mut decref_sig = self.module.make_signature();
-        decref_sig.params.push(AbiParam::new(ptr_type));
-
         for (field_idx, heap_type) in struct_def.field_heap_types.iter().enumerate() {
             if let Some(ht) = heap_type {
                 let field_offset = base_field_offset + (field_idx as i32 * 8);
@@ -600,10 +773,8 @@ impl<'a> JitCompiler<'a> {
                     HeapType::Struct(Some(_)) => "naml_struct_decref"
                 };
 
-                let decref_func_id = self.module
-                    .declare_function(decref_func_name, Linkage::Import, &decref_sig)
-                    .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", decref_func_name, e)))?;
-
+                let decref_func_id = *self.runtime_funcs.get(decref_func_name)
+                    .ok_or_else(|| CodegenError::JitCompile(format!("Unknown runtime function: {}", decref_func_name)))?;
                 let decref_func_ref = self.module.declare_func_in_func(decref_func_id, builder.func);
                 builder.ins().call(decref_func_ref, &[field_val]);
                 builder.ins().jump(next_field_block, &[]);
@@ -614,9 +785,8 @@ impl<'a> JitCompiler<'a> {
         }
 
         // Call naml_struct_free to deallocate the struct memory
-        let free_func_id = self.module
-            .declare_function("naml_struct_free", Linkage::Import, &decref_sig)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_struct_free: {}", e)))?;
+        let free_func_id = *self.runtime_funcs.get("naml_struct_free")
+            .ok_or_else(|| CodegenError::JitCompile("Unknown runtime function: naml_struct_free".to_string()))?;
         let free_func_ref = self.module.declare_func_in_func(free_func_id, builder.func);
         builder.ins().call(free_func_ref, &[struct_ptr]);
         builder.ins().jump(done_block, &[]);
@@ -738,6 +908,7 @@ impl<'a> JitCompiler<'a> {
             interner: self.interner,
             module: &mut self.module,
             functions: &self.functions,
+            runtime_funcs: &self.runtime_funcs,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
@@ -1179,6 +1350,7 @@ impl<'a> JitCompiler<'a> {
             interner: self.interner,
             module: &mut self.module,
             functions: &self.functions,
+            runtime_funcs: &self.runtime_funcs,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
@@ -1288,6 +1460,7 @@ impl<'a> JitCompiler<'a> {
             interner: self.interner,
             module: &mut self.module,
             functions: &self.functions,
+            runtime_funcs: &self.runtime_funcs,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
@@ -1399,6 +1572,7 @@ impl<'a> JitCompiler<'a> {
             interner: self.interner,
             module: &mut self.module,
             functions: &self.functions,
+            runtime_funcs: &self.runtime_funcs,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
@@ -1447,7 +1621,7 @@ impl<'a> JitCompiler<'a> {
 
         self.module
             .define_function(func_id, &mut self.ctx)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to define function '{}': {}", name, e)))?;
+            .map_err(|e| CodegenError::JitCompile(format!("Failed to define function '{}': {:?}", name, e)))?;
 
         self.module.clear_context(&mut self.ctx);
 
@@ -1527,6 +1701,7 @@ impl<'a> JitCompiler<'a> {
             interner: self.interner,
             module: &mut self.module,
             functions: &self.functions,
+            runtime_funcs: &self.runtime_funcs,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
@@ -1592,16 +1767,27 @@ impl<'a> JitCompiler<'a> {
     }
 
     pub fn run_main(&mut self) -> Result<(), CodegenError> {
+        let finalize_start = std::time::Instant::now();
+
         self.module.finalize_definitions()
             .map_err(|e| CodegenError::JitCompile(format!("Failed to finalize: {}", e)))?;
+
+        if timing_enabled() {
+            eprintln!("  finalize definitions: {:.2}ms", finalize_start.elapsed().as_secs_f64() * 1000.0);
+        }
 
         let main_id = self.functions.get("main")
             .ok_or_else(|| CodegenError::Execution("No main function found".to_string()))?;
 
         let main_ptr = self.module.get_finalized_function(*main_id);
 
+        let exec_start = std::time::Instant::now();
         let main_fn: fn() = unsafe { std::mem::transmute(main_ptr) };
         main_fn();
+
+        if timing_enabled() {
+            eprintln!("  execute main: {:.2}ms", exec_start.elapsed().as_secs_f64() * 1000.0);
+        }
 
         Ok(())
     }
@@ -1663,6 +1849,7 @@ struct CompileContext<'a> {
     interner: &'a Rodeo,
     module: &'a mut JITModule,
     functions: &'a HashMap<String, FuncId>,
+    runtime_funcs: &'a HashMap<String, FuncId>,
     struct_defs: &'a HashMap<String, StructDef>,
     enum_defs: &'a HashMap<String, EnumDef>,
     exception_names: &'a HashSet<String>,
@@ -3495,7 +3682,7 @@ fn compile_literal(
         }
         Literal::Bool(b) => {
             let val = if *b { 1i64 } else { 0i64 };
-            Ok(builder.ins().iconst(cranelift::prelude::types::I64, val))
+            Ok(builder.ins().iconst(cranelift::prelude::types::I8, val))
         }
         Literal::String(spur) => {
             let s = ctx.interner.resolve(spur);
@@ -3601,56 +3788,44 @@ fn compile_binary_op(
 
         BinaryOp::Eq => {
             if is_float {
-                let cmp = builder.ins().fcmp(FloatCC::Equal, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().fcmp(FloatCC::Equal, lhs, rhs)
             } else {
-                let cmp = builder.ins().icmp(IntCC::Equal, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().icmp(IntCC::Equal, lhs, rhs)
             }
         }
         BinaryOp::NotEq => {
             if is_float {
-                let cmp = builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().fcmp(FloatCC::NotEqual, lhs, rhs)
             } else {
-                let cmp = builder.ins().icmp(IntCC::NotEqual, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().icmp(IntCC::NotEqual, lhs, rhs)
             }
         }
         BinaryOp::Lt => {
             if is_float {
-                let cmp = builder.ins().fcmp(FloatCC::LessThan, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().fcmp(FloatCC::LessThan, lhs, rhs)
             } else {
-                let cmp = builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().icmp(IntCC::SignedLessThan, lhs, rhs)
             }
         }
         BinaryOp::LtEq => {
             if is_float {
-                let cmp = builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().fcmp(FloatCC::LessThanOrEqual, lhs, rhs)
             } else {
-                let cmp = builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().icmp(IntCC::SignedLessThanOrEqual, lhs, rhs)
             }
         }
         BinaryOp::Gt => {
             if is_float {
-                let cmp = builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().fcmp(FloatCC::GreaterThan, lhs, rhs)
             } else {
-                let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().icmp(IntCC::SignedGreaterThan, lhs, rhs)
             }
         }
         BinaryOp::GtEq => {
             if is_float {
-                let cmp = builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().fcmp(FloatCC::GreaterThanOrEqual, lhs, rhs)
             } else {
-                let cmp = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs);
-                builder.ins().uextend(cranelift::prelude::types::I64, cmp)
+                builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, lhs, rhs)
             }
         }
 
@@ -3681,7 +3856,7 @@ fn compile_unary_op(
     let result = match op {
         UnaryOp::Neg => builder.ins().ineg(operand),
         UnaryOp::Not => {
-            let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+            let one = builder.ins().iconst(cranelift::prelude::types::I8, 1);
             builder.ins().bxor(operand, one)
         }
         UnaryOp::BitNot => builder.ins().bnot(operand),
@@ -3851,17 +4026,7 @@ fn call_string_concat(
     a: Value,
     b: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_concat", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_concat: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_concat")?;
     let call = builder.ins().call(func_ref, &[a, b]);
     Ok(builder.inst_results(call)[0])
 }
@@ -3948,16 +4113,8 @@ fn compile_stderr_call(
 ) -> Result<Value, CodegenError> {
     let msg = build_message_string(ctx, builder, args)?;
 
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-
     let runtime_name = format!("naml_{}", func_name);
-    let func_id = ctx.module
-        .declare_function(&runtime_name, Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", runtime_name, e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, &runtime_name)?;
     builder.ins().call(func_ref, &[msg]);
 
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
@@ -3975,15 +4132,7 @@ fn call_read_line(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_read_line", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_read_line: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_read_line")?;
     let call = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call)[0])
 }
@@ -3992,16 +4141,28 @@ fn call_read_key(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_read_key", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_read_key: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_read_key")?;
     let call = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call)[0])
+}
+
+fn rt_func_ref(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+) -> Result<FuncRef, CodegenError> {
+    let func_id = *ctx.runtime_funcs.get(name)
+        .ok_or_else(|| CodegenError::JitCompile(format!("Unknown runtime function: {}", name)))?;
+    Ok(ctx.module.declare_func_in_func(func_id, builder.func))
+}
+
+fn ensure_i64(builder: &mut FunctionBuilder<'_>, val: Value) -> Value {
+    let ty = builder.func.dfg.value_type(val);
+    if ty.is_int() && ty.bits() < 64 {
+        builder.ins().uextend(cranelift::prelude::types::I64, val)
+    } else {
+        val
+    }
 }
 
 fn emit_incref(
@@ -4010,10 +4171,6 @@ fn emit_incref(
     val: Value,
     heap_type: &HeapType,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-
     let func_name = match heap_type {
         HeapType::String => "naml_string_incref",
         HeapType::Array(_) => "naml_array_incref",
@@ -4021,12 +4178,8 @@ fn emit_incref(
         HeapType::Struct(_) => "naml_struct_incref",
     };
 
-    let func_id = ctx.module
-        .declare_function(func_name, Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
-    let zero = builder.ins().iconst(ptr_type, 0);
+    let func_ref = rt_func_ref(ctx, builder, func_name)?;
+    let zero = builder.ins().iconst(ctx.module.target_config().pointer_type(), 0);
     let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
 
     let call_block = builder.create_block();
@@ -4059,16 +4212,11 @@ fn emit_decref(
     val: Value,
     heap_type: &HeapType,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-
     // Select the appropriate decref function based on element type for nested cleanup
     let func_name: String = match heap_type {
         HeapType::String => "naml_string_decref".to_string(),
         HeapType::Array(None) => "naml_array_decref".to_string(),
         HeapType::Array(Some(elem_type)) => {
-            // Use specialized decref that also decrefs elements
             match elem_type.as_ref() {
                 HeapType::String => "naml_array_decref_strings".to_string(),
                 HeapType::Array(_) => "naml_array_decref_arrays".to_string(),
@@ -4078,7 +4226,6 @@ fn emit_decref(
         }
         HeapType::Map(None) => "naml_map_decref".to_string(),
         HeapType::Map(Some(val_type)) => {
-            // Use specialized decref that also decrefs values
             match val_type.as_ref() {
                 HeapType::String => "naml_map_decref_strings".to_string(),
                 HeapType::Array(_) => "naml_map_decref_arrays".to_string(),
@@ -4088,7 +4235,6 @@ fn emit_decref(
         }
         HeapType::Struct(None) => "naml_struct_decref".to_string(),
         HeapType::Struct(Some(struct_name)) => {
-            // Check if this struct has heap fields that need cleanup
             if struct_has_heap_fields(ctx.struct_defs, struct_name) {
                 format!("naml_struct_decref_{}", struct_name)
             } else {
@@ -4097,12 +4243,12 @@ fn emit_decref(
         }
     };
 
-    let func_id = ctx.module
-        .declare_function(&func_name, Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
-
+    let func_id = ctx.runtime_funcs.get(func_name.as_str())
+        .or_else(|| ctx.functions.get(func_name.as_str()))
+        .copied()
+        .ok_or_else(|| CodegenError::JitCompile(format!("Unknown decref function: {}", func_name)))?;
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
-    let zero = builder.ins().iconst(ptr_type, 0);
+    let zero = builder.ins().iconst(ctx.module.target_config().pointer_type(), 0);
     let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
 
     let call_block = builder.create_block();
@@ -4159,14 +4305,8 @@ fn call_print_int(
     builder: &mut FunctionBuilder<'_>,
     val: Value,
 ) -> Result<(), CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_print_int", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_print_int: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let val = ensure_i64(builder, val);
+    let func_ref = rt_func_ref(ctx, builder, "naml_print_int")?;
     builder.ins().call(func_ref, &[val]);
     Ok(())
 }
@@ -4176,14 +4316,7 @@ fn call_print_float(
     builder: &mut FunctionBuilder<'_>,
     val: Value,
 ) -> Result<(), CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::F64));
-
-    let func_id = ctx.module
-        .declare_function("naml_print_float", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_print_float: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_print_float")?;
     builder.ins().call(func_ref, &[val]);
     Ok(())
 }
@@ -4193,14 +4326,7 @@ fn call_print_str(
     builder: &mut FunctionBuilder<'_>,
     ptr: Value,
 ) -> Result<(), CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ctx.module.target_config().pointer_type()));
-
-    let func_id = ctx.module
-        .declare_function("naml_print_str", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_print_str: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_print_str")?;
     builder.ins().call(func_ref, &[ptr]);
     Ok(())
 }
@@ -4210,14 +4336,7 @@ fn call_print_naml_string(
     builder: &mut FunctionBuilder<'_>,
     ptr: Value,
 ) -> Result<(), CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ctx.module.target_config().pointer_type()));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_print", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_print: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_print")?;
     builder.ins().call(func_ref, &[ptr]);
     Ok(())
 }
@@ -4228,16 +4347,7 @@ fn call_string_equals(
     a: Value,
     b: Value,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ctx.module.target_config().pointer_type()));
-    sig.params.push(AbiParam::new(ctx.module.target_config().pointer_type()));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_eq", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_eq: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_eq")?;
     let call = builder.ins().call(func_ref, &[a, b]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4247,16 +4357,8 @@ fn call_int_to_string(
     builder: &mut FunctionBuilder<'_>,
     value: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_int_to_string", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_int_to_string: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let value = ensure_i64(builder, value);
+    let func_ref = rt_func_ref(ctx, builder, "naml_int_to_string")?;
     let call = builder.ins().call(func_ref, &[value]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4266,16 +4368,7 @@ fn call_float_to_string(
     builder: &mut FunctionBuilder<'_>,
     value: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::F64));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_float_to_string", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_float_to_string: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_float_to_string")?;
     let call = builder.ins().call(func_ref, &[value]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4285,16 +4378,7 @@ fn call_string_to_int(
     builder: &mut FunctionBuilder<'_>,
     value: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_to_int", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_int: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_to_int")?;
     let call = builder.ins().call(func_ref, &[value]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4304,16 +4388,7 @@ fn call_string_to_float(
     builder: &mut FunctionBuilder<'_>,
     value: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::F64));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_to_float", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_float: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_to_float")?;
     let call = builder.ins().call(func_ref, &[value]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4323,16 +4398,7 @@ fn call_string_char_len(
     builder: &mut FunctionBuilder<'_>,
     str_ptr: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_char_len", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_char_len: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_char_len")?;
     let call = builder.ins().call(func_ref, &[str_ptr]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4343,17 +4409,7 @@ fn call_string_char_at(
     str_ptr: Value,
     index: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_char_at", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_char_at: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_char_at")?;
     let call = builder.ins().call(func_ref, &[str_ptr, index]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4363,16 +4419,7 @@ fn call_string_to_bytes(
     builder: &mut FunctionBuilder<'_>,
     str_ptr: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_string_to_bytes", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_to_bytes: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_to_bytes")?;
     let call = builder.ins().call(func_ref, &[str_ptr]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4382,16 +4429,7 @@ fn call_bytes_to_string(
     builder: &mut FunctionBuilder<'_>,
     bytes_ptr: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_bytes_to_string", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_bytes_to_string: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_bytes_to_string")?;
     let call = builder.ins().call(func_ref, &[bytes_ptr]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4400,13 +4438,7 @@ fn call_print_newline(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<(), CodegenError> {
-    let sig = ctx.module.make_signature();
-
-    let func_id = ctx.module
-        .declare_function("naml_print_newline", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_print_newline: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_print_newline")?;
     builder.ins().call(func_ref, &[]);
     Ok(())
 }
@@ -4439,17 +4471,7 @@ fn call_array_new(
     builder: &mut FunctionBuilder<'_>,
     capacity: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_array_new", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_new: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_new")?;
     let call = builder.ins().call(func_ref, &[capacity]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4460,61 +4482,125 @@ fn call_array_push(
     arr: Value,
     value: Value,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
+    let value = ensure_i64(builder, value);
+    let len = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
+    let capacity = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_CAPACITY_OFFSET,
+    );
 
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    let fast_path_block = builder.create_block();
+    let slow_path_block = builder.create_block();
+    let done_block = builder.create_block();
 
-    let func_id = ctx.module
-        .declare_function("naml_array_push", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_push: {}", e)))?;
+    let needs_grow = builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, len, capacity);
+    builder.ins().brif(needs_grow, slow_path_block, &[], fast_path_block, &[]);
 
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.switch_to_block(fast_path_block);
+    builder.seal_block(fast_path_block);
+
+    let data_ptr = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_DATA_OFFSET,
+    );
+
+    let offset = builder.ins().imul_imm(len, 8);
+    let elem_addr = builder.ins().iadd(data_ptr, offset);
+
+    builder.ins().store(MemFlags::trusted(), value, elem_addr, 0);
+
+    let new_len = builder.ins().iadd_imm(len, 1);
+    builder.ins().store(MemFlags::trusted(), new_len, arr, ARRAY_LEN_OFFSET);
+
+    builder.ins().jump(done_block, &[]);
+
+    builder.switch_to_block(slow_path_block);
+    builder.seal_block(slow_path_block);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_push")?;
     builder.ins().call(func_ref, &[arr, value]);
+    builder.ins().jump(done_block, &[]);
+
+    builder.switch_to_block(done_block);
+    builder.seal_block(done_block);
+
     Ok(())
 }
 
 fn call_array_get(
-    ctx: &mut CompileContext<'_>,
+    _ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
     index: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
+    let len = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
+    
+    let in_bounds_block = builder.create_block();
+    let out_of_bounds_block = builder.create_block();
+    let merge_block = builder.create_block();
+    builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+    
+    let is_out_of_bounds = builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+    builder.ins().brif(is_out_of_bounds, out_of_bounds_block, &[], in_bounds_block, &[]);
 
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+    builder.switch_to_block(out_of_bounds_block);
+    builder.seal_block(out_of_bounds_block);
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().jump(merge_block, &[zero]);
+    
+    builder.switch_to_block(in_bounds_block);
+    builder.seal_block(in_bounds_block);
+    
+    let data_ptr = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_DATA_OFFSET,
+    );
+    
+    let offset = builder.ins().imul_imm(index, 8);
+    let elem_addr = builder.ins().iadd(data_ptr, offset);
+    
+    let value = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        elem_addr,
+        0,
+    );
+    builder.ins().jump(merge_block, &[value]);
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+    let result = builder.block_params(merge_block)[0];
 
-    let func_id = ctx.module
-        .declare_function("naml_array_get", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_get: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
-    let call = builder.ins().call(func_ref, &[arr, index]);
-    Ok(builder.inst_results(call)[0])
+    Ok(result)
 }
 
 fn call_array_len(
-    ctx: &mut CompileContext<'_>,
+    _ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_array_len", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_len: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
-    let call = builder.ins().call(func_ref, &[arr]);
-    Ok(builder.inst_results(call)[0])
+    let len = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
+    Ok(len)
 }
 
 #[allow(dead_code)]
@@ -4523,40 +4609,59 @@ fn call_array_print(
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_array_print", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_print: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_print")?;
     builder.ins().call(func_ref, &[arr]);
     Ok(())
 }
 
 fn call_array_set(
-    ctx: &mut CompileContext<'_>,
+    _ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
     index: Value,
     value: Value,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
+    let value = ensure_i64(builder, value);
+    // Load len field
+    let len = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
 
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    // Create blocks for bounds check
+    let in_bounds_block = builder.create_block();
+    let done_block = builder.create_block();
 
-    let func_id = ctx.module
-        .declare_function("naml_array_set", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_set: {}", e)))?;
+    // Bounds check: index >= len (unsigned) means out of bounds, skip the set
+    let is_out_of_bounds = builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
+    builder.ins().brif(is_out_of_bounds, done_block, &[], in_bounds_block, &[]);
 
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
-    builder.ins().call(func_ref, &[arr, index, value]);
+    // In bounds: store value to data[index]
+    builder.switch_to_block(in_bounds_block);
+    builder.seal_block(in_bounds_block);
+
+    // Load data pointer
+    let data_ptr = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_DATA_OFFSET,
+    );
+
+    // Compute element address: data + index * 8
+    let offset = builder.ins().imul_imm(index, 8);
+    let elem_addr = builder.ins().iadd(data_ptr, offset);
+
+    // Store element value
+    builder.ins().store(MemFlags::trusted(), value, elem_addr, 0);
+    builder.ins().jump(done_block, &[]);
+
+    // Done block
+    builder.switch_to_block(done_block);
+    builder.seal_block(done_block);
+
     Ok(())
 }
 
@@ -4565,17 +4670,7 @@ fn compile_map_literal(
     builder: &mut FunctionBuilder<'_>,
     entries: &[crate::ast::MapEntry<'_>],
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    // Create naml_map_new signature
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // capacity
-    sig.returns.push(AbiParam::new(ptr_type)); // map ptr
-
-    let func_id = ctx.module
-        .declare_function("naml_map_new", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(e.to_string()))?;
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_map_new")?;
 
     // Create map with capacity 16
     let capacity = builder.ins().iconst(cranelift::prelude::types::I64, 16);
@@ -4584,15 +4679,7 @@ fn compile_map_literal(
 
     // For each entry, call naml_map_set
     if !entries.is_empty() {
-        let mut set_sig = ctx.module.make_signature();
-        set_sig.params.push(AbiParam::new(ptr_type)); // map
-        set_sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // key
-        set_sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // value
-
-        let set_func_id = ctx.module
-            .declare_function("naml_map_set", Linkage::Import, &set_sig)
-            .map_err(|e| CodegenError::JitCompile(e.to_string()))?;
-        let set_func_ref = ctx.module.declare_func_in_func(set_func_id, builder.func);
+        let set_func_ref = rt_func_ref(ctx, builder, "naml_map_set")?;
 
         for entry in entries {
             // Convert string literals to NamlString pointers for map keys
@@ -4603,6 +4690,8 @@ fn compile_map_literal(
                 compile_expression(ctx, builder, &entry.key)?
             };
             let value = compile_expression(ctx, builder, &entry.value)?;
+            let key = ensure_i64(builder, key);
+            let value = ensure_i64(builder, value);
             builder.ins().call(set_func_ref, &[map_ptr, key, value]);
         }
     }
@@ -4615,17 +4704,7 @@ fn call_string_from_cstr(
     builder: &mut FunctionBuilder<'_>,
     cstr_ptr: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type)); // cstr: *const i8
-    sig.returns.push(AbiParam::new(ptr_type)); // *mut NamlString
-
-    let func_id = ctx.module
-        .declare_function("naml_string_from_cstr", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_from_cstr: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_string_from_cstr")?;
     let call = builder.ins().call(func_ref, &[cstr_ptr]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4636,17 +4715,7 @@ fn call_map_new(
     builder: &mut FunctionBuilder<'_>,
     capacity: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_map_new", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_new: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_map_new")?;
     let call = builder.ins().call(func_ref, &[capacity]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4669,13 +4738,6 @@ fn call_map_set_typed(
     value: Value,
     value_type: Option<&HeapType>,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-
     // Select the appropriate set function based on value type
     // This ensures proper decref of old values when updating map entries
     let func_name = match value_type {
@@ -4686,11 +4748,9 @@ fn call_map_set_typed(
         None => "naml_map_set",
     };
 
-    let func_id = ctx.module
-        .declare_function(func_name, Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let key = ensure_i64(builder, key);
+    let value = ensure_i64(builder, value);
+    let func_ref = rt_func_ref(ctx, builder, func_name)?;
     builder.ins().call(func_ref, &[map, key, value]);
     Ok(())
 }
@@ -4701,18 +4761,7 @@ fn call_map_get(
     map: Value,
     key: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_map_get", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_get: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_map_get")?;
     let call = builder.ins().call(func_ref, &[map, key]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4723,18 +4772,7 @@ fn call_map_contains(
     map: Value,
     key: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_map_contains", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_contains: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_map_contains")?;
     let call = builder.ins().call(func_ref, &[map, key]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4745,17 +4783,7 @@ fn call_map_len(
     builder: &mut FunctionBuilder<'_>,
     map: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_map_len", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_map_len: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_map_len")?;
     let call = builder.ins().call(func_ref, &[map]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4766,18 +4794,7 @@ fn call_struct_new(
     type_id: Value,
     field_count: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I32));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I32));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_struct_new", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_struct_new: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_struct_new")?;
     let call = builder.ins().call(func_ref, &[type_id, field_count]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4788,18 +4805,7 @@ fn call_struct_get_field(
     struct_ptr: Value,
     field_index: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I32));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_struct_get_field", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_struct_get_field: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_struct_get_field")?;
     let call = builder.ins().call(func_ref, &[struct_ptr, field_index]);
     Ok(builder.inst_results(call)[0])
 }
@@ -4811,18 +4817,8 @@ fn call_struct_set_field(
     field_index: Value,
     value: Value,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I32));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_struct_set_field", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_struct_set_field: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let value = ensure_i64(builder, value);
+    let func_ref = rt_func_ref(ctx, builder, "naml_struct_set_field")?;
     builder.ins().call(func_ref, &[struct_ptr, field_index, value]);
     Ok(())
 }
@@ -4883,15 +4879,13 @@ fn compile_method_call(
             let opt_ptr = compile_expression(ctx, builder, receiver)?;
             let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
             let one = builder.ins().iconst(cranelift::prelude::types::I32, 1);
-            let result = builder.ins().icmp(IntCC::Equal, tag, one);
-            return Ok(builder.ins().uextend(cranelift::prelude::types::I64, result));
+            return Ok(builder.ins().icmp(IntCC::Equal, tag, one));
         }
         "is_none" => {
             let opt_ptr = compile_expression(ctx, builder, receiver)?;
             let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
             let zero = builder.ins().iconst(cranelift::prelude::types::I32, 0);
-            let result = builder.ins().icmp(IntCC::Equal, tag, zero);
-            return Ok(builder.ins().uextend(cranelift::prelude::types::I64, result));
+            return Ok(builder.ins().icmp(IntCC::Equal, tag, zero));
         }
         "or_default" => {
             let opt_ptr = compile_expression(ctx, builder, receiver)?;
@@ -4939,17 +4933,7 @@ fn compile_method_call(
             Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
         }
         "pop" => {
-            let ptr_type = ctx.module.target_config().pointer_type();
-
-            let mut sig = ctx.module.make_signature();
-            sig.params.push(AbiParam::new(ptr_type));
-            sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-            let func_id = ctx.module
-                .declare_function("naml_array_pop", Linkage::Import, &sig)
-                .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_array_pop: {}", e)))?;
-
-            let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+            let func_ref = rt_func_ref(ctx, builder, "naml_array_pop")?;
             let call = builder.ins().call(func_ref, &[recv]);
             Ok(builder.inst_results(call)[0])
         }
@@ -5063,14 +5047,7 @@ fn call_sleep(
     builder: &mut FunctionBuilder<'_>,
     ms: Value,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_sleep", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_sleep: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_sleep")?;
     builder.ins().call(func_ref, &[ms]);
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
 }
@@ -5079,13 +5056,7 @@ fn call_wait_all(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<Value, CodegenError> {
-    let sig = ctx.module.make_signature();
-
-    let func_id = ctx.module
-        .declare_function("naml_wait_all", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_wait_all: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_wait_all")?;
     builder.ins().call(func_ref, &[]);
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
 }
@@ -5096,16 +5067,7 @@ fn call_random(
     min: Value,
     max: Value,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_random", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_random: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_random")?;
     let call_inst = builder.ins().call(func_ref, &[min, max]);
     Ok(builder.inst_results(call_inst)[0])
 }
@@ -5114,14 +5076,7 @@ fn call_random_float(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::F64));
-
-    let func_id = ctx.module
-        .declare_function("naml_random_float", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_random_float: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_random_float")?;
     let call_inst = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call_inst)[0])
 }
@@ -5131,11 +5086,7 @@ fn call_void_runtime(
     builder: &mut FunctionBuilder<'_>,
     name: &str,
 ) -> Result<Value, CodegenError> {
-    let sig = ctx.module.make_signature();
-    let func_id = ctx.module
-        .declare_function(name, Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", name, e)))?;
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, name)?;
     builder.ins().call(func_ref, &[]);
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
 }
@@ -5145,12 +5096,7 @@ fn call_int_runtime(
     builder: &mut FunctionBuilder<'_>,
     name: &str,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-    let func_id = ctx.module
-        .declare_function(name, Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", name, e)))?;
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, name)?;
     let call = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call)[0])
 }
@@ -5162,13 +5108,7 @@ fn call_two_arg_runtime(
     a: Value,
     b: Value,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    let func_id = ctx.module
-        .declare_function(name, Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", name, e)))?;
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, name)?;
     builder.ins().call(func_ref, &[a, b]);
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
 }
@@ -5179,17 +5119,7 @@ fn call_channel_new(
     builder: &mut FunctionBuilder<'_>,
     capacity: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_channel_new", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_channel_new: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_channel_new")?;
     let call = builder.ins().call(func_ref, &[capacity]);
     Ok(builder.inst_results(call)[0])
 }
@@ -5200,18 +5130,8 @@ fn call_channel_send(
     ch: Value,
     value: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_channel_send", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_channel_send: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let value = ensure_i64(builder, value);
+    let func_ref = rt_func_ref(ctx, builder, "naml_channel_send")?;
     let call = builder.ins().call(func_ref, &[ch, value]);
     Ok(builder.inst_results(call)[0])
 }
@@ -5221,17 +5141,7 @@ fn call_channel_receive(
     builder: &mut FunctionBuilder<'_>,
     ch: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_channel_receive", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_channel_receive: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_channel_receive")?;
     let call = builder.ins().call(func_ref, &[ch]);
     Ok(builder.inst_results(call)[0])
 }
@@ -5241,16 +5151,7 @@ fn call_channel_close(
     builder: &mut FunctionBuilder<'_>,
     ch: Value,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_channel_close", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_channel_close: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_channel_close")?;
     builder.ins().call(func_ref, &[ch]);
     Ok(())
 }
@@ -5260,17 +5161,7 @@ fn call_alloc_closure_data(
     builder: &mut FunctionBuilder<'_>,
     size: Value,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // size: usize
-    sig.returns.push(AbiParam::new(ptr_type)); // *mut u8
-
-    let func_id = ctx.module
-        .declare_function("naml_alloc_closure_data", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_alloc_closure_data: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_alloc_closure_data")?;
     let call = builder.ins().call(func_ref, &[size]);
     Ok(builder.inst_results(call)[0])
 }
@@ -5282,18 +5173,7 @@ fn call_spawn_closure(
     data: Value,
     data_size: Value,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type)); // func: extern "C" fn(*mut u8)
-    sig.params.push(AbiParam::new(ptr_type)); // data: *mut u8
-    sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // data_size: usize
-
-    let func_id = ctx.module
-        .declare_function("naml_spawn_closure", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_spawn_closure: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_spawn_closure")?;
     builder.ins().call(func_ref, &[func_addr, data, data_size]);
     Ok(())
 }
@@ -5312,16 +5192,7 @@ fn call_exception_set(
     builder: &mut FunctionBuilder<'_>,
     exception_ptr: Value,
 ) -> Result<(), CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.params.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_exception_set", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_set: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_exception_set")?;
     builder.ins().call(func_ref, &[exception_ptr]);
     Ok(())
 }
@@ -5330,16 +5201,7 @@ fn call_exception_get(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<Value, CodegenError> {
-    let ptr_type = ctx.module.target_config().pointer_type();
-
-    let mut sig = ctx.module.make_signature();
-    sig.returns.push(AbiParam::new(ptr_type));
-
-    let func_id = ctx.module
-        .declare_function("naml_exception_get", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_get: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_exception_get")?;
     let call = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call)[0])
 }
@@ -5348,13 +5210,7 @@ fn call_exception_clear(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<(), CodegenError> {
-    let sig = ctx.module.make_signature();
-
-    let func_id = ctx.module
-        .declare_function("naml_exception_clear", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_clear: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_exception_clear")?;
     builder.ins().call(func_ref, &[]);
     Ok(())
 }
@@ -5363,14 +5219,7 @@ fn call_exception_check(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<Value, CodegenError> {
-    let mut sig = ctx.module.make_signature();
-    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
-
-    let func_id = ctx.module
-        .declare_function("naml_exception_check", Linkage::Import, &sig)
-        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_exception_check: {}", e)))?;
-
-    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let func_ref = rt_func_ref(ctx, builder, "naml_exception_check")?;
     let call = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call)[0])
 }

@@ -20,7 +20,7 @@ pub fn naml_to_cranelift(ty: &NamlType) -> Type {
         NamlType::Int => types::I64,
         NamlType::Uint => types::I64,
         NamlType::Float => types::F64,
-        NamlType::Bool => types::I64,
+        NamlType::Bool => types::I8,
         NamlType::String => types::I64,
         NamlType::Bytes => types::I64,
         NamlType::Unit => types::I64,
@@ -45,7 +45,7 @@ pub fn tc_type_to_cranelift(ty: &TcType) -> Type {
         TcType::Int => types::I64,
         TcType::Uint => types::I64,
         TcType::Float => types::F64,
-        TcType::Bool => types::I64,
+        TcType::Bool => types::I8,
         TcType::String => types::I64,
         TcType::Bytes => types::I64,
         TcType::Unit => types::I64,
@@ -74,6 +74,6 @@ mod tests {
     fn test_primitive_types() {
         assert_eq!(naml_to_cranelift(&NamlType::Int), types::I64);
         assert_eq!(naml_to_cranelift(&NamlType::Float), types::F64);
-        assert_eq!(naml_to_cranelift(&NamlType::Bool), types::I64);
+        assert_eq!(naml_to_cranelift(&NamlType::Bool), types::I8);
     }
 }

@@ -68,6 +68,8 @@ fn main() {
 }
 
 fn run_file(file: &PathBuf, cached: bool) {
+    let timing = std::env::var("NAML_TIMING").is_ok();
+
     let source_text = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(e) => {
@@ -78,10 +80,19 @@ fn run_file(file: &PathBuf, cached: bool) {
 
     let file_name = file.display().to_string();
     let source_file = SourceFile::new(file_name.clone(), source_text.clone());
-    let (tokens, interner) = tokenize(&source_text);
 
+    let lex_start = std::time::Instant::now();
+    let (tokens, interner) = tokenize(&source_text);
+    if timing {
+        eprintln!("  tokenize: {:.2}ms", lex_start.elapsed().as_secs_f64() * 1000.0);
+    }
+
+    let parse_start = std::time::Instant::now();
     let arena = AstArena::new();
     let parse_result = parse(&tokens, &source_text, &arena);
+    if timing {
+        eprintln!("  parse: {:.2}ms", parse_start.elapsed().as_secs_f64() * 1000.0);
+    }
 
     if !parse_result.errors.is_empty() {
         let reporter = DiagnosticReporter::new(&source_file);
@@ -89,8 +100,12 @@ fn run_file(file: &PathBuf, cached: bool) {
         std::process::exit(1);
     }
 
+    let typecheck_start = std::time::Instant::now();
     let source_dir = std::path::Path::new(&file_name).parent().map(|p| p.to_path_buf());
     let type_result = check_with_types(&parse_result.ast, &interner, source_dir);
+    if timing {
+        eprintln!("  typecheck: {:.2}ms", typecheck_start.elapsed().as_secs_f64() * 1000.0);
+    }
 
     if !type_result.errors.is_empty() {
         let reporter = DiagnosticReporter::new(&source_file);
@@ -102,6 +117,7 @@ fn run_file(file: &PathBuf, cached: bool) {
         eprintln!("(cached mode not yet implemented)");
     }
 
+    let jit_start = std::time::Instant::now();
     match compile_and_run(
         &parse_result.ast,
         &interner,
@@ -109,7 +125,11 @@ fn run_file(file: &PathBuf, cached: bool) {
         &type_result.symbols,
         &type_result.imported_modules,
     ) {
-        Ok(()) => {}
+        Ok(()) => {
+            if timing {
+                eprintln!("  total JIT + run: {:.2}ms", jit_start.elapsed().as_secs_f64() * 1000.0);
+            }
+        }
         Err(e) => {
             eprintln!("Execution error: {}", e);
             std::process::exit(1);

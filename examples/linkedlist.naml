@@ -1,0 +1,180 @@
+///
+/// # Linked List
+///
+/// A singly linked list implemented using parallel arrays.
+/// Each node has a value and a "next" index (-1 means no next node).
+///
+/// Operations: push_front, push_back, insert_at, remove_at,
+///             get, contains, size, print_list.
+///
+
+fn push_front(vals: [int], nexts: [int], head: int) -> int {
+    var idx: int = vals.len();
+    vals.push(0);
+    nexts.push(head);
+    return idx;
+}
+
+fn push_back(vals: [int], nexts: [int], head: int) -> int {
+    var idx: int = vals.len();
+    vals.push(0);
+    nexts.push(-1);
+    if (head == -1) {
+        return idx;
+    }
+    var cur: int = head;
+    while (nexts[cur] != -1) {
+        cur = nexts[cur];
+    }
+    nexts[cur] = idx;
+    return head;
+}
+
+fn insert_at(vals: [int], nexts: [int], head: int, pos: int, val: int) -> int {
+    var idx: int = vals.len();
+    vals.push(val);
+    nexts.push(-1);
+    if (pos == 0) {
+        nexts[idx] = head;
+        return idx;
+    }
+    var cur: int = head;
+    var i: int = 0;
+    while (i < pos - 1 and cur != -1) {
+        cur = nexts[cur];
+        i = i + 1;
+    }
+    if (cur != -1) {
+        nexts[idx] = nexts[cur];
+        nexts[cur] = idx;
+    }
+    return head;
+}
+
+fn remove_at(nexts: [int], head: int, pos: int) -> int {
+    if (head == -1) {
+        return -1;
+    }
+    if (pos == 0) {
+        return nexts[head];
+    }
+    var cur: int = head;
+    var i: int = 0;
+    while (i < pos - 1 and cur != -1) {
+        cur = nexts[cur];
+        i = i + 1;
+    }
+    if (cur != -1 and nexts[cur] != -1) {
+        nexts[cur] = nexts[nexts[cur]];
+    }
+    return head;
+}
+
+fn get(vals: [int], nexts: [int], head: int, pos: int) -> int {
+    var cur: int = head;
+    var i: int = 0;
+    while (i < pos and cur != -1) {
+        cur = nexts[cur];
+        i = i + 1;
+    }
+    if (cur == -1) {
+        return -1;
+    }
+    return vals[cur];
+}
+
+fn contains(vals: [int], nexts: [int], head: int, val: int) -> bool {
+    var cur: int = head;
+    while (cur != -1) {
+        if (vals[cur] == val) {
+            return true;
+        }
+        cur = nexts[cur];
+    }
+    return false;
+}
+
+fn list_size(nexts: [int], head: int) -> int {
+    var count: int = 0;
+    var cur: int = head;
+    while (cur != -1) {
+        count = count + 1;
+        cur = nexts[cur];
+    }
+    return count;
+}
+
+fn print_list(vals: [int], nexts: [int], head: int) {
+    var cur: int = head;
+    print("[");
+    var first: bool = true;
+    while (cur != -1) {
+        if (not first) {
+            print(" -> ");
+        }
+        print("{}", vals[cur]);
+        first = false;
+        cur = nexts[cur];
+    }
+    println("]");
+}
+
+fn main() {
+    var vals: [int] = [];
+    var nexts: [int] = [];
+    var head: int = -1;
+
+    println("=== Linked List Demo ===");
+    println("");
+
+    println("Push front: 10, 20, 30");
+    head = push_front(vals, nexts, head);
+    vals[head] = 10;
+    head = push_front(vals, nexts, head);
+    vals[head] = 20;
+    head = push_front(vals, nexts, head);
+    vals[head] = 30;
+    print("  ");
+    print_list(vals, nexts, head);
+    println("  size: {}", list_size(nexts, head));
+
+    println("");
+    println("Push back: 40");
+    head = push_back(vals, nexts, head);
+    vals[vals.len() - 1] = 40;
+    print("  ");
+    print_list(vals, nexts, head);
+
+    println("");
+    println("Insert 99 at position 2");
+    head = insert_at(vals, nexts, head, 2, 99);
+    print("  ");
+    print_list(vals, nexts, head);
+
+    println("");
+    println("Get elements:");
+    var i: int = 0;
+    while (i < list_size(nexts, head)) {
+        println("  get({}): {}", i, get(vals, nexts, head, i));
+        i = i + 1;
+    }
+
+    println("");
+    println("Contains 99: {}", contains(vals, nexts, head, 99));
+    println("Contains 55: {}", contains(vals, nexts, head, 55));
+
+    println("");
+    println("Remove at position 0 (head)");
+    head = remove_at(nexts, head, 0);
+    print("  ");
+    print_list(vals, nexts, head);
+
+    println("");
+    println("Remove at position 1");
+    head = remove_at(nexts, head, 1);
+    print("  ");
+    print_list(vals, nexts, head);
+
+    println("");
+    println("Final size: {}", list_size(nexts, head));
+}

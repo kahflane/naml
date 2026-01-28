@@ -1,4 +1,4 @@
-# naml Language Reference
+# naml 🐜 Language Reference
 
 A comprehensive guide to the naml programming language syntax and features.
 
@@ -21,12 +21,14 @@ A comprehensive guide to the naml programming language syntax and features.
 13. [Exceptions](#exceptions)
 14. [Generics](#generics)
 15. [Lambdas](#lambdas)
-16. [Concurrency](#concurrency)
-17. [Pattern Matching](#pattern-matching)
-18. [Modules and Imports](#modules-and-imports)
-19. [External Functions](#external-functions)
-20. [Comments](#comments)
-21. [Keywords](#keywords)
+16. [Built-in Functions](#built-in-functions)
+17. [Standard Library](#standard-library)
+18. [Concurrency](#concurrency)
+19. [Pattern Matching](#pattern-matching)
+20. [Modules and Imports](#modules-and-imports)
+21. [External Functions](#external-functions)
+22. [Comments](#comments)
+23. [Keywords](#keywords)
 
 ---
 
@@ -95,7 +97,7 @@ Array operations:
 var first: int = numbers[0];      // Indexing
 var len: int = numbers.len();     // Length
 numbers.push(6);                   // Append
-var last: int = numbers.pop();    // Remove last
+var last: option<int> = numbers.pop();  // Remove last, returns option<T>
 ```
 
 ### Maps
@@ -121,10 +123,12 @@ var other: int = nothing ?? -1;  // Returns -1
 
 ### Channels
 
-Communication channels for concurrency (native/server only):
+Communication channels for concurrency (native/server only). Requires `use std::threads::*;`:
 
 ```naml
-var ch: channel<int>;
+use std::threads::*;
+
+var ch: channel<int> = open_channel(10);  // buffered channel with capacity 10
 ```
 
 ### Function Types
@@ -160,6 +164,8 @@ var greeting: string = "Hello, World!";
 var with_quotes: string = "She said \"hi\"";
 var with_newline: string = "Line 1\nLine 2";
 ```
+
+Supported escape sequences: `\n` (newline), `\t` (tab), `\r` (carriage return), `\\` (backslash), `\"` (quote), `\0` (null).
 
 ### Boolean Literals
 
@@ -651,12 +657,10 @@ switch (status) {
         println("User is active");
     }
     case UserStatus::Suspended(reason): {
-        println("Suspended: ");
-        println(reason);
+        println("Suspended: {}", reason);
     }
     case UserStatus::Banned(reason, days): {
-        println("Banned for days: ");
-        print_int(days);
+        println("Banned for days: {}", days);
     }
 }
 ```
@@ -814,7 +818,76 @@ var result: int = apply(fn (n: int) -> int { n * n }, 5);  // 25
 
 ---
 
+## Built-in Functions
+
+These functions are always available without any import:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `print` | `(format: string, args...)` | Print to stdout (no newline). Supports `{}` placeholders. |
+| `println` | `(format: string, args...)` | Print to stdout with newline. Supports `{}` placeholders. |
+| `fmt` | `(format: string, args...) -> string` | Format string with `{}` placeholders, returns result. |
+| `warn` | `(format: string, args...)` | Print to stderr with `warning:` prefix. |
+| `error` | `(format: string, args...)` | Print to stderr with `error:` prefix. |
+| `panic` | `(format: string, args...)` | Print to stderr with `panic:` prefix, then abort. |
+| `read_line` | `() -> string` | Blocking read from stdin until newline. |
+| `sleep` | `(ms: int)` | Pause execution for `ms` milliseconds. |
+
+```naml
+print("Hello, {}!\n", name);
+println("x = {}, y = {}", x, y);
+var msg: string = fmt("Score: {}", score);
+warn("deprecated feature used");
+panic("unreachable code");
+var input: string = read_line();
+sleep(1000);
+```
+
+---
+
+## Standard Library
+
+### std::random
+
+```naml
+use std::random::*;
+
+var n: int = random(1, 100);      // Random int in [min, max]
+var f: float = random_float();     // Random float in [0.0, 1.0)
+```
+
+### std::io
+
+Terminal I/O functions for interactive and TUI applications:
+
+```naml
+use std::io::*;
+
+var key: int = read_key();         // Non-blocking key read (-1 if none)
+clear_screen();                     // Clear terminal
+set_cursor(x, y);                  // Move cursor (0-indexed)
+hide_cursor();
+show_cursor();
+var w: int = terminal_width();
+var h: int = terminal_height();
+```
+
+### std::threads
+
+Concurrency primitives (see [Concurrency](#concurrency)):
+
+```naml
+use std::threads::*;
+
+var ch: channel<int> = open_channel(10);
+join();
+```
+
+---
+
 ## Concurrency
+
+Channels and join require `use std::threads::*;`. The `spawn` keyword is always available.
 
 ### Spawn
 
@@ -825,37 +898,43 @@ spawn {
     // This runs concurrently
     do_work();
 };
-
-spawn {
-    // Another concurrent task
-    process_data();
-};
 ```
 
 ### Channels
 
-Communicate between concurrent tasks:
+Communicate between concurrent tasks. Requires `use std::threads::*;`:
 
 ```naml
-var ch: channel<int>;
+use std::threads::*;
 
-spawn {
-    ch.send(42);
-};
+fn main() {
+    var ch: channel<int> = open_channel(10);
 
-var value: int = ch.receive();
+    spawn {
+        ch.send(42);
+    };
+
+    var value: int = ch.receive();
+    println(value);
+    ch.close();
+}
 ```
 
-### Wait All
+Channel methods: `.send(value)`, `.receive()`, `.close()`, `.len()`.
+
+### Join
 
 Wait for all spawned tasks to complete:
 
 ```naml
-spawn { task1(); };
-spawn { task2(); };
-spawn { task3(); };
+use std::threads::*;
 
-wait_all();  // Block until all complete
+fn main() {
+    spawn { task1(); };
+    spawn { task2(); };
+
+    join();  // Block until all spawned tasks complete
+}
 ```
 
 ---
@@ -891,12 +970,10 @@ switch (value) {
 ```naml
 switch (result) {
     case Result::Ok(value): {
-        println("Success: ");
-        print_int(value);
+        println("Success: {}", value);
     }
     case Result::Err(error): {
-        println("Error: ");
-        println(error);
+        println("Error: {}", error);
     }
 }
 ```
@@ -905,12 +982,36 @@ switch (result) {
 
 ## Modules and Imports
 
-### Use Statement
+### Standard Library Modules
+
+Import standard library modules with `use std::<module>::*;` or specific items:
 
 ```naml
-use mymodule;
-use mymodule::something;
+use std::random::*;         // random(min, max), random_float()
+use std::io::*;             // read_key(), clear_screen(), set_cursor(), etc.
+use std::threads::*;        // open_channel(), join()
 ```
+
+Specific imports:
+
+```naml
+use std::random::{random};
+use std::threads::{open_channel, join};
+```
+
+### Local Modules
+
+Import functions from other `.naml` files in the same directory:
+
+```naml
+// Imports all pub fn from ./math.naml
+use math::*;
+
+// Import specific functions
+use helpers::{validate, format_output};
+```
+
+Only `pub fn` declarations (without receivers) are importable from local modules. Structs, enums, and methods cannot be imported.
 
 ---
 
@@ -991,7 +1092,7 @@ fn add(a: int, b: int) -> int {
 `and`, `or`, `not`
 
 ### Other Keywords
-`spawn`, `as`, `is`, `implements`, `use`, `import`, `platforms`, `native`, `server`, `browser`
+`spawn`, `as`, `is`, `implements`, `use`, `platforms`, `native`, `server`, `browser`
 
 ---
 
@@ -1044,8 +1145,7 @@ const MAX_SIZE: int = 1000;
 /// A simple example demonstrating naml features
 ///
 
-extern fn println(s: string);
-extern fn print_int(x: int);
+use std::threads::*;
 
 struct Person {
     name: string,
@@ -1053,7 +1153,7 @@ struct Person {
 }
 
 pub fn (self: Person) greet() -> string {
-    return "Hello, I am " + self.name;
+    return fmt("Hello, I am {}", self.name);
 }
 
 pub fn (self: Person) is_adult() -> bool {
@@ -1086,20 +1186,22 @@ fn main() {
         println("This person is a minor");
     }
 
-    // Using generics
+    // Arrays and iteration
     var numbers: [int] = [1, 2, 3, 4, 5];
     for (i: int, num: int in numbers) {
-        print_int(num);
+        println(num);
     }
 
     // Concurrency
-    var ch: channel<int>;
+    var ch: channel<int> = open_channel(1);
 
     spawn {
         ch.send(42);
     };
 
+    join();
     var result: int = ch.receive();
-    print_int(result);
+    println(result);
+    ch.close();
 }
 ```
