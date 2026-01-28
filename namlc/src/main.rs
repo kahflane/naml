@@ -89,7 +89,8 @@ fn run_file(file: &PathBuf, cached: bool) {
         std::process::exit(1);
     }
 
-    let type_result = check_with_types(&parse_result.ast, &interner);
+    let source_dir = std::path::Path::new(&file_name).parent().map(|p| p.to_path_buf());
+    let type_result = check_with_types(&parse_result.ast, &interner, source_dir);
 
     if !type_result.errors.is_empty() {
         let reporter = DiagnosticReporter::new(&source_file);
@@ -106,6 +107,7 @@ fn run_file(file: &PathBuf, cached: bool) {
         &interner,
         &type_result.annotations,
         &type_result.symbols,
+        &type_result.imported_modules,
     ) {
         Ok(()) => {}
         Err(e) => {

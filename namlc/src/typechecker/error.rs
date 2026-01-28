@@ -141,6 +141,30 @@ pub enum TypeError {
         method_name: String,
         span: Span,
     },
+
+    #[error("unknown module '{path}'")]
+    UnknownModule { path: String, span: Span },
+
+    #[error("unknown symbol '{symbol}' in module '{module}'")]
+    UnknownModuleSymbol {
+        module: String,
+        symbol: String,
+        span: Span,
+    },
+
+    #[error("symbol '{symbol}' in module '{module}' is not public")]
+    PrivateSymbol {
+        module: String,
+        symbol: String,
+        span: Span,
+    },
+
+    #[error("cannot read module file '{path}': {reason}")]
+    ModuleFileError {
+        path: String,
+        reason: String,
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -171,6 +195,10 @@ impl TypeError {
             TypeError::NoBoundForMethod { span, .. } => *span,
             TypeError::Custom { span, .. } => *span,
             TypeError::MissingInterfaceMethod { span, .. } => *span,
+            TypeError::UnknownModule { span, .. } => *span,
+            TypeError::UnknownModuleSymbol { span, .. } => *span,
+            TypeError::PrivateSymbol { span, .. } => *span,
+            TypeError::ModuleFileError { span, .. } => *span,
         }
     }
 

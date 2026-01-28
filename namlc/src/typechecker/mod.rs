@@ -24,9 +24,12 @@ pub mod typed_ast;
 pub mod types;
 pub mod unify;
 
+use std::path::PathBuf;
+
 use lasso::Rodeo;
 
-use crate::ast::{self, Item, SourceFile};
+use crate::ast::{self, Item, SourceFile, UseItems};
+use crate::source::Span;
 
 pub use error::{TypeError, TypeResult};
 pub use symbols::SymbolTable;
@@ -37,6 +40,7 @@ pub struct TypeCheckResult {
     pub errors: Vec<TypeError>,
     pub annotations: TypeAnnotations,
     pub symbols: SymbolTable,
+    pub imported_modules: Vec<ImportedModule>,
 }
 
 use env::TypeEnv;
@@ -47,6 +51,11 @@ use symbols::{
 };
 use types::TypeParam;
 
+pub struct ImportedModule {
+    pub source_text: String,
+    pub file_path: PathBuf,
+}
+
 pub struct TypeChecker<'a> {
     symbols: SymbolTable,
     env: TypeEnv,
@@ -54,10 +63,12 @@ pub struct TypeChecker<'a> {
     errors: Vec<TypeError>,
     annotations: TypeAnnotations,
     next_var_id: u32,
+    source_dir: Option<PathBuf>,
+    imported_modules: Vec<ImportedModule>,
 }
 
 impl<'a> TypeChecker<'a> {
-    pub fn new(interner: &'a Rodeo) -> Self {
+    pub fn new(interner: &'a Rodeo, source_dir: Option<PathBuf>) -> Self {
         let mut checker = Self {
             symbols: SymbolTable::new(),
             env: TypeEnv::new(),
@@ -65,6 +76,8 @@ impl<'a> TypeChecker<'a> {
             errors: Vec::new(),
             annotations: TypeAnnotations::new(),
             next_var_id: 0,
+            source_dir,
+            imported_modules: Vec::new(),
         };
         checker.register_builtins();
         checker
@@ -198,9 +211,245 @@ impl<'a> TypeChecker<'a> {
                 Item::Interface(i) => self.collect_interface(i),
                 Item::Exception(e) => self.collect_exception(e),
                 Item::Extern(e) => self.collect_extern(e),
-                Item::Import(_) | Item::Use(_) | Item::TopLevelStmt(_) => {}
+                Item::Use(u) => self.resolve_use_item(u),
+                Item::Import(_) | Item::TopLevelStmt(_) => {}
             }
         }
+    }
+
+    fn resolve_use_item(&mut self, use_item: &ast::UseItem) {
+        let path_strs: Vec<String> = use_item.path.iter()
+            .map(|ident| self.interner.resolve(&ident.symbol).to_string())
+            .collect();
+
+        if path_strs.is_empty() {
+            return;
+        }
+
+        if path_strs[0] == "std" {
+            if path_strs.len() < 2 {
+                self.errors.push(TypeError::UnknownModule {
+                    path: path_strs.join("."),
+                    span: use_item.span,
+                });
+                return;
+            }
+            self.resolve_std_module(&path_strs[1], &use_item.items, use_item.span);
+        } else {
+            self.resolve_local_module(&path_strs, &use_item.items, use_item.span);
+        }
+    }
+
+    fn resolve_std_module(&mut self, module: &str, items: &UseItems, span: crate::source::Span) {
+        let module_fns = match Self::get_std_module_functions(module) {
+            Some(fns) => fns,
+            None => {
+                self.errors.push(TypeError::UnknownModule {
+                    path: format!("std.{}", module),
+                    span,
+                });
+                return;
+            }
+        };
+
+        match items {
+            UseItems::All => {
+                for (name, params, return_ty, is_variadic) in &module_fns {
+                    if let Some(spur) = self.interner.get(name) {
+                        let params: Vec<_> = params.iter()
+                            .map(|(pname, pty)| {
+                                let pspur = self.interner.get(pname).unwrap_or(spur);
+                                (pspur, pty.clone())
+                            })
+                            .collect();
+                        self.symbols.define_function(FunctionSig {
+                            name: spur,
+                            type_params: vec![],
+                            params,
+                            return_ty: return_ty.clone(),
+                            throws: vec![],
+                            is_public: true,
+                            is_variadic: *is_variadic,
+                            span: Span::dummy(),
+                        });
+                    }
+                }
+            }
+            UseItems::Specific(entries) => {
+                for entry in entries {
+                    let entry_name = self.interner.resolve(&entry.name.symbol).to_string();
+                    let found = module_fns.iter().find(|(name, _, _, _)| *name == entry_name);
+                    match found {
+                        Some((_name, params, return_ty, is_variadic)) => {
+                            let spur = entry.name.symbol;
+                            let params: Vec<_> = params.iter()
+                                .map(|(pname, pty)| {
+                                    let pspur = self.interner.get(pname).unwrap_or(spur);
+                                    (pspur, pty.clone())
+                                })
+                                .collect();
+                            self.symbols.define_function(FunctionSig {
+                                name: spur,
+                                type_params: vec![],
+                                params,
+                                return_ty: return_ty.clone(),
+                                throws: vec![],
+                                is_public: true,
+                                is_variadic: *is_variadic,
+                                span: Span::dummy(),
+                            });
+                        }
+                        None => {
+                            self.errors.push(TypeError::UnknownModuleSymbol {
+                                module: format!("std.{}", module),
+                                symbol: entry_name,
+                                span: entry.span,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_std_module_functions(module: &str) -> Option<Vec<(&'static str, Vec<(&'static str, Type)>, Type, bool)>> {
+        match module {
+            "random" => Some(vec![
+                ("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int, false),
+                ("random_float", vec![], Type::Float, false),
+            ]),
+            _ => None,
+        }
+    }
+
+    fn resolve_local_module(&mut self, path: &[String], items: &UseItems, span: crate::source::Span) {
+        let source_dir = match &self.source_dir {
+            Some(d) => d.clone(),
+            None => {
+                self.errors.push(TypeError::ModuleFileError {
+                    path: path.join("."),
+                    reason: "no source directory available for local module resolution".to_string(),
+                    span,
+                });
+                return;
+            }
+        };
+
+        let mut file_path = source_dir;
+        for segment in path {
+            file_path.push(segment);
+        }
+        file_path.set_extension("naml");
+
+        let source_text = match std::fs::read_to_string(&file_path) {
+            Ok(s) => s,
+            Err(e) => {
+                self.errors.push(TypeError::ModuleFileError {
+                    path: file_path.display().to_string(),
+                    reason: e.to_string(),
+                    span,
+                });
+                return;
+            }
+        };
+
+        let (tokens, module_interner) = crate::lexer::tokenize(&source_text);
+        let arena = crate::ast::AstArena::new();
+        let parse_result = crate::parser::parse(&tokens, &source_text, &arena);
+
+        if !parse_result.errors.is_empty() {
+            self.errors.push(TypeError::ModuleFileError {
+                path: file_path.display().to_string(),
+                reason: "parse errors in module file".to_string(),
+                span,
+            });
+            return;
+        }
+
+        let mut pub_functions: Vec<(String, Vec<(String, Type)>, Type, bool)> = Vec::new();
+
+        for item in &parse_result.ast.items {
+            if let Item::Function(func) = item {
+                if func.is_public && func.receiver.is_none() {
+                    let name = module_interner.resolve(&func.name.symbol).to_string();
+                    let params: Vec<_> = func.params.iter()
+                        .map(|p| {
+                            let pname = module_interner.resolve(&p.name.symbol).to_string();
+                            let pty = self.convert_type(&p.ty);
+                            (pname, pty)
+                        })
+                        .collect();
+                    let return_ty = func.return_ty.as_ref()
+                        .map(|t| self.convert_type(t))
+                        .unwrap_or(Type::Unit);
+                    pub_functions.push((name, params, return_ty, false));
+                }
+            }
+        }
+
+        match items {
+            UseItems::All => {
+                for (name, params, return_ty, is_variadic) in &pub_functions {
+                    if let Some(spur) = self.interner.get(name.as_str()) {
+                        let params: Vec<_> = params.iter()
+                            .map(|(pname, pty)| {
+                                let pspur = self.interner.get(pname.as_str()).unwrap_or(spur);
+                                (pspur, pty.clone())
+                            })
+                            .collect();
+                        self.symbols.define_function(FunctionSig {
+                            name: spur,
+                            type_params: vec![],
+                            params,
+                            return_ty: return_ty.clone(),
+                            throws: vec![],
+                            is_public: true,
+                            is_variadic: *is_variadic,
+                            span: crate::source::Span::dummy(),
+                        });
+                    }
+                }
+            }
+            UseItems::Specific(entries) => {
+                for entry in entries {
+                    let entry_name = self.interner.resolve(&entry.name.symbol).to_string();
+                    let found = pub_functions.iter().find(|(name, _, _, _)| *name == entry_name);
+                    match found {
+                        Some((_, params, return_ty, is_variadic)) => {
+                            let spur = entry.name.symbol;
+                            let params: Vec<_> = params.iter()
+                                .map(|(pname, pty)| {
+                                    let pspur = self.interner.get(pname.as_str()).unwrap_or(spur);
+                                    (pspur, pty.clone())
+                                })
+                                .collect();
+                            self.symbols.define_function(FunctionSig {
+                                name: spur,
+                                type_params: vec![],
+                                params,
+                                return_ty: return_ty.clone(),
+                                throws: vec![],
+                                is_public: true,
+                                is_variadic: *is_variadic,
+                                span: crate::source::Span::dummy(),
+                            });
+                        }
+                        None => {
+                            self.errors.push(TypeError::PrivateSymbol {
+                                module: path.join("."),
+                                symbol: entry_name,
+                                span: entry.span,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        self.imported_modules.push(ImportedModule {
+            source_text,
+            file_path,
+        });
     }
 
     fn collect_function(&mut self, func: &ast::FunctionItem) {
@@ -603,11 +852,11 @@ impl<'a> TypeChecker<'a> {
 }
 
 pub fn check(file: &SourceFile, interner: &Rodeo) -> Vec<TypeError> {
-    check_with_types(file, interner).errors
+    check_with_types(file, interner, None).errors
 }
 
-pub fn check_with_types(file: &SourceFile, interner: &Rodeo) -> TypeCheckResult {
-    let mut checker = TypeChecker::new(interner);
+pub fn check_with_types(file: &SourceFile, interner: &Rodeo, source_dir: Option<PathBuf>) -> TypeCheckResult {
+    let mut checker = TypeChecker::new(interner, source_dir);
     checker.collect_definitions(file);
     checker.validate_interface_implementations();
     checker.check_items(file);
@@ -616,6 +865,7 @@ pub fn check_with_types(file: &SourceFile, interner: &Rodeo) -> TypeCheckResult 
         errors: std::mem::take(&mut checker.errors),
         annotations: std::mem::take(&mut checker.annotations),
         symbols: checker.symbols,
+        imported_modules: std::mem::take(&mut checker.imported_modules),
     }
 }
 

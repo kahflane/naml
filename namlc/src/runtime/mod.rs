@@ -60,6 +60,42 @@ pub extern "C" fn naml_exception_clear() {
     CURRENT_EXCEPTION.with(|ex| ex.set(std::ptr::null_mut()));
 }
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static RNG_STATE: AtomicU64 = AtomicU64::new(0);
+
+fn rng_next() -> u64 {
+    let mut s = RNG_STATE.load(Ordering::Relaxed);
+    if s == 0 {
+        s = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0xdeadbeef);
+        if s == 0 { s = 1; }
+    }
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
+    RNG_STATE.store(s, Ordering::Relaxed);
+    s
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_random(min: i64, max: i64) -> i64 {
+    if min >= max {
+        return min;
+    }
+    let range = (max - min + 1) as u64;
+    let r = rng_next() % range;
+    min + r as i64
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_random_float() -> f64 {
+    let r = rng_next();
+    (r >> 11) as f64 / (1u64 << 53) as f64
+}
+
 /// Check if there's a pending exception
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_exception_check() -> i64 {

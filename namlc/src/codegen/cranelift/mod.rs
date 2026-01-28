@@ -148,6 +148,8 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_alloc_closure_data", crate::runtime::naml_alloc_closure_data as *const u8);
         builder.symbol("naml_wait_all", crate::runtime::naml_wait_all as *const u8);
         builder.symbol("naml_sleep", crate::runtime::naml_sleep as *const u8);
+        builder.symbol("naml_random", crate::runtime::naml_random as *const u8);
+        builder.symbol("naml_random_float", crate::runtime::naml_random_float as *const u8);
 
         // Channel operations
         builder.symbol("naml_channel_new", crate::runtime::naml_channel_new as *const u8);
@@ -2731,6 +2733,17 @@ fn compile_expression(
                         let ms = compile_expression(ctx, builder, &call.args[0])?;
                         return call_sleep(ctx, builder, ms);
                     }
+                    "random" => {
+                        if call.args.len() != 2 {
+                            return Err(CodegenError::JitCompile("random requires min and max arguments".to_string()));
+                        }
+                        let min_val = compile_expression(ctx, builder, &call.args[0])?;
+                        let max_val = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_random(ctx, builder, min_val, max_val);
+                    }
+                    "random_float" => {
+                        return call_random_float(ctx, builder);
+                    }
                     "wait_all" => {
                         return call_wait_all(ctx, builder);
                     }
@@ -4789,6 +4802,42 @@ fn call_wait_all(
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
     builder.ins().call(func_ref, &[]);
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn call_random(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    min: Value,
+    max: Value,
+) -> Result<Value, CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_random", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_random: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call_inst = builder.ins().call(func_ref, &[min, max]);
+    Ok(builder.inst_results(call_inst)[0])
+}
+
+fn call_random_float(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<Value, CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::F64));
+
+    let func_id = ctx.module
+        .declare_function("naml_random_float", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_random_float: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call_inst = builder.ins().call(func_ref, &[]);
+    Ok(builder.inst_results(call_inst)[0])
 }
 
 // Channel helper functions

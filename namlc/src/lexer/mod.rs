@@ -419,6 +419,7 @@ pub fn tokenize(source: &str) -> (Vec<Token>, Rodeo) {
     (tokens, lexer.interner)
 }
 
+
 struct Lexer<'a> {
     source: &'a str,
     bytes: &'a [u8],

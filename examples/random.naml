@@ -1,0 +1,40 @@
+// Random Number Generation Example
+// Demonstrates use of std.random module
+
+use std.random.*;
+
+fn main() {
+    println("Random Number Generation");
+    println("========================");
+    println("");
+
+    // Generate random integers in range [1, 10]
+    println("Random integers (1-10):");
+    var r1: int = random(1, 10);
+    println(r1);
+    var r2: int = random(1, 10);
+    println(r2);
+    var r3: int = random(1, 10);
+    println(r3);
+    println("");
+
+    // Generate random floats in range [0.0, 1.0)
+    println("Random floats (0.0-1.0):");
+    var f1: float = random_float();
+    println(f1);
+    var f2: float = random_float();
+    println(f2);
+    println("");
+
+    // Simulate a dice roll
+    println("Dice rolls:");
+    var d1: int = random(1, 6);
+    var d2: int = random(1, 6);
+    println("Die 1:");
+    println(d1);
+    println("Die 2:");
+    println(d2);
+    println("");
+
+    println("Done!");
+}

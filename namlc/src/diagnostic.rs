@@ -211,6 +211,26 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             format!("missing method '{}'", method_name),
             Some(format!("implement '{}' for struct '{}'", method_name, struct_name)),
         ),
+        TypeError::UnknownModule { path, .. } => (
+            format!("unknown module '{}'", path),
+            "module not found".to_string(),
+            Some("check the module path".to_string()),
+        ),
+        TypeError::UnknownModuleSymbol { module, symbol, .. } => (
+            format!("unknown symbol '{}' in module '{}'", symbol, module),
+            format!("'{}' not found", symbol),
+            Some(format!("check available exports in '{}'", module)),
+        ),
+        TypeError::PrivateSymbol { module, symbol, .. } => (
+            format!("symbol '{}' in module '{}' is not public", symbol, module),
+            "not public".to_string(),
+            Some("mark with 'pub' to export".to_string()),
+        ),
+        TypeError::ModuleFileError { path, reason, .. } => (
+            format!("cannot read module '{}': {}", path, reason),
+            "module file error".to_string(),
+            Some("check that the file exists and is valid".to_string()),
+        ),
     }
 }
 
