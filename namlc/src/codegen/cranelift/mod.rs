@@ -157,6 +157,10 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_panic", crate::runtime::naml_panic as *const u8);
         builder.symbol("naml_string_concat", crate::runtime::naml_string_concat as *const u8);
 
+        // I/O builtins
+        builder.symbol("naml_read_line", crate::runtime::naml_read_line as *const u8);
+        builder.symbol("naml_read_key", crate::runtime::naml_read_key as *const u8);
+
         // Channel operations
         builder.symbol("naml_channel_new", crate::runtime::naml_channel_new as *const u8);
         builder.symbol("naml_channel_send", crate::runtime::naml_channel_send as *const u8);
@@ -2767,6 +2771,12 @@ fn compile_expression(
                     "fmt" => {
                         return compile_fmt_call(ctx, builder, &call.args);
                     }
+                    "read_line" => {
+                        return call_read_line(ctx, builder);
+                    }
+                    "read_key" => {
+                        return call_read_key(ctx, builder);
+                    }
                     _ => {}
                 }
 
@@ -3896,6 +3906,39 @@ fn compile_fmt_call(
     args: &[Expression<'_>],
 ) -> Result<Value, CodegenError> {
     build_message_string(ctx, builder, args)
+}
+
+fn call_read_line(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_read_line", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_read_line: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_read_key(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<Value, CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+
+    let func_id = ctx.module
+        .declare_function("naml_read_key", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_read_key: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[]);
+    Ok(builder.inst_results(call)[0])
 }
 
 fn emit_incref(

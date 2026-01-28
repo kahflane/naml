@@ -1,0 +1,18 @@
+// Keyboard Input Example
+// Demonstrates read_line() built-in
+
+fn main() {
+    println("=== Input Demo ===");
+    println("");
+
+    print("Enter your name: ");
+    var name: string = read_line();
+    println(fmt("Hello, {}!", name));
+
+    print("Enter a number: ");
+    var num_str: string = read_line();
+    println(fmt("user said {}", num_str));
+
+    println("");
+    println("Done!");
+}

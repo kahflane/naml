@@ -97,6 +97,46 @@ pub extern "C" fn naml_random_float() -> f64 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn naml_read_line() -> *mut value::NamlString {
+    let mut input = String::new();
+    let _ = std::io::stdin().read_line(&mut input);
+    if input.ends_with('\n') { input.pop(); }
+    if input.ends_with('\r') { input.pop(); }
+    let cstr = std::ffi::CString::new(input).unwrap_or_default();
+    unsafe { value::naml_string_from_cstr(cstr.as_ptr()) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_read_key() -> i64 {
+    use std::os::unix::io::AsRawFd;
+
+    let stdin_fd = std::io::stdin().as_raw_fd();
+
+    unsafe {
+        let mut old_termios: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(stdin_fd, &mut old_termios) != 0 {
+            return -1;
+        }
+
+        let mut raw = old_termios;
+        raw.c_lflag &= !(libc::ICANON | libc::ECHO);
+        raw.c_cc[libc::VMIN] = 0;
+        raw.c_cc[libc::VTIME] = 0;
+
+        if libc::tcsetattr(stdin_fd, libc::TCSANOW, &raw) != 0 {
+            return -1;
+        }
+
+        let mut buf: [u8; 1] = [0];
+        let n = libc::read(stdin_fd, buf.as_mut_ptr() as *mut libc::c_void, 1);
+
+        libc::tcsetattr(stdin_fd, libc::TCSANOW, &old_termios);
+
+        if n <= 0 { -1 } else { buf[0] as i64 }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_warn(s: *const value::NamlString) {
     if !s.is_null() {
         unsafe {

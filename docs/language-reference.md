@@ -905,18 +905,11 @@ switch (result) {
 
 ## Modules and Imports
 
-### Import Module
-
-```naml
-import mymodule;
-import my.nested.module;
-import other_module as om;
-```
-
 ### Use Statement
 
 ```naml
 use mymodule;
+use mymodule::something;
 ```
 
 ---

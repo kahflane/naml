@@ -1,0 +1,24 @@
+// Key Press Example
+// Demonstrates read_key() from std::io module
+
+use std::io::*;
+
+fn main() {
+    println("=== Key Press Demo ===");
+    println("Press keys to see their codes (q to quit):");
+    println("");
+
+    var running: bool = true;
+    while (running) {
+        var key: int = read_key();
+        if (key != -1) {
+            println(fmt("Key code: {}", key));
+            if (key == 113) {
+                running = false;
+            }
+        }
+    }
+
+    println("");
+    println("Done!");
+}

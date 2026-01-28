@@ -321,6 +321,9 @@ impl<'a> TypeChecker<'a> {
                 ("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int, false),
                 ("random_float", vec![], Type::Float, false),
             ]),
+            "io" => Some(vec![
+                ("read_key", vec![], Type::Int, false),
+            ]),
             _ => None,
         }
     }
