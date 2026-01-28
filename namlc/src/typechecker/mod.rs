@@ -212,7 +212,7 @@ impl<'a> TypeChecker<'a> {
                 Item::Exception(e) => self.collect_exception(e),
                 Item::Extern(e) => self.collect_extern(e),
                 Item::Use(u) => self.resolve_use_item(u),
-                Item::Import(_) | Item::TopLevelStmt(_) => {}
+                Item::TopLevelStmt(_) => {}
             }
         }
     }
@@ -229,7 +229,7 @@ impl<'a> TypeChecker<'a> {
         if path_strs[0] == "std" {
             if path_strs.len() < 2 {
                 self.errors.push(TypeError::UnknownModule {
-                    path: path_strs.join("."),
+                    path: path_strs.join("::"),
                     span: use_item.span,
                 });
                 return;
@@ -327,7 +327,7 @@ impl<'a> TypeChecker<'a> {
             Some(d) => d.clone(),
             None => {
                 self.errors.push(TypeError::ModuleFileError {
-                    path: path.join("."),
+                    path: path.join("::"),
                     reason: "no source directory available for local module resolution".to_string(),
                     span,
                 });
@@ -436,7 +436,7 @@ impl<'a> TypeChecker<'a> {
                         }
                         None => {
                             self.errors.push(TypeError::PrivateSymbol {
-                                module: path.join("."),
+                                module: path.join("::"),
                                 symbol: entry_name,
                                 span: entry.span,
                             });

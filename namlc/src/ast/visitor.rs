@@ -130,14 +130,6 @@ pub fn walk_item<'ast, V: Visitor<'ast>>(v: &mut V, item: &Item<'ast>) {
                 v.visit_type(&field.ty);
             }
         }
-        Item::Import(i) => {
-            for seg in &i.path {
-                v.visit_ident(seg);
-            }
-            if let Some(ref alias) = i.alias {
-                v.visit_ident(alias);
-            }
-        }
         Item::Use(u) => {
             for seg in &u.path {
                 v.visit_ident(seg);

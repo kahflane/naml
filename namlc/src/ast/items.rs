@@ -10,7 +10,7 @@
 //! - InterfaceItem: Interface/trait definitions
 //! - EnumItem: Enum type definitions with variants
 //! - ExceptionItem: Exception type definitions
-//! - ImportItem: Module imports
+//! - UseItem: Module imports
 //! - UseItem: Type/function imports from modules
 //! - ExternItem: External function declarations
 //!
@@ -30,7 +30,6 @@ pub enum Item<'ast> {
     Interface(InterfaceItem),
     Enum(EnumItem),
     Exception(ExceptionItem),
-    Import(ImportItem),
     Use(UseItem),
     Extern(ExternItem),
     TopLevelStmt(TopLevelStmtItem<'ast>),
@@ -44,7 +43,6 @@ impl<'ast> Spanned for Item<'ast> {
             Item::Interface(i) => i.span,
             Item::Enum(i) => i.span,
             Item::Exception(i) => i.span,
-            Item::Import(i) => i.span,
             Item::Use(i) => i.span,
             Item::Extern(i) => i.span,
             Item::TopLevelStmt(i) => i.span,
@@ -184,13 +182,6 @@ pub struct ExceptionItem {
     pub name: Ident,
     pub fields: Vec<ExceptionField>,
     pub is_public: bool,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ImportItem {
-    pub path: Vec<Ident>,
-    pub alias: Option<Ident>,
     pub span: Span,
 }
 

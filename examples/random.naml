@@ -1,7 +1,7 @@
 // Random Number Generation Example
-// Demonstrates use of std.random module
+// Demonstrates use of std::random module
 
-use std.random.*;
+use std::random::*;
 
 fn main() {
     println("Random Number Generation");

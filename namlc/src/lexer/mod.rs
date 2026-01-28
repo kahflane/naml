@@ -380,7 +380,6 @@ pub enum Keyword {
     Enum,
     Interface,
     Exception,
-    Import,
     Use,
     Extern,
     Spawn,
@@ -892,7 +891,6 @@ impl<'a> Lexer<'a> {
             (0x75746572, 0x6E72) => TokenKind::Keyword(Keyword::Return),  // "return"
             (0x74697773, 0x6863) => TokenKind::Keyword(Keyword::Switch),  // "switch"
             (0x75727473, 0x7463) => TokenKind::Keyword(Keyword::Struct),  // "struct"
-            (0x6F706D69, 0x7472) => TokenKind::Keyword(Keyword::Import),  // "import"
             (0x65747865, 0x6E72) => TokenKind::Keyword(Keyword::Extern),  // "extern"
             (0x6F726874, 0x7377) => TokenKind::Keyword(Keyword::Throws),  // "throws"
             (0x69727473, 0x676E) => TokenKind::Keyword(Keyword::String),  // "string"

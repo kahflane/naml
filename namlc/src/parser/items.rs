@@ -42,7 +42,6 @@ pub fn parse_item<'a, 'ast>(
         Some(TokenKind::Keyword(Keyword::Enum)) => parse_enum_item(input, is_public),
         Some(TokenKind::Keyword(Keyword::Interface)) => parse_interface_item(input, is_public),
         Some(TokenKind::Keyword(Keyword::Exception)) => parse_exception_item(input, is_public),
-        Some(TokenKind::Keyword(Keyword::Import)) => parse_import_item(input),
         Some(TokenKind::Keyword(Keyword::Use)) => parse_use_item(input),
         Some(TokenKind::Keyword(Keyword::Extern)) => parse_extern_item(input),
         _ => parse_top_level_stmt(arena, input),
@@ -557,39 +556,6 @@ fn parse_exception_item<'a, 'ast>(
     ))
 }
 
-fn parse_import_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
-    let (input, start) = keyword(Keyword::Import)(input)?;
-
-    let (input, first) = ident(input)?;
-    let mut path = vec![first];
-    let mut input = input;
-
-    while check(TokenKind::Dot)(input) {
-        let (new_input, _) = token(TokenKind::Dot)(input)?;
-        let (new_input, segment) = ident(new_input)?;
-        path.push(segment);
-        input = new_input;
-    }
-
-    let (input, alias) = if check_keyword(Keyword::As)(input) {
-        let (input, _) = keyword(Keyword::As)(input)?;
-        let (input, alias_name) = ident(input)?;
-        (input, Some(alias_name))
-    } else {
-        (input, None)
-    };
-
-    let (input, end) = token(TokenKind::Semicolon)(input)?;
-
-    Ok((
-        input,
-        Item::Import(ImportItem {
-            path,
-            alias,
-            span: start.span.merge(end.span),
-        }),
-    ))
-}
 
 fn parse_use_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Use)(input)?;
@@ -598,8 +564,8 @@ fn parse_use_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
     let mut path = vec![first];
     let mut input = input;
 
-    while check(TokenKind::Dot)(input) {
-        let (new_input, _) = token(TokenKind::Dot)(input)?;
+    while check(TokenKind::ColonColon)(input) {
+        let (new_input, _) = token(TokenKind::ColonColon)(input)?;
 
         if check(TokenKind::LBrace)(new_input) || check(TokenKind::Star)(new_input) {
             input = new_input;

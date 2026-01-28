@@ -176,8 +176,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_import() {
-        assert_parses_items("import std.io;", 1);
+    fn test_parse_use() {
+        assert_parses_items("use std::random::*;", 1);
     }
 
     #[test]
