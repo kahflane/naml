@@ -1,0 +1,25 @@
+##
+## naml-std-threads - Concurrency primitives
+##
+## Provides threading and communication primitives for naml programs:
+## - M:N task scheduler with thread pool
+## - Bounded channels for inter-task communication
+## - Task spawning with closure capture support
+##
+## Platform: Native only (threads not available in WASM)
+##
+
+[package]
+name = "naml-std-threads"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Concurrency primitives for the naml programming language"
+
+[lib]
+name = "naml_std_threads"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true

@@ -5,7 +5,7 @@
 /// Similar to strings but for raw binary data.
 ///
 use std::alloc::{alloc, dealloc, Layout};
-use super::value::{HeapHeader, HeapTag, NamlString, naml_string_new};
+use naml_std_core::{HeapHeader, HeapTag, NamlString, naml_string_new};
 
 /// A heap-allocated byte array
 #[repr(C)]

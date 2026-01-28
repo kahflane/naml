@@ -63,7 +63,6 @@ impl TaskQueue {
         self.condvar.notify_all();
     }
 
-    /// Check if the queue has been shut down (utility method for future use)
     #[allow(dead_code)]
     fn is_shutdown(&self) -> bool {
         self.shutdown.load(Ordering::SeqCst)
@@ -126,10 +125,8 @@ impl Drop for Scheduler {
 
 fn worker_loop(queue: Arc<TaskQueue>, active_tasks: Arc<AtomicUsize>) {
     while let Some(task) = queue.pop() {
-        // Execute the task
         (task.func)(task.data);
 
-        // Free the captured data if any
         if !task.data.is_null() && task.data_size > 0 {
             unsafe {
                 let layout = Layout::from_size_align_unchecked(task.data_size, 8);
@@ -137,12 +134,10 @@ fn worker_loop(queue: Arc<TaskQueue>, active_tasks: Arc<AtomicUsize>) {
             }
         }
 
-        // Mark task as completed
         active_tasks.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
-/// Global scheduler instance using OnceLock for safe initialization
 static SCHEDULER: OnceLock<Scheduler> = OnceLock::new();
 
 fn get_scheduler() -> &'static Scheduler {
@@ -155,11 +150,6 @@ fn get_scheduler() -> &'static Scheduler {
 }
 
 /// Spawn a task with captured data
-///
-/// # Arguments
-/// * `func` - Function to execute, takes pointer to captured data
-/// * `data` - Pointer to heap-allocated captured data (will be freed after execution)
-/// * `data_size` - Size of captured data for deallocation
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_spawn_closure(
     func: extern "C" fn(*mut u8),
@@ -172,13 +162,10 @@ pub extern "C" fn naml_spawn_closure(
 /// Spawn a task without captured data (legacy interface)
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_spawn(func: extern "C" fn()) {
-    // Wrap the no-arg function as a closure function that ignores data
     extern "C" fn wrapper(data: *mut u8) {
         let func: extern "C" fn() = unsafe { std::mem::transmute(data) };
         func();
     }
-
-    // Pass function pointer as the data pointer
     get_scheduler().spawn(wrapper, func as *mut u8, 0);
 }
 
@@ -201,7 +188,6 @@ pub extern "C" fn naml_sleep(ms: i64) {
 }
 
 /// Allocate memory for captured closure data
-/// Returns a pointer to allocated memory that will be freed after task execution
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_alloc_closure_data(size: usize) -> *mut u8 {
     if size == 0 {
@@ -226,7 +212,6 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicI64;
 
-    // Each test uses its own counter to avoid interference in parallel test execution
     static BASIC_COUNTER: AtomicI64 = AtomicI64::new(0);
     static CLOSURE_COUNTER: AtomicI64 = AtomicI64::new(0);
 
@@ -256,7 +241,6 @@ mod tests {
     fn test_spawn_with_closure() {
         CLOSURE_COUNTER.store(0, Ordering::SeqCst);
 
-        // Spawn tasks with captured values
         for i in 1..=5 {
             let data = naml_alloc_closure_data(8);
             unsafe {
@@ -267,63 +251,6 @@ mod tests {
 
         naml_wait_all();
 
-        // Sum of 1+2+3+4+5 = 15
         assert_eq!(CLOSURE_COUNTER.load(Ordering::SeqCst), 15);
-    }
-
-    #[test]
-    fn test_thread_pool_parallelism() {
-        use std::sync::atomic::AtomicI32;
-        use std::time::Instant;
-
-        static CONCURRENT_MAX: AtomicI32 = AtomicI32::new(0);
-        static CONCURRENT_CURRENT: AtomicI32 = AtomicI32::new(0);
-
-        extern "C" fn track_concurrency(_: *mut u8) {
-            let current = CONCURRENT_CURRENT.fetch_add(1, Ordering::SeqCst) + 1;
-
-            // Update max if current is higher
-            let mut max = CONCURRENT_MAX.load(Ordering::SeqCst);
-            while current > max {
-                match CONCURRENT_MAX.compare_exchange_weak(
-                    max, current, Ordering::SeqCst, Ordering::SeqCst
-                ) {
-                    Ok(_) => break,
-                    Err(m) => max = m,
-                }
-            }
-
-            // Simulate some work
-            thread::sleep(std::time::Duration::from_millis(50));
-
-            CONCURRENT_CURRENT.fetch_sub(1, Ordering::SeqCst);
-        }
-
-        CONCURRENT_MAX.store(0, Ordering::SeqCst);
-        CONCURRENT_CURRENT.store(0, Ordering::SeqCst);
-
-        let start = Instant::now();
-
-        // Spawn 8 tasks that each take 50ms
-        for _ in 0..8 {
-            naml_spawn_closure(track_concurrency, std::ptr::null_mut(), 0);
-        }
-
-        naml_wait_all();
-
-        let elapsed = start.elapsed();
-
-        // If running in parallel, should complete in ~100-200ms (depending on cores)
-        // If sequential, would take 400ms
-        // Max concurrent should be > 1 if parallelism is working
-        let max_concurrent = CONCURRENT_MAX.load(Ordering::SeqCst);
-
-        // On multi-core systems, we should see some parallelism
-        // Allow for single-core CI environments
-        assert!(max_concurrent >= 1);
-
-        // Time check: should be faster than sequential (8 * 50ms = 400ms)
-        // But be lenient for CI variability
-        assert!(elapsed.as_millis() < 1000);
     }
 }

@@ -8,7 +8,7 @@
 
 use std::alloc::{alloc, dealloc, realloc, Layout};
 
-use super::value::{HeapHeader, HeapTag};
+use naml_std_core::{HeapHeader, HeapTag};
 
 /// A heap-allocated array of i64 values
 /// (All naml values are represented as i64 at runtime)
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn naml_array_decref_strings(arr: *mut NamlArray) {
                 for i in 0..(*arr).len {
                     let elem = *(*arr).data.add(i);
                     if elem != 0 {
-                        super::value::naml_string_decref(elem as *mut super::value::NamlString);
+                        naml_std_core::naml_string_decref(elem as *mut naml_std_core::NamlString);
                     }
                 }
 
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn naml_array_decref_structs(arr: *mut NamlArray) {
                 for i in 0..(*arr).len {
                     let elem = *(*arr).data.add(i);
                     if elem != 0 {
-                        super::value::naml_struct_decref(elem as *mut super::value::NamlStruct);
+                        naml_std_core::naml_struct_decref(elem as *mut naml_std_core::NamlStruct);
                     }
                 }
 

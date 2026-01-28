@@ -1,0 +1,23 @@
+##
+## naml-std-random - Random number generation
+##
+## Provides random number generation for naml programs:
+## - random(min, max) -> int: Random integer in range [min, max]
+## - random_float() -> float: Random float in range [0.0, 1.0)
+##
+## Uses XORshift algorithm seeded from system time.
+##
+
+[package]
+name = "naml-std-random"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Random number generation for the naml programming language"
+
+[lib]
+name = "naml_std_random"
+path = "src/lib.rs"
+
+[dependencies]

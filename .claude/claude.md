@@ -75,21 +75,36 @@ Type Checker (inference + validation)
 
 ### Directory Structure
 ```
-namlc/src/
-├── main.rs           # CLI entry point
-├── lib.rs            # Library root
-├── source/           # Source file handling, spans, diagnostics
-├── lexer/            # Tokenization
-├── ast/              # Abstract syntax tree definitions
-├── parser/           # Parsing
-├── typechecker/      # Type system
-├── jit/              # Cranelift JIT compilation
-├── cache/            # Code caching for fast startup
-├── codegen/rust/     # Rust code generation
-├── runtime/          # Embedded runtime
-├── manifest/         # naml.toml parsing
-├── bindings/         # Rust crate auto-binding
-└── driver/           # Compilation orchestration
+naml/
+├── Cargo.toml            # Workspace root
+├── namlc/                # Compiler crate
+│   └── src/
+│       ├── main.rs       # CLI entry point
+│       ├── lib.rs        # Library root
+│       ├── source/       # Source file handling, spans, diagnostics
+│       ├── lexer/        # Tokenization
+│       ├── ast/          # Abstract syntax tree definitions
+│       ├── parser/       # Parsing
+│       ├── typechecker/  # Type system
+│       ├── codegen/      # Cranelift JIT compilation
+│       ├── runtime/      # Runtime re-exports + array/map/bytes
+│       ├── manifest/     # naml.toml parsing
+│       └── driver/       # Compilation orchestration
+│
+└── std/                  # Standard library crates
+    ├── naml-std-core/    # Core types (HeapHeader, NamlString, NamlStruct)
+    ├── naml-std-random/  # Random number generation
+    ├── naml-std-io/      # Terminal I/O and console control
+    └── naml-std-threads/ # M:N scheduler and channels
+```
+
+### Standard Library Architecture
+```
+naml-std-core     → Base types shared by all std crates
+    ↑
+    ├── naml-std-random   → random(min, max), random_float()
+    ├── naml-std-io       → read_key(), terminal_*, cursor control
+    └── naml-std-threads  → spawn, channels, join
 ```
 
 ## Testing
@@ -127,6 +142,13 @@ naml test                       # Run tests
 - `cranelift-*` - JIT compilation
 - `thiserror` / `miette` - Error handling
 - `clap` - CLI parsing
+- `libc` - C library bindings for runtime
+
+### Standard Library
+- `naml-std-core` - Core runtime types (HeapHeader, NamlString, NamlStruct)
+- `naml-std-random` - Random number generation (std::random)
+- `naml-std-io` - Terminal I/O (std::io)
+- `naml-std-threads` - Concurrency primitives (std::threads)
 
 ### Serialization
 - `serde` / `toml` - Config files
@@ -182,3 +204,14 @@ for (i: int, val: T in collection) { }
 switch (val) { case X: ... default: ... }
 spawn { }
 ```
+
+## Adding New Standard Library Modules
+
+1. Create a new crate in `std/naml-std-<name>/`
+2. Add to workspace members in root `Cargo.toml`
+3. Add workspace dependency: `naml-std-<name> = { path = "std/naml-std-<name>" }`
+4. If it depends on core types, add `naml-std-core.workspace = true` to its dependencies
+5. Add dependency to `namlc/Cargo.toml`
+6. Re-export in `namlc/src/runtime/mod.rs`: `pub use naml_std_<name>::*;`
+7. Register functions in `namlc/src/typechecker/mod.rs` (get_std_module_functions)
+8. Register runtime symbols in `namlc/src/codegen/cranelift/mod.rs`

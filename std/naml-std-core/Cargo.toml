@@ -1,0 +1,23 @@
+##
+## naml-std-core - Core runtime types and utilities
+##
+## Provides the fundamental types shared across all naml standard library crates:
+## - HeapHeader and HeapTag for reference-counted objects
+## - NamlString for heap-allocated strings
+## - NamlStruct for heap-allocated struct instances
+## - Exception handling primitives
+##
+
+[package]
+name = "naml-std-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core runtime types for the naml programming language"
+
+[lib]
+name = "naml_std_core"
+path = "src/lib.rs"
+
+[dependencies]

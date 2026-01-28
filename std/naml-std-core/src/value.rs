@@ -26,6 +26,7 @@ pub enum HeapTag {
     Struct = 2,
     Map = 3,
     Closure = 4,
+    Channel = 5,
 }
 
 /// Header for all heap-allocated objects
@@ -68,7 +69,7 @@ impl HeapHeader {
 pub struct NamlString {
     pub header: HeapHeader,
     pub len: usize,
-    pub data: [u8; 0], // Flexible array member
+    pub data: [u8; 0],
 }
 
 impl NamlString {
@@ -86,7 +87,7 @@ pub struct NamlStruct {
     pub header: HeapHeader,
     pub type_id: u32,
     pub field_count: u32,
-    pub fields: [i64; 0], // Flexible array of field values
+    pub fields: [i64; 0],
 }
 
 /// Allocate a new string on the heap
@@ -310,7 +311,6 @@ pub unsafe extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut
         (*ptr).type_id = type_id;
         (*ptr).field_count = field_count;
 
-        // Initialize fields to zero
         let fields_ptr = (*ptr).fields.as_mut_ptr();
         for i in 0..field_count as usize {
             *fields_ptr.add(i) = 0;
@@ -346,7 +346,6 @@ pub unsafe extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
 }
 
 /// Free struct memory without refcount check (called by generated decref functions)
-/// Generated decref functions handle field cleanup before calling this.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_struct_free(s: *mut NamlStruct) {
     if !s.is_null() {
@@ -410,7 +409,7 @@ mod tests {
     fn test_string_concat() {
         unsafe {
             let a = naml_string_new(b"hello ".as_ptr(), 6);
-            let b = naml_string_new(b"world ".as_ptr(), 5);
+            let b = naml_string_new(b"world".as_ptr(), 5);
             let c = naml_string_concat(a, b);
 
             assert_eq!((*c).len, 11);

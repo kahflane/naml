@@ -95,6 +95,13 @@ bumpalo.workspace = true
 ##
 libc.workspace = true
 
+##
+## naml standard library crates
+##
+naml-std-core.workspace = true
+naml-std-random.workspace = true
+naml-std-io.workspace = true
+naml-std-threads.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

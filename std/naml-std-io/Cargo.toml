@@ -1,0 +1,29 @@
+##
+## naml-std-io - Input/Output operations
+##
+## Provides terminal I/O and console control for naml programs:
+## - read_key() -> int: Non-blocking key read
+## - read_line() -> string: Read a line from stdin
+## - clear_screen(): Clear terminal
+## - set_cursor(x, y): Move cursor position
+## - hide_cursor() / show_cursor(): Cursor visibility
+## - terminal_width() / terminal_height(): Terminal dimensions
+##
+## Platform: Native only (uses Unix terminal APIs)
+##
+
+[package]
+name = "naml-std-io"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Input/Output operations for the naml programming language"
+
+[lib]
+name = "naml_std_io"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
+libc.workspace = true

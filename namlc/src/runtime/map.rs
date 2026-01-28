@@ -6,7 +6,7 @@
 //!
 
 use std::alloc::{alloc, alloc_zeroed, dealloc, Layout};
-use super::value::{HeapHeader, HeapTag, NamlString, naml_string_decref};
+use naml_std_core::{HeapHeader, HeapTag, NamlString, naml_string_decref};
 
 const INITIAL_CAPACITY: usize = 16;
 const LOAD_FACTOR: f64 = 0.75;
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn naml_map_set_struct(map: *mut NamlMap, key: i64, value:
             if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
                 // Decref old struct value before replacing
                 if (*entry).value != 0 {
-                    super::value::naml_struct_decref((*entry).value as *mut super::value::NamlStruct);
+                    naml_std_core::naml_struct_decref((*entry).value as *mut naml_std_core::NamlStruct);
                 }
                 (*entry).value = value;
                 return;
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn naml_map_decref_structs(map: *mut NamlMap) {
                         naml_string_decref((*entry).key as *mut NamlString);
                     }
                     if (*entry).value != 0 {
-                        super::value::naml_struct_decref((*entry).value as *mut super::value::NamlStruct);
+                        naml_std_core::naml_struct_decref((*entry).value as *mut naml_std_core::NamlStruct);
                     }
                 }
             }

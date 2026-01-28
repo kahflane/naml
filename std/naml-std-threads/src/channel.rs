@@ -10,7 +10,7 @@ use std::alloc::{alloc, dealloc, Layout};
 use std::collections::VecDeque;
 use std::sync::{Mutex, Condvar};
 
-use super::value::{HeapHeader, HeapTag};
+use naml_std_core::{HeapHeader, HeapTag};
 
 /// A bounded channel for inter-task communication
 #[repr(C)]
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn naml_channel_new(capacity: usize) -> *mut NamlChannel {
         }
 
         std::ptr::write(ptr, NamlChannel {
-            header: HeapHeader::new(HeapTag::Map), // Reusing Map tag for channels
+            header: HeapHeader::new(HeapTag::Channel),
             capacity: cap,
             inner: Mutex::new(ChannelInner {
                 buffer: VecDeque::with_capacity(cap),
@@ -88,7 +88,6 @@ pub unsafe extern "C" fn naml_channel_send(ch: *mut NamlChannel, value: i64) -> 
         let channel = &*ch;
         let mut inner = channel.inner.lock().unwrap();
 
-        // Wait while buffer is full and channel is open
         while inner.buffer.len() >= channel.capacity && !inner.closed {
             inner = channel.not_full.wait(inner).unwrap();
         }
@@ -115,7 +114,6 @@ pub unsafe extern "C" fn naml_channel_receive(ch: *mut NamlChannel) -> i64 {
         let channel = &*ch;
         let mut inner = channel.inner.lock().unwrap();
 
-        // Wait while buffer is empty and channel is open
         while inner.buffer.is_empty() && !inner.closed {
             inner = channel.not_empty.wait(inner).unwrap();
         }
@@ -124,7 +122,7 @@ pub unsafe extern "C" fn naml_channel_receive(ch: *mut NamlChannel) -> i64 {
             channel.not_full.notify_one();
             value
         } else {
-            0 // Channel closed and empty
+            0
         }
     }
 }
@@ -152,8 +150,6 @@ pub unsafe extern "C" fn naml_channel_try_send(ch: *mut NamlChannel, value: i64)
 }
 
 /// Try to receive without blocking
-/// Returns the value in the high bits and success (1) or failure (0) in low bit
-/// Use naml_channel_try_receive_value() and naml_channel_try_receive_ok() to extract
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_channel_try_receive(ch: *mut NamlChannel) -> i64 {
     if ch.is_null() {
@@ -166,8 +162,6 @@ pub unsafe extern "C" fn naml_channel_try_receive(ch: *mut NamlChannel) -> i64 {
 
         if let Some(value) = inner.buffer.pop_front() {
             channel.not_full.notify_one();
-            // Pack value and success flag
-            // For simplicity, just return the value (caller should use try_send for status)
             value
         } else {
             0

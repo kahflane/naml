@@ -7,7 +7,13 @@
 
 [workspace]
 resolver = "2"
-members = ["namlc"]
+members = [
+    "namlc",
+    "std/naml-std-core",
+    "std/naml-std-random",
+    "std/naml-std-io",
+    "std/naml-std-threads",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -110,6 +116,14 @@ bumpalo = { version = "3.16", features = ["collections"] }
 ## C library bindings for runtime
 ##
 libc = "0.2"
+
+##
+## naml standard library crates
+##
+naml-std-core = { path = "std/naml-std-core" }
+naml-std-random = { path = "std/naml-std-random" }
+naml-std-io = { path = "std/naml-std-io" }
+naml-std-threads = { path = "std/naml-std-threads" }
 
 [profile.release]
 lto = true
