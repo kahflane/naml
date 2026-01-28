@@ -326,6 +326,12 @@ impl<'a> TypeChecker<'a> {
             ]),
             "io" => Some(vec![
                 StdModuleFn::new("read_key", vec![], Type::Int),
+                StdModuleFn::new("clear_screen", vec![], Type::Unit),
+                StdModuleFn::new("set_cursor", vec![("x", Type::Int), ("y", Type::Int)], Type::Unit),
+                StdModuleFn::new("hide_cursor", vec![], Type::Unit),
+                StdModuleFn::new("show_cursor", vec![], Type::Unit),
+                StdModuleFn::new("terminal_width", vec![], Type::Int),
+                StdModuleFn::new("terminal_height", vec![], Type::Int),
             ]),
             "threads" => Some(vec![
                 StdModuleFn::new("join", vec![], Type::Unit),

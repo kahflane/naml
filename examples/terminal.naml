@@ -1,0 +1,29 @@
+use std::io::*;
+
+fn main() {
+    var w: int = terminal_width();
+    var h: int = terminal_height();
+    print("Terminal size: {}x{}\n", w, h);
+
+    clear_screen();
+    hide_cursor();
+
+    set_cursor(0, 0);
+    println("Top-left corner");
+
+    set_cursor(0, 5);
+    println("Row 5");
+
+    set_cursor(0, h - 1);
+    print("Bottom row. Press any key...");
+
+    var key: int = read_key();
+    while (key == -1) {
+        key = read_key();
+    }
+
+    show_cursor();
+    clear_screen();
+    set_cursor(0, 0);
+    println("Done!");
+}

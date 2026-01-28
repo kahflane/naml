@@ -137,6 +137,54 @@ pub extern "C" fn naml_read_key() -> i64 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn naml_clear_screen() {
+    print!("\x1b[2J\x1b[H");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_set_cursor(x: i64, y: i64) {
+    print!("\x1b[{};{}H", y + 1, x + 1);
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_hide_cursor() {
+    print!("\x1b[?25l");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_show_cursor() {
+    print!("\x1b[?25h");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_terminal_width() -> i64 {
+    unsafe {
+        let mut ws: libc::winsize = std::mem::zeroed();
+        if libc::ioctl(1, libc::TIOCGWINSZ, &mut ws) == 0 {
+            ws.ws_col as i64
+        } else {
+            80
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_terminal_height() -> i64 {
+    unsafe {
+        let mut ws: libc::winsize = std::mem::zeroed();
+        if libc::ioctl(1, libc::TIOCGWINSZ, &mut ws) == 0 {
+            ws.ws_row as i64
+        } else {
+            24
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_warn(s: *const value::NamlString) {
     if !s.is_null() {
         unsafe {

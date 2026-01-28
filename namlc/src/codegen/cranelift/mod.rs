@@ -160,6 +160,12 @@ impl<'a> JitCompiler<'a> {
         // I/O builtins
         builder.symbol("naml_read_line", crate::runtime::naml_read_line as *const u8);
         builder.symbol("naml_read_key", crate::runtime::naml_read_key as *const u8);
+        builder.symbol("naml_clear_screen", crate::runtime::naml_clear_screen as *const u8);
+        builder.symbol("naml_set_cursor", crate::runtime::naml_set_cursor as *const u8);
+        builder.symbol("naml_hide_cursor", crate::runtime::naml_hide_cursor as *const u8);
+        builder.symbol("naml_show_cursor", crate::runtime::naml_show_cursor as *const u8);
+        builder.symbol("naml_terminal_width", crate::runtime::naml_terminal_width as *const u8);
+        builder.symbol("naml_terminal_height", crate::runtime::naml_terminal_height as *const u8);
 
         // Channel operations
         builder.symbol("naml_channel_new", crate::runtime::naml_channel_new as *const u8);
@@ -2777,6 +2783,26 @@ fn compile_expression(
                     "read_key" => {
                         return call_read_key(ctx, builder);
                     }
+                    "clear_screen" => {
+                        return call_void_runtime(ctx, builder, "naml_clear_screen");
+                    }
+                    "set_cursor" => {
+                        let x = compile_expression(ctx, builder, &call.args[0])?;
+                        let y = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_two_arg_runtime(ctx, builder, "naml_set_cursor", x, y);
+                    }
+                    "hide_cursor" => {
+                        return call_void_runtime(ctx, builder, "naml_hide_cursor");
+                    }
+                    "show_cursor" => {
+                        return call_void_runtime(ctx, builder, "naml_show_cursor");
+                    }
+                    "terminal_width" => {
+                        return call_int_runtime(ctx, builder, "naml_terminal_width");
+                    }
+                    "terminal_height" => {
+                        return call_int_runtime(ctx, builder, "naml_terminal_height");
+                    }
                     _ => {}
                 }
 
@@ -5061,6 +5087,53 @@ fn call_random_float(
     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
     let call_inst = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call_inst)[0])
+}
+
+fn call_void_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+) -> Result<Value, CodegenError> {
+    let sig = ctx.module.make_signature();
+    let func_id = ctx.module
+        .declare_function(name, Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", name, e)))?;
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[]);
+    Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn call_int_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+) -> Result<Value, CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.returns.push(AbiParam::new(cranelift::prelude::types::I64));
+    let func_id = ctx.module
+        .declare_function(name, Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", name, e)))?;
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_two_arg_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    a: Value,
+    b: Value,
+) -> Result<Value, CodegenError> {
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
+    let func_id = ctx.module
+        .declare_function(name, Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", name, e)))?;
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[a, b]);
+    Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
 }
 
 // Channel helper functions
