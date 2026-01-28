@@ -96,6 +96,43 @@ pub extern "C" fn naml_random_float() -> f64 {
     (r >> 11) as f64 / (1u64 << 53) as f64
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_warn(s: *const value::NamlString) {
+    if !s.is_null() {
+        unsafe {
+            let slice = std::slice::from_raw_parts((*s).data.as_ptr(), (*s).len);
+            if let Ok(msg) = std::str::from_utf8(slice) {
+                eprintln!("warning: {}", msg);
+            }
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_error(s: *const value::NamlString) {
+    if !s.is_null() {
+        unsafe {
+            let slice = std::slice::from_raw_parts((*s).data.as_ptr(), (*s).len);
+            if let Ok(msg) = std::str::from_utf8(slice) {
+                eprintln!("error: {}", msg);
+            }
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_panic(s: *const value::NamlString) {
+    if !s.is_null() {
+        unsafe {
+            let slice = std::slice::from_raw_parts((*s).data.as_ptr(), (*s).len);
+            if let Ok(msg) = std::str::from_utf8(slice) {
+                eprintln!("panic: {}", msg);
+            }
+        }
+    }
+    std::process::abort();
+}
+
 /// Check if there's a pending exception
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_exception_check() -> i64 {

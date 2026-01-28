@@ -914,14 +914,14 @@ fn main() {
     var user_opt: option<User> = user_repo.find_by_id(user_id);
 
     var user: User = user_opt else {
-        printf("User not found");
+        print("User not found");
         return;
     }
-    printf("Found user: {}", user.full_name());
+    print("Found user: {}", user.full_name());
 
     var response: HttpResponse = client.get("/users/" + user_id.value);
     if (response.is_success()) {
-        printf("API call successful: {} {}", response.status_code, response.status_text);
+        print("API call successful: {} {}", response.status_code, response.status_text);
     }
 
     var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -943,9 +943,9 @@ fn main() {
         sum = sum + n;
     }
 
-    printf("Doubled: {}", doubled);
-    printf("Evens: {}", evens);
-    printf("Sum: {}", sum);
+    print("Doubled: {}", doubled);
+    print("Evens: {}", evens);
+    print("Sum: {}", sum);
 
     var users: [User] = [];
     var admins: [User] = [];
@@ -962,7 +962,7 @@ fn main() {
         }
     }
 
-    printf("Active admins: {}", active_admins.length);
+    print("Active admins: {}", active_admins.length);
 
     // Note: promise type and async task patterns removed as async/await is not supported
     // Running synchronous requests instead

@@ -87,14 +87,14 @@ var r: rectangle = rectangle { width: 10.0, height: 5.0 };
 var c: circle = circle { radius: 3.0 };
 var mut p: point = point { x: 3.0, y: 4.0 };
 
-printf("Rectangle area: {}", r.area());
-printf("Rectangle perimeter: {}", r.perimeter());
-printf("Circle area: {}", c.area());
-printf("Circle perimeter: {}", c.perimeter());
-printf("Point distance squared: {}", p.distance_from_origin());
+print("Rectangle area: {}", r.area());
+print("Rectangle perimeter: {}", r.perimeter());
+print("Circle area: {}", c.area());
+print("Circle perimeter: {}", c.perimeter());
+print("Point distance squared: {}", p.distance_from_origin());
 
 p.move_by(1.0, 1.0);
-printf("After move - Point distance squared: {}", p.distance_from_origin());
+print("After move - Point distance squared: {}", p.distance_from_origin());
 "#;
 
     let (tokens, _interner) = tokenize(source);

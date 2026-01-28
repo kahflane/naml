@@ -55,7 +55,7 @@ pub fn (self: Rectangle) is_square() -> bool {
 
 fn main() {
     // Create a Point and call its methods
-    var p = Point { x: 10, y: 20 };
+    var p:Point = Point { x: 10, y: 20 };
     println("Point coordinates:");
     println(p.get_x());
     println(p.get_y());
@@ -64,13 +64,13 @@ fn main() {
     println("");
 
     // Create a Rectangle and call its methods
-    var rect = Rectangle { width: 5, height: 10 };
+    var rect: Rectangle = Rectangle { width: 5, height: 10 };
     println("Rectangle properties:");
     println(rect.area());
     println(rect.perimeter());
 
     // Create a square
-    var square = Rectangle { width: 4, height: 4 };
+    var square: Rectangle = Rectangle { width: 4, height: 4 };
     println("Square area:");
     println(square.area());
 }

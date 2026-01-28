@@ -151,6 +151,12 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_random", crate::runtime::naml_random as *const u8);
         builder.symbol("naml_random_float", crate::runtime::naml_random_float as *const u8);
 
+        // Diagnostic builtins
+        builder.symbol("naml_warn", crate::runtime::naml_warn as *const u8);
+        builder.symbol("naml_error", crate::runtime::naml_error as *const u8);
+        builder.symbol("naml_panic", crate::runtime::naml_panic as *const u8);
+        builder.symbol("naml_string_concat", crate::runtime::naml_string_concat as *const u8);
+
         // Channel operations
         builder.symbol("naml_channel_new", crate::runtime::naml_channel_new as *const u8);
         builder.symbol("naml_channel_send", crate::runtime::naml_channel_send as *const u8);
@@ -2723,7 +2729,7 @@ fn compile_expression(
                 let func_name = ctx.interner.resolve(&ident.ident.symbol);
 
                 match func_name {
-                    "printf" | "print" | "println" => {
+                    "print" | "println" => {
                         return compile_print_call(ctx, builder, &call.args, func_name == "println");
                     }
                     "sleep" => {
@@ -2755,6 +2761,12 @@ fn compile_expression(
                         };
                         return call_channel_new(ctx, builder, capacity);
                     }
+                    "warn" | "error" | "panic" => {
+                        return compile_stderr_call(ctx, builder, &call.args, func_name);
+                    }
+                    "fmt" => {
+                        return compile_fmt_call(ctx, builder, &call.args);
+                    }
                     _ => {}
                 }
 
@@ -2772,7 +2784,11 @@ fn compile_expression(
 
                     let mut args = Vec::new();
                     for arg in &call.args {
-                        args.push(compile_expression(ctx, builder, arg)?);
+                        let mut val = compile_expression(ctx, builder, arg)?;
+                        if matches!(arg, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                            val = call_string_from_cstr(ctx, builder, val)?;
+                        }
+                        args.push(val);
                     }
 
                     let call_inst = builder.ins().call(func_ref, &args);
@@ -3716,6 +3732,170 @@ fn print_arg(
         }
     }
     Ok(())
+}
+
+fn arg_to_naml_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arg: &Expression<'_>,
+) -> Result<Value, CodegenError> {
+    match arg {
+        Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) => {
+            let s = ctx.interner.resolve(spur);
+            let ptr = compile_string_literal(ctx, builder, s)?;
+            call_string_from_cstr(ctx, builder, ptr)
+        }
+        Expression::Literal(LiteralExpr { value: Literal::Int(n), .. }) => {
+            let val = builder.ins().iconst(cranelift::prelude::types::I64, *n);
+            call_int_to_string(ctx, builder, val)
+        }
+        Expression::Literal(LiteralExpr { value: Literal::Float(f), .. }) => {
+            let val = builder.ins().f64const(*f);
+            call_float_to_string(ctx, builder, val)
+        }
+        _ => {
+            let val = compile_expression(ctx, builder, arg)?;
+            let expr_type = ctx.annotations.get_type(arg.span());
+            match expr_type {
+                Some(Type::String) => Ok(val),
+                Some(Type::Float) => call_float_to_string(ctx, builder, val),
+                _ => {
+                    let val_type = builder.func.dfg.value_type(val);
+                    if val_type == cranelift::prelude::types::F64 {
+                        call_float_to_string(ctx, builder, val)
+                    } else {
+                        call_int_to_string(ctx, builder, val)
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn call_string_concat(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    a: Value,
+    b: Value,
+) -> Result<Value, CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(ptr_type));
+
+    let func_id = ctx.module
+        .declare_function("naml_string_concat", Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare naml_string_concat: {}", e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    let call = builder.ins().call(func_ref, &[a, b]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn build_message_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    args: &[Expression<'_>],
+) -> Result<Value, CodegenError> {
+    if args.is_empty() {
+        let ptr = compile_string_literal(ctx, builder, "")?;
+        return call_string_from_cstr(ctx, builder, ptr);
+    }
+
+    if let Expression::Literal(LiteralExpr { value: Literal::String(spur), .. }) = &args[0] {
+        let format_str = ctx.interner.resolve(spur).to_string();
+        if format_str.contains("{}") {
+            let mut result: Option<Value> = None;
+            let mut arg_idx = 1;
+            let mut last_end = 0;
+
+            for (start, _) in format_str.match_indices("{}") {
+                if start > last_end {
+                    let literal_part = &format_str[last_end..start];
+                    let ptr = compile_string_literal(ctx, builder, literal_part)?;
+                    let part = call_string_from_cstr(ctx, builder, ptr)?;
+                    result = Some(match result {
+                        Some(acc) => call_string_concat(ctx, builder, acc, part)?,
+                        None => part,
+                    });
+                }
+
+                if arg_idx < args.len() {
+                    let part = arg_to_naml_string(ctx, builder, &args[arg_idx])?;
+                    arg_idx += 1;
+                    result = Some(match result {
+                        Some(acc) => call_string_concat(ctx, builder, acc, part)?,
+                        None => part,
+                    });
+                }
+
+                last_end = start + 2;
+            }
+
+            if last_end < format_str.len() {
+                let remaining = &format_str[last_end..];
+                let ptr = compile_string_literal(ctx, builder, remaining)?;
+                let part = call_string_from_cstr(ctx, builder, ptr)?;
+                result = Some(match result {
+                    Some(acc) => call_string_concat(ctx, builder, acc, part)?,
+                    None => part,
+                });
+            }
+
+            return Ok(result.unwrap_or_else(|| {
+                let ptr = compile_string_literal(ctx, builder, "").unwrap();
+                call_string_from_cstr(ctx, builder, ptr).unwrap()
+            }));
+        }
+    }
+
+    let mut result: Option<Value> = None;
+    for (i, arg) in args.iter().enumerate() {
+        let part = arg_to_naml_string(ctx, builder, arg)?;
+        if i > 0 {
+            let space_ptr = compile_string_literal(ctx, builder, " ")?;
+            let space = call_string_from_cstr(ctx, builder, space_ptr)?;
+            result = Some(call_string_concat(ctx, builder, result.unwrap(), space)?);
+        }
+        result = Some(match result {
+            Some(acc) => call_string_concat(ctx, builder, acc, part)?,
+            None => part,
+        });
+    }
+
+    Ok(result.unwrap())
+}
+
+fn compile_stderr_call(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    args: &[Expression<'_>],
+    func_name: &str,
+) -> Result<Value, CodegenError> {
+    let msg = build_message_string(ctx, builder, args)?;
+
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let mut sig = ctx.module.make_signature();
+    sig.params.push(AbiParam::new(ptr_type));
+
+    let runtime_name = format!("naml_{}", func_name);
+    let func_id = ctx.module
+        .declare_function(&runtime_name, Linkage::Import, &sig)
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to declare {}: {}", runtime_name, e)))?;
+
+    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+    builder.ins().call(func_ref, &[msg]);
+
+    Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn compile_fmt_call(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    args: &[Expression<'_>],
+) -> Result<Value, CodegenError> {
+    build_message_string(ctx, builder, args)
 }
 
 fn emit_incref(

@@ -1,0 +1,38 @@
+// Built-in Functions Example
+// Demonstrates warn, error, panic, and fmt
+
+fn main() {
+    println("=== Built-in Functions ===");
+    println("");
+
+    // fmt: format strings (returns a string)
+    var name: string = "naml";
+    var version: int = 1;
+    var greeting: string = fmt("Hello, {}! Version {}", name, version);
+    println(greeting);
+
+    // fmt with float
+    var pi: float = 3.14159;
+    var msg: string = fmt("Pi is approximately {}", pi);
+    println(msg);
+
+    // fmt with no placeholders
+    var plain: string = fmt("no placeholders here");
+    println(plain);
+
+    println("");
+
+    // warn: prints to stderr with "warning: " prefix
+    warn("this is a warning message");
+    warn("disk space low: {} remaining", 42);
+
+    // error: prints to stderr with "error: " prefix
+    error("something went wrong");
+    error("failed to open file: {}", "config.toml");
+
+    println("");
+    println("Done! (warn and error output went to stderr)");
+
+    // panic: uncomment to test abort behavior
+    // panic("fatal error: {}", "out of memory");
+}

@@ -89,7 +89,10 @@ impl<'a> TypeChecker<'a> {
         let builtins: Vec<(&str, bool, Type)> = vec![
             ("print", true, Type::Unit),
             ("println", true, Type::Unit),
-            ("printf", true, Type::Unit),
+            ("warn", true, Type::Unit),
+            ("error", true, Type::Unit),
+            ("panic", true, Type::Unit),
+            ("fmt", true, Type::String),
             ("read_line", false, Type::String),
             // Concurrency builtins (no params)
             ("wait_all", false, Type::Unit),
