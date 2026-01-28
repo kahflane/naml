@@ -1,8 +1,10 @@
+use std::threads::{open_channel, join};
+
 fn main() {
     println("Testing spawn:");
 
     // Create a channel to communicate results
-    var ch: channel<int> = make_channel(10);
+    var ch: channel<int> = open_channel(10);
 
     // Test basic spawn by spawning work that sends to channel
     println("Spawning 3 tasks...");
@@ -22,7 +24,7 @@ fn main() {
     };
 
     // Wait for all spawned tasks
-    wait_all();
+    join();
 
     // Read results
     println("Tasks complete. Reading results:");

@@ -67,6 +67,24 @@ pub struct TypeChecker<'a> {
     imported_modules: Vec<ImportedModule>,
 }
 
+struct StdModuleFn {
+    name: &'static str,
+    type_params: Vec<&'static str>,
+    params: Vec<(&'static str, Type)>,
+    return_ty: Type,
+    is_variadic: bool,
+}
+
+impl StdModuleFn {
+    fn new(name: &'static str, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
+        Self { name, type_params: vec![], params, return_ty, is_variadic: false }
+    }
+
+    fn generic(name: &'static str, type_params: Vec<&'static str>, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
+        Self { name, type_params, params, return_ty, is_variadic: false }
+    }
+}
+
 impl<'a> TypeChecker<'a> {
     pub fn new(interner: &'a Rodeo, source_dir: Option<PathBuf>) -> Self {
         let mut checker = Self {
@@ -94,8 +112,6 @@ impl<'a> TypeChecker<'a> {
             ("panic", true, Type::Unit),
             ("fmt", true, Type::String),
             ("read_line", false, Type::String),
-            // Concurrency builtins (no params)
-            ("wait_all", false, Type::Unit),
         ];
 
         for (name, is_variadic, return_ty) in builtins {
@@ -127,26 +143,6 @@ impl<'a> TypeChecker<'a> {
             });
         }
 
-        // Register make_channel as a generic function: make_channel<T>(capacity: int) -> channel<T>
-        if let Some(spur) = self.interner.get("make_channel") {
-            // Create a type parameter T
-            let t_spur = self.interner.get("T").unwrap_or(spur); // Use T if interned, fallback to name
-            let type_param = TypeParam {
-                name: t_spur,
-                bounds: vec![],
-            };
-
-            self.symbols.define_function(FunctionSig {
-                name: spur,
-                type_params: vec![type_param.clone()],
-                params: vec![(spur, Type::Int)], // capacity parameter
-                return_ty: Type::Channel(Box::new(Type::Generic(t_spur, vec![]))),
-                throws: vec![],
-                is_public: true,
-                is_variadic: false,
-                span: Span::dummy(),
-            });
-        }
     }
 
     pub fn check(&mut self, file: &SourceFile) -> Vec<TypeError> {
@@ -257,50 +253,17 @@ impl<'a> TypeChecker<'a> {
 
         match items {
             UseItems::All => {
-                for (name, params, return_ty, is_variadic) in &module_fns {
-                    if let Some(spur) = self.interner.get(name) {
-                        let params: Vec<_> = params.iter()
-                            .map(|(pname, pty)| {
-                                let pspur = self.interner.get(pname).unwrap_or(spur);
-                                (pspur, pty.clone())
-                            })
-                            .collect();
-                        self.symbols.define_function(FunctionSig {
-                            name: spur,
-                            type_params: vec![],
-                            params,
-                            return_ty: return_ty.clone(),
-                            throws: vec![],
-                            is_public: true,
-                            is_variadic: *is_variadic,
-                            span: Span::dummy(),
-                        });
-                    }
+                for module_fn in &module_fns {
+                    self.register_std_fn(module_fn);
                 }
             }
             UseItems::Specific(entries) => {
                 for entry in entries {
                     let entry_name = self.interner.resolve(&entry.name.symbol).to_string();
-                    let found = module_fns.iter().find(|(name, _, _, _)| *name == entry_name);
+                    let found = module_fns.iter().find(|f| f.name == entry_name);
                     match found {
-                        Some((_name, params, return_ty, is_variadic)) => {
-                            let spur = entry.name.symbol;
-                            let params: Vec<_> = params.iter()
-                                .map(|(pname, pty)| {
-                                    let pspur = self.interner.get(pname).unwrap_or(spur);
-                                    (pspur, pty.clone())
-                                })
-                                .collect();
-                            self.symbols.define_function(FunctionSig {
-                                name: spur,
-                                type_params: vec![],
-                                params,
-                                return_ty: return_ty.clone(),
-                                throws: vec![],
-                                is_public: true,
-                                is_variadic: *is_variadic,
-                                span: Span::dummy(),
-                            });
+                        Some(module_fn) => {
+                            self.register_std_fn(module_fn);
                         }
                         None => {
                             self.errors.push(TypeError::UnknownModuleSymbol {
@@ -315,14 +278,59 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_std_module_functions(module: &str) -> Option<Vec<(&'static str, Vec<(&'static str, Type)>, Type, bool)>> {
+    fn register_std_fn(&mut self, module_fn: &StdModuleFn) {
+        if let Some(spur) = self.interner.get(module_fn.name) {
+            let type_params: Vec<_> = module_fn.type_params.iter()
+                .map(|tp_name| {
+                    let tp_spur = self.interner.get(tp_name).unwrap_or(spur);
+                    TypeParam { name: tp_spur, bounds: vec![] }
+                })
+                .collect();
+
+            let mut return_ty = module_fn.return_ty.clone();
+            if let Type::Channel(inner) = &mut return_ty {
+                if let Type::Generic(g_spur, _) = inner.as_mut() {
+                    if *g_spur == lasso::Spur::default() {
+                        if let Some(tp) = type_params.first() {
+                            *g_spur = tp.name;
+                        }
+                    }
+                }
+            }
+
+            let params: Vec<_> = module_fn.params.iter()
+                .map(|(pname, pty)| {
+                    let pspur = self.interner.get(pname).unwrap_or(spur);
+                    (pspur, pty.clone())
+                })
+                .collect();
+
+            self.symbols.define_function(FunctionSig {
+                name: spur,
+                type_params,
+                params,
+                return_ty,
+                throws: vec![],
+                is_public: true,
+                is_variadic: module_fn.is_variadic,
+                span: Span::dummy(),
+            });
+        }
+    }
+
+    fn get_std_module_functions(module: &str) -> Option<Vec<StdModuleFn>> {
         match module {
             "random" => Some(vec![
-                ("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int, false),
-                ("random_float", vec![], Type::Float, false),
+                StdModuleFn::new("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int),
+                StdModuleFn::new("random_float", vec![], Type::Float),
             ]),
             "io" => Some(vec![
-                ("read_key", vec![], Type::Int, false),
+                StdModuleFn::new("read_key", vec![], Type::Int),
+            ]),
+            "threads" => Some(vec![
+                StdModuleFn::new("join", vec![], Type::Unit),
+                StdModuleFn::generic("open_channel", vec!["T"], vec![("capacity", Type::Int)],
+                    Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
             ]),
             _ => None,
         }

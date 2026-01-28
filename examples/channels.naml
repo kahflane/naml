@@ -1,8 +1,10 @@
+use std::threads::*;
+
 fn main() {
     println("Testing channels:");
 
     // Create a channel with capacity 5
-    var ch: channel<int> = make_channel(5);
+    var ch: channel<int> = open_channel(5);
 
     // Send values
     println("Sending values...");

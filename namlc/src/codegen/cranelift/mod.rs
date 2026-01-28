@@ -2754,10 +2754,10 @@ fn compile_expression(
                     "random_float" => {
                         return call_random_float(ctx, builder);
                     }
-                    "wait_all" => {
+                    "join" => {
                         return call_wait_all(ctx, builder);
                     }
-                    "make_channel" => {
+                    "open_channel" => {
                         let capacity = if call.args.is_empty() {
                             builder.ins().iconst(cranelift::prelude::types::I64, 1)
                         } else {
