@@ -129,8 +129,9 @@ pub struct WhileStmt<'ast> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ForStmt<'ast> {
     pub index: Option<Ident>,
+    pub index_ty: Option<NamlType>,
     pub value: Ident,
-    pub ty: Option<NamlType>,
+    pub value_ty: Option<NamlType>,
     pub iterable: Expression<'ast>,
     pub body: BlockStmt<'ast>,
     pub span: Span,

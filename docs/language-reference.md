@@ -289,8 +289,8 @@ x *= 2;     // x = 24
 Ranges are used in for loops:
 
 ```naml
-for (i in 0..5) { }     // 0, 1, 2, 3, 4
-for (i in 0..=5) { }    // 0, 1, 2, 3, 4, 5
+for (i: int in 0..5) { }     // 0, 1, 2, 3, 4
+for (i: int in 0..=5) { }    // 0, 1, 2, 3, 4, 5
 ```
 
 ### Other Operators
@@ -385,11 +385,11 @@ loop {
 Iterate over ranges:
 
 ```naml
-for (i in 0..10) {
+for (i: int in 0..10) {
     // i: 0, 1, 2, ..., 9
 }
 
-for (i in 0..=10) {
+for (i: int in 0..=10) {
     // i: 0, 1, 2, ..., 10 (inclusive)
 }
 ```
@@ -397,11 +397,11 @@ for (i in 0..=10) {
 Iterate over collections:
 
 ```naml
-for (item in array) {
+for (item: string in array) {
     // iterate items
 }
 
-for (index, item in array) {
+for (index: int, item: string in array) {
     // index and item
 }
 ```
@@ -409,7 +409,7 @@ for (index, item in array) {
 ### Break and Continue
 
 ```naml
-for (i in 0..100) {
+for (i: int in 0..100) {
     if (i == 50) {
         break;      // Exit loop
     }
@@ -1095,7 +1095,7 @@ fn main() {
 
     // Using generics
     var numbers: [int] = [1, 2, 3, 4, 5];
-    for (i, num in numbers) {
+    for (i: int, num: int in numbers) {
         print_int(num);
     }
 

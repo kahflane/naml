@@ -267,20 +267,27 @@ fn parse_for_stmt<'a, 'ast>(
     let (input, _) = token(TokenKind::LParen)(input)?;
 
     let (input, first) = ident(input)?;
-    let (input, index, value) = if check(TokenKind::Comma)(input) {
-        let (input, _) = token(TokenKind::Comma)(input)?;
-        let (input, second) = ident(input)?;
-        (input, Some(first), second)
-    } else {
-        (input, None, first)
-    };
-
-    let (input, ty) = if check(TokenKind::Colon)(input) {
+    let (input, first_ty) = if check(TokenKind::Colon)(input) {
         let (input, _) = token(TokenKind::Colon)(input)?;
         let (input, ty) = parse_type(input)?;
         (input, Some(ty))
     } else {
         (input, None)
+    };
+
+    let (input, index, index_ty, value, value_ty) = if check(TokenKind::Comma)(input) {
+        let (input, _) = token(TokenKind::Comma)(input)?;
+        let (input, second) = ident(input)?;
+        let (input, second_ty) = if check(TokenKind::Colon)(input) {
+            let (input, _) = token(TokenKind::Colon)(input)?;
+            let (input, ty) = parse_type(input)?;
+            (input, Some(ty))
+        } else {
+            (input, None)
+        };
+        (input, Some(first), first_ty, second, second_ty)
+    } else {
+        (input, None, None, first, first_ty)
     };
 
     let (input, _) = keyword(Keyword::In)(input)?;
@@ -293,8 +300,9 @@ fn parse_for_stmt<'a, 'ast>(
         input,
         Statement::For(ForStmt {
             index,
+            index_ty,
             value,
-            ty,
+            value_ty,
             iterable,
             body,
             span: start.span.merge(body_span),

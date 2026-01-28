@@ -8,7 +8,7 @@
 
 mod types;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cranelift::prelude::*;
 use cranelift_codegen::ir::AtomicRmwOp;
@@ -83,6 +83,7 @@ pub struct JitCompiler<'a> {
     functions: HashMap<String, FuncId>,
     struct_defs: HashMap<String, StructDef>,
     enum_defs: HashMap<String, EnumDef>,
+    exception_names: HashSet<String>,
     extern_fns: HashMap<String, ExternFn>,
     next_type_id: u32,
     spawn_counter: u32,
@@ -239,6 +240,7 @@ impl<'a> JitCompiler<'a> {
             functions: HashMap::new(),
             struct_defs: HashMap::new(),
             enum_defs,
+            exception_names: HashSet::new(),
             extern_fns: HashMap::new(),
             next_type_id: 0,
             spawn_counter: 0,
@@ -285,6 +287,7 @@ impl<'a> JitCompiler<'a> {
                 self.next_type_id += 1;
 
                 // Exception treated as a struct with its fields
+                self.exception_names.insert(name.clone());
                 self.struct_defs.insert(name, StructDef { type_id, fields, field_heap_types });
             }
         }
@@ -682,6 +685,7 @@ impl<'a> JitCompiler<'a> {
             functions: &self.functions,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
+            exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
@@ -1122,6 +1126,7 @@ impl<'a> JitCompiler<'a> {
             functions: &self.functions,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
+            exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
@@ -1230,6 +1235,7 @@ impl<'a> JitCompiler<'a> {
             functions: &self.functions,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
+            exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
@@ -1340,6 +1346,7 @@ impl<'a> JitCompiler<'a> {
             functions: &self.functions,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
+            exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
@@ -1467,6 +1474,7 @@ impl<'a> JitCompiler<'a> {
             functions: &self.functions,
             struct_defs: &self.struct_defs,
             enum_defs: &self.enum_defs,
+            exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
@@ -1602,6 +1610,7 @@ struct CompileContext<'a> {
     functions: &'a HashMap<String, FuncId>,
     struct_defs: &'a HashMap<String, StructDef>,
     enum_defs: &'a HashMap<String, EnumDef>,
+    exception_names: &'a HashSet<String>,
     extern_fns: &'a HashMap<String, ExternFn>,
     variables: HashMap<String, Variable>,
     var_heap_types: HashMap<String, HeapType>,
@@ -1641,11 +1650,18 @@ fn compile_statement(
             // Check if this is a string variable
             let is_string_var = matches!(var_stmt.ty.as_ref(), Some(crate::ast::NamlType::String));
 
-            // Track heap type for cleanup
-            if let Some(ref naml_ty) = var_stmt.ty
-                && let Some(heap_type) = get_heap_type(naml_ty) {
-                    ctx.var_heap_types.insert(var_name.clone(), heap_type);
-                }
+            // Track heap type for cleanup (skip enum types - they are stack-allocated,
+            // and exception types - they use raw allocation, not NamlStruct)
+            let skip_heap_tracking = matches!(var_stmt.ty.as_ref(), Some(crate::ast::NamlType::Named(ident)) if {
+                let type_name = ctx.interner.resolve(&ident.symbol).to_string();
+                ctx.enum_defs.contains_key(&type_name) || ctx.exception_names.contains(&type_name)
+            });
+            if !skip_heap_tracking {
+                if let Some(ref naml_ty) = var_stmt.ty
+                    && let Some(heap_type) = get_heap_type(naml_ty) {
+                        ctx.var_heap_types.insert(var_name.clone(), heap_type);
+                    }
+            }
 
             let var = Variable::new(ctx.var_counter);
             ctx.var_counter += 1;
@@ -1823,7 +1839,7 @@ fn compile_statement(
                                 let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
                                 if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
                                     && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
-                                        let offset = (idx * 8) as i32;
+                                        let offset = (24 + idx * 8) as i32;
                                         builder.ins().store(MemFlags::new(), value, base_ptr, offset);
                                         return Ok(());
                                     }
@@ -1832,7 +1848,7 @@ fn compile_statement(
                                 let struct_name = ctx.interner.resolve(name).to_string();
                                 if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
                                     && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
-                                        let offset = (idx * 8) as i32;
+                                        let offset = (24 + idx * 8) as i32;
                                         builder.ins().store(MemFlags::new(), value, base_ptr, offset);
                                         return Ok(());
                                     }
@@ -2443,8 +2459,8 @@ fn compile_pattern_match(
             let name = ctx.interner.resolve(&ident.ident.symbol).to_string();
             for enum_def in ctx.enum_defs.values() {
                 if let Some(variant) = enum_def.variants.iter().find(|v| v.name == name) {
-                    let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), scrutinee, 0);
-                    let expected_tag = builder.ins().iconst(cranelift::prelude::types::I32, variant.tag as i64);
+                    let tag = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), scrutinee, 0);
+                    let expected_tag = builder.ins().iconst(cranelift::prelude::types::I64, variant.tag as i64);
                     return Ok(builder.ins().icmp(IntCC::Equal, tag, expected_tag));
                 }
             }
@@ -2481,8 +2497,8 @@ fn compile_pattern_match(
 
             if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
                 && let Some(var_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
-                    let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), scrutinee, 0);
-                    let expected_tag = builder.ins().iconst(cranelift::prelude::types::I32, var_def.tag as i64);
+                    let tag = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), scrutinee, 0);
+                    let expected_tag = builder.ins().iconst(cranelift::prelude::types::I64, var_def.tag as i64);
                     return Ok(builder.ins().icmp(IntCC::Equal, tag, expected_tag));
                 }
 
@@ -2605,19 +2621,17 @@ fn compile_expression(
 
                 if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
                     && let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name) {
-                        // Unit variant - allocate stack slot and set tag
+                        // Allocate stack slot and set tag
                         let slot = builder.create_sized_stack_slot(StackSlotData::new(
                             StackSlotKind::ExplicitSlot,
                             enum_def.size as u32,
-                            0,
+                            3,
                         ));
                         let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
 
-                        // Store tag at offset 0
-                        let tag_val = builder.ins().iconst(cranelift::prelude::types::I32, variant.tag as i64);
+                        let tag_val = builder.ins().iconst(cranelift::prelude::types::I64, variant.tag as i64);
                         builder.ins().store(MemFlags::new(), tag_val, slot_addr, 0);
 
-                        // Return pointer to stack slot
                         return Ok(slot_addr);
                     }
             }
@@ -2854,7 +2868,7 @@ fn compile_expression(
                             let slot_addr = builder.ins().stack_addr(cranelift::prelude::types::I64, slot, 0);
 
                             // Store tag
-                            let tag_val = builder.ins().iconst(cranelift::prelude::types::I32, variant.tag as i64);
+                            let tag_val = builder.ins().iconst(cranelift::prelude::types::I64, variant.tag as i64);
                             builder.ins().store(MemFlags::new(), tag_val, slot_addr, 0);
 
                             // Store data fields
@@ -3010,7 +3024,7 @@ fn compile_expression(
                         let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
                         if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
                             && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
-                                let offset = (idx * 8) as i32;
+                                let offset = (24 + idx * 8) as i32;
                                 let value = builder.ins().load(
                                     cranelift::prelude::types::I64,
                                     MemFlags::new(),

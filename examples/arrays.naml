@@ -7,13 +7,13 @@ fn main() {
     println(arr.len());
 
     println("Iterating with for loop:");
-    for (val in arr) {
+    for (val: int in arr) {
         print("  Value: ");
         println(val);
     }
 
     println("Iterating with index:");
-    for (i, val in arr) {
+    for (i: int, val: int in arr) {
         print("  arr[");
         print(i);
         print("] = ");
@@ -22,7 +22,7 @@ fn main() {
 
     println("Sum of elements:");
     var sum: int = 0;
-    for (val in arr) {
+    for (val: int in arr) {
         sum = sum + val;
     }
     print("  Total: ");

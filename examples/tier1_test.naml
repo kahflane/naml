@@ -215,7 +215,7 @@ fn test_arrays() {
 
     print("Testing for loop iteration: ");
     var sum: int = 0;
-    for (n in numbers) {
+    for (i: int, n: int in numbers) {
         sum = sum + n;
     }
     if (sum == 150) {
@@ -226,7 +226,7 @@ fn test_arrays() {
 
     print("Testing indexed for loop: ");
     var idx_sum: int = 0;
-    for (i, n in numbers) {
+    for (i: int, n: int in numbers) {
         idx_sum = idx_sum + i;
     }
     if (idx_sum == 10) {
@@ -348,7 +348,7 @@ fn test_combined() {
     print("Testing enum in loop: ");
     var colors: [Color] = [Color::Red, Color::Green, Color::Blue];
     var count: int = 0;
-    for (c in colors) {
+    for (c: Color in colors) {
         count = count + 1;
     }
     if (count == 3) {
@@ -384,7 +384,7 @@ fn test_combined() {
         Point { x: 5, y: 6 }
     ];
     var x_sum: int = 0;
-    for (pt in points) {
+    for (pt: Point in points) {
         x_sum = x_sum + pt.x;
     }
     if (x_sum == 9) {

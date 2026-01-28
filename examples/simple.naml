@@ -87,7 +87,7 @@ pub fn (self: UserId) equals(other: UserId) -> bool {
 
 pub fn (self: UserId) hash() -> uint {
     var h: uint = 0;
-    for (i, c in self.value) {
+    for (i: int, c: string in self.value) {
         h = h * 31 + (c as uint);
     }
     return h;
@@ -210,7 +210,7 @@ pub fn (self: User) is_active() -> bool {
 }
 
 pub fn (self: User) has_role(role: UserRole) -> bool {
-    for (r in self.roles) {
+    for (r: UserRole in self.roles) {
         if (r == role) {
             return true;
         }
@@ -593,7 +593,7 @@ pub fn (self: UserRepository) find_all() -> [User] throws DatabaseError {
     var query: string = "SELECT * FROM " + self.table_name;
     var result: [map<string, string>] = self.execute_query(query, []);
     var users: [User] = [];
-    for (row in result) {
+    for (row: map<string, string> in result) {
         users.push(self.map_row_to_user(row));
     }
     return users;
@@ -735,7 +735,7 @@ pub fn (self: UserDeletedEvent) payload() -> map<string, string> {
 
 pub fn map_array<T, U>(arr: [T], f: fn(T) -> U) -> [U] {
     var result: [U] = [];
-    for (item in arr) {
+    for (item: T in arr) {
         result.push(f(item));
     }
     return result;
@@ -743,7 +743,7 @@ pub fn map_array<T, U>(arr: [T], f: fn(T) -> U) -> [U] {
 
 pub fn filter_array<T>(arr: [T], predicate: fn(T) -> bool) -> [T] {
     var result: [T] = [];
-    for (item in arr) {
+    for (item: T in arr) {
         if (predicate(item)) {
             result.push(item);
         }
@@ -753,14 +753,14 @@ pub fn filter_array<T>(arr: [T], predicate: fn(T) -> bool) -> [T] {
 
 pub fn reduce_array<T, U>(arr: [T], initial: U, reducer: fn(U, T) -> U) -> U {
     var acc: U = initial;
-    for (item in arr) {
+    for (item: T in arr) {
         acc = reducer(acc, item);
     }
     return acc;
 }
 
 pub fn find_first<T>(arr: [T], predicate: fn(T) -> bool) -> option<T> {
-    for (item in arr) {
+    for (item: T in arr) {
         if (predicate(item)) {
             return some(item);
         }
@@ -769,7 +769,7 @@ pub fn find_first<T>(arr: [T], predicate: fn(T) -> bool) -> option<T> {
 }
 
 pub fn any<T>(arr: [T], predicate: fn(T) -> bool) -> bool {
-    for (item in arr) {
+    for (item: T in arr) {
         if (predicate(item)) {
             return true;
         }
@@ -778,7 +778,7 @@ pub fn any<T>(arr: [T], predicate: fn(T) -> bool) -> bool {
 }
 
 pub fn all<T>(arr: [T], predicate: fn(T) -> bool) -> bool {
-    for (item in arr) {
+    for (item: T in arr) {
         if (!predicate(item)) {
             return false;
         }
@@ -803,8 +803,8 @@ pub fn zip<A, B>(a: [A], b: [B]) -> [Pair<A, B>] {
 
 pub fn flatten<T>(nested: [[T]]) -> [T] {
     var result: [T] = [];
-    for (inner in nested) {
-        for (item in inner) {
+    for (inner: [T] in nested) {
+        for (item: T in inner) {
             result.push(item);
         }
     }
@@ -927,19 +927,19 @@ fn main() {
     var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     var doubled: [int] = [];
-    for (n in numbers) {
+    for (n: int in numbers) {
         doubled.push(n * 2);
     }
 
     var evens: [int] = [];
-    for (n in numbers) {
+    for (n: int in numbers) {
         if (n % 2 == 0) {
             evens.push(n);
         }
     }
 
     var sum: int = 0;
-    for (n in numbers) {
+    for (n: int in numbers) {
         sum = sum + n;
     }
 
@@ -949,14 +949,14 @@ fn main() {
 
     var users: [User] = [];
     var admins: [User] = [];
-    for (u in users) {
+    for (u: User in users) {
         if (u.is_admin()) {
             admins.push(u);
         }
     }
 
     var active_admins: [User] = [];
-    for (u in admins) {
+    for (u: User in admins) {
         if (u.is_active()) {
             active_admins.push(u);
         }

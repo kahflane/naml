@@ -228,8 +228,11 @@ pub fn walk_stmt<'ast, V: Visitor<'ast>>(v: &mut V, stmt: &Statement<'ast>) {
             if let Some(ref idx) = s.index {
                 v.visit_ident(idx);
             }
+            if let Some(ref ty) = s.index_ty {
+                v.visit_type(ty);
+            }
             v.visit_ident(&s.value);
-            if let Some(ref ty) = s.ty {
+            if let Some(ref ty) = s.value_ty {
                 v.visit_type(ty);
             }
             v.visit_expr(&s.iterable);

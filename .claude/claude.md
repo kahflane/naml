@@ -163,14 +163,13 @@ int, uint, float, bool, string, bytes
 option<T>        # Optional
 map<K, V>        # Map
 channel<T>       # Channel (native/server only)
-promise<T>       # Async promise
+promise<T>       # Promise
 ```
 
 ### Function Syntax
 ```naml
 fn name(param: Type) -> ReturnType { }
 fn name<T>(param: T) -> T { }
-async fn name() -> T { }
 fn name() -> T throws Error { }
 pub fn (self: Type) method() -> T { }
 ```
@@ -179,7 +178,7 @@ pub fn (self: Type) method() -> T { }
 ```naml
 if (cond) { } else { }
 while (cond) { }
-for (i, val: T in collection) { }
+for (i: int, val: T in collection) { }
 switch (val) { case X: ... default: ... }
 spawn { }
 ```

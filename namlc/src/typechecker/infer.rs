@@ -1796,7 +1796,7 @@ impl<'a> TypeInferrer<'a> {
                         TypeDef::Struct(s) => Type::Struct(self.symbols.to_struct_type(s)),
                         TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
                         TypeDef::Interface(i) => Type::Interface(self.symbols.to_interface_type(i)),
-                        TypeDef::Exception(_) => Type::Generic(ident.symbol, Vec::new()),
+                        TypeDef::Exception(e) => Type::Exception(e.name),
                     }
                 } else {
                     // Fall back to generic type (for type parameters)

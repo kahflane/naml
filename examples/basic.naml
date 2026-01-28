@@ -35,7 +35,7 @@ fn fibonacci(n: int) -> int {
 
 fn sum_array(arr: [int]) -> int {
     var total: int = 0;
-    for (item in arr) {
+    for (item: int in arr) {
         total = total + item;
     }
     return total;

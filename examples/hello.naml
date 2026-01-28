@@ -3,7 +3,7 @@ fn main() {
 
     var x: int = 40;
     var y: int = 2;
-    var result = x + y;
+    var result: int = x + y;
 
     print("Result: ");
     println(result);
