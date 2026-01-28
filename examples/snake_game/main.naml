@@ -1,0 +1,124 @@
+use std::io::*;
+use std::random::*;
+use snake::*;
+use food::*;
+use grid::*;
+
+fn hit_self(xs: [int], ys: [int], hx: int, hy: int, len: int) -> bool {
+    var i: int = 0;
+    while (i < len) {
+        if (xs[i] == hx and ys[i] == hy) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn main() {
+    var w: int = 30;
+    var h: int = 15;
+
+    var xs: [int] = [w / 2, w / 2 - 1, w / 2 - 2];
+    var ys: [int] = [h / 2, h / 2, h / 2];
+    var dir: int = 1;
+    var score: int = 0;
+    var alive: bool = true;
+
+    var fx: int = spawn_food_x(w);
+    var fy: int = spawn_food_y(h);
+
+    clear_screen();
+    hide_cursor();
+    draw_border(w, h);
+
+    while (alive) {
+        set_cursor(0, h + 2);
+        print("                                        ");
+        set_cursor(0, h + 2);
+        print("Score: {} | WASD to move | Q to quit", score);
+
+        var i: int = 0;
+        while (i < xs.len()) {
+            if (i == 0) {
+                draw_at(xs[i], ys[i], "@");
+            } else {
+                draw_at(xs[i], ys[i], "o");
+            }
+            i = i + 1;
+        }
+
+        draw_at(fx, fy, "*");
+
+        sleep(100);
+
+        var key: int = read_key();
+        if (key == 113 or key == 81) {
+            alive = false;
+        }
+
+        var new_dir: int = dir;
+        if (key == 119 or key == 87) { new_dir = 0; }
+        if (key == 100 or key == 68) { new_dir = 1; }
+        if (key == 115 or key == 83) { new_dir = 2; }
+        if (key == 97 or key == 65) { new_dir = 3; }
+
+        if (not is_opposite(dir, new_dir)) {
+            dir = new_dir;
+        }
+
+        if (alive) {
+            var nx: int = next_head_x(xs[0], dir);
+            var ny: int = next_head_y(ys[0], dir);
+
+            if (hit_wall(nx, ny, w, h)) {
+                alive = false;
+            }
+
+            if (alive and hit_self(xs, ys, nx, ny, xs.len())) {
+                alive = false;
+            }
+
+            if (alive) {
+                var tail_x: int = xs[xs.len() - 1];
+                var tail_y: int = ys[ys.len() - 1];
+                clear_cell(tail_x, tail_y);
+
+                var j: int = xs.len() - 1;
+                while (j > 0) {
+                    xs[j] = xs[j - 1];
+                    ys[j] = ys[j - 1];
+                    j = j - 1;
+                }
+
+                xs[0] = nx;
+                ys[0] = ny;
+
+                if (nx == fx and ny == fy) {
+                    score = score + 1;
+                    xs.push(tail_x);
+                    ys.push(tail_y);
+
+                    fx = spawn_food_x(w);
+                    fy = spawn_food_y(h);
+                }
+            }
+        }
+    }
+
+    draw_game_over(w, h, score);
+
+    var quit: bool = false;
+    while (not quit) {
+        var k: int = read_key();
+        if (k == 113 or k == 81) {
+            quit = true;
+        }
+        sleep(50);
+    }
+
+    show_cursor();
+    clear_screen();
+    set_cursor(0, 0);
+    println("Thanks for playing! Final score: {}", score);
+}

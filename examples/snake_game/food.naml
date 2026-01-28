@@ -1,0 +1,9 @@
+use std::random::*;
+
+pub fn spawn_food_x(w: int) -> int {
+    return random(0, w - 1);
+}
+
+pub fn spawn_food_y(h: int) -> int {
+    return random(0, h - 1);
+}

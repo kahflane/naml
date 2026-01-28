@@ -435,6 +435,43 @@ impl<'a> JitCompiler<'a> {
         Ok(())
     }
 
+    pub fn compile_module_source(&mut self, source: &str) -> Result<(), CodegenError> {
+        let (tokens, module_interner) = crate::lexer::tokenize(source);
+        let arena = crate::ast::AstArena::new();
+        let parse_result = crate::parser::parse(&tokens, source, &arena);
+        if !parse_result.errors.is_empty() {
+            return Err(CodegenError::JitCompile("parse errors in imported module".into()));
+        }
+
+        let type_result = crate::typechecker::check_with_types(
+            &parse_result.ast, &module_interner, None,
+        );
+
+        let saved_interner = self.interner;
+        let saved_annotations = self.annotations;
+        self.interner = unsafe { std::mem::transmute::<&Rodeo, &Rodeo>(&module_interner) };
+        self.annotations = unsafe { std::mem::transmute::<&TypeAnnotations, &TypeAnnotations>(&type_result.annotations) };
+
+        for item in &parse_result.ast.items {
+            if let Item::Function(f) = item {
+                if f.is_public && f.receiver.is_none() && f.body.is_some() && f.generics.is_empty() {
+                    self.declare_function(f)?;
+                }
+            }
+        }
+        for item in &parse_result.ast.items {
+            if let Item::Function(f) = item {
+                if f.is_public && f.receiver.is_none() && f.body.is_some() && f.generics.is_empty() {
+                    self.compile_function(f)?;
+                }
+            }
+        }
+
+        self.interner = saved_interner;
+        self.annotations = saved_annotations;
+        Ok(())
+    }
+
     fn generate_struct_decref_functions(&mut self) -> Result<(), CodegenError> {
         // Collect structs that need specialized decref functions
         let structs_with_heap_fields: Vec<(String, StructDef)> = self.struct_defs.iter()

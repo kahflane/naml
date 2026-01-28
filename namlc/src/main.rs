@@ -159,7 +159,8 @@ fn check_file(path: &std::path::Path) {
     }
 
     if !has_errors {
-        let type_errors = check(&parse_result.ast, &interner);
+        let source_dir = path.parent().map(|p| p.to_path_buf());
+        let type_errors = check_with_types(&parse_result.ast, &interner, source_dir).errors;
 
         if !type_errors.is_empty() {
             let reporter = DiagnosticReporter::new(&source_file);

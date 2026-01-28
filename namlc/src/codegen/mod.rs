@@ -38,9 +38,12 @@ pub fn compile_and_run(
     interner: &Rodeo,
     annotations: &TypeAnnotations,
     symbols: &SymbolTable,
-    _imported_modules: &[ImportedModule],
+    imported_modules: &[ImportedModule],
 ) -> Result<(), CodegenError> {
     let mut jit = cranelift::JitCompiler::new(interner, annotations, symbols)?;
+    for module in imported_modules {
+        jit.compile_module_source(&module.source_text)?;
+    }
     jit.compile(ast)?;
     jit.run_main()
 }

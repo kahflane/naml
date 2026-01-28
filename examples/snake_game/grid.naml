@@ -1,0 +1,58 @@
+use std::io::*;
+
+pub fn draw_border(w: int, h: int) {
+    set_cursor(0, 0);
+    var i: int = 0;
+    while (i < w + 2) {
+        print("#");
+        i = i + 1;
+    }
+
+    var y: int = 1;
+    while (y <= h) {
+        set_cursor(0, y);
+        print("#");
+        set_cursor(w + 1, y);
+        print("#");
+        y = y + 1;
+    }
+
+    set_cursor(0, h + 1);
+    i = 0;
+    while (i < w + 2) {
+        print("#");
+        i = i + 1;
+    }
+}
+
+pub fn draw_at(x: int, y: int, ch: string) {
+    set_cursor(x + 1, y + 1);
+    print(ch);
+}
+
+pub fn clear_cell(x: int, y: int) {
+    set_cursor(x + 1, y + 1);
+    print(" ");
+}
+
+pub fn draw_header(score: int, w: int) {
+    set_cursor(0, 0);
+    var i: int = 0;
+    while (i < w + 2) {
+        print(" ");
+        i = i + 1;
+    }
+    set_cursor(0, 0);
+    print("Score: {} | WASD to move | Q to quit", score);
+}
+
+pub fn draw_game_over(w: int, h: int, score: int) {
+    var cx: int = w / 2 - 4;
+    var cy: int = h / 2;
+    set_cursor(cx, cy);
+    print("GAME OVER!");
+    set_cursor(cx - 2, cy + 1);
+    print("Score: {}", score);
+    set_cursor(cx - 4, cy + 2);
+    print("Press Q to quit...");
+}
