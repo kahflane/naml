@@ -57,6 +57,7 @@ naml provides the following primitive types:
 | `int` | Signed integer | 64-bit |
 | `uint` | Unsigned integer | 64-bit |
 | `float` | Floating-point number | 64-bit |
+| `decimal` | Decimal number with precision/scale | 64-bit |
 | `bool` | Boolean value | - |
 | `string` | UTF-8 encoded text | heap |
 | `bytes` | Raw binary data | heap |
@@ -67,6 +68,8 @@ naml provides the following primitive types:
 var age: int = 25;
 var count: uint = 100;
 var pi: float = 3.14159;
+var price: decimal = 19.99;           // Default precision(10, 2)
+var precise: decimal(18, 6) = 3.141592;  // Custom precision
 var active: bool = true;
 var name: string = "Alice";
 var data: bytes = "hello" as bytes;
@@ -318,10 +321,11 @@ var str: string = number as string;
 
 ### Mutable Variables
 
-Use `var` to declare mutable variables. **Type annotation is always required**:
+Use `var` to declare mutable variables. Variables declared with `var` are **always mutable** - there is no `mut` keyword needed. **Type annotation is always required**:
 
 ```naml
 var x: int = 10;
+x = 20;              // OK - var is mutable by default
 var y: float = 3.14;
 var z: int = 30;
 ```
@@ -332,6 +336,7 @@ var z: int = 30;
 // INVALID - will not compile:
 var x = 10;           // Error: ExpectedTypeAnnotation
 var name = "Alice";   // Error: ExpectedTypeAnnotation
+var mut x: int = 10;  // Error: MutNotAllowedOnVar (var is already mutable)
 ```
 
 ### Variable with Else Block
@@ -361,10 +366,15 @@ if (condition) {
 }
 ```
 
-If as expression:
+**Note**: `if` is a statement, not an expression. It cannot return a value directly. Use a variable assignment inside the branches instead:
 
 ```naml
-var result: string = if (x > 0) { "positive" } else { "non-positive" };
+var result: string;
+if (x > 0) {
+    result = "positive";
+} else {
+    result = "non-positive";
+}
 ```
 
 ### While Loop
@@ -518,7 +528,7 @@ fn process(input: string) -> int throws ParseError, ValidationError {
 
 ## Methods
 
-Methods are functions with a receiver (first parameter is `self`):
+Methods are functions with a receiver (first parameter is `self`). **Receivers are always mutable** - there is no `mut` keyword on receivers:
 
 ### Basic Method
 
@@ -534,7 +544,7 @@ pub fn (self: Point) get_y() -> int {
 
 ### Mutating Methods
 
-Methods can mutate `self` fields directly since receivers are always mutable:
+All methods can mutate `self` fields directly since receivers are always mutable:
 
 ```naml
 pub fn (self: Counter) increment() {
@@ -545,6 +555,8 @@ pub fn (self: Counter) reset() {
     self.value = 0;
 }
 ```
+
+**Note**: Using `mut` on receivers is invalid and will cause a compile error.
 
 ### Method Calls
 
@@ -1076,7 +1088,9 @@ fn add(a: int, b: int) -> int {
 ## Keywords
 
 ### Declaration Keywords
-`fn`, `var`, `const`, `mut`, `pub`, `struct`, `enum`, `interface`, `exception`, `extern`
+`fn`, `var`, `const`, `pub`, `struct`, `enum`, `interface`, `exception`, `extern`
+
+> **Note**: The `mut` keyword is reserved but not used. Variables (`var`) and method receivers are mutable by default.
 
 ### Control Flow Keywords
 `if`, `else`, `while`, `for`, `in`, `loop`, `break`, `continue`, `return`, `switch`, `case`, `default`
@@ -1085,7 +1099,7 @@ fn add(a: int, b: int) -> int {
 `throw`, `throws`, `try`, `catch`
 
 ### Type Keywords
-`int`, `uint`, `float`, `bool`, `string`, `bytes`, `option`, `map`, `channel`
+`int`, `uint`, `float`, `decimal`, `bool`, `string`, `bytes`, `option`, `map`, `channel`
 
 ### Boolean/Option Keywords
 `true`, `false`, `none`, `some`
