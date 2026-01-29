@@ -180,3 +180,10 @@ pub unsafe extern "C" fn naml_panic(s: *const naml_std_core::NamlString) {
     }
     std::process::abort();
 }
+
+/// Panic when force unwrap (!) is used on a none value
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_panic_unwrap() {
+    eprintln!("panic: attempted to unwrap a none value");
+    std::process::abort();
+}

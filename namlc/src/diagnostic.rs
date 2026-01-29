@@ -231,6 +231,11 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "module file error".to_string(),
             Some("check that the file exists and is valid".to_string()),
         ),
+        TypeError::UncaughtException { exception_type, .. } => (
+            format!("uncaught exception '{}'", exception_type),
+            format!("throws {}", exception_type),
+            Some("add 'catch' block or declare 'throws' in function signature".to_string()),
+        ),
     }
 }
 

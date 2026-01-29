@@ -764,6 +764,7 @@ impl<'a> TypeChecker<'a> {
             errors: &mut self.errors,
             annotations: &mut self.annotations,
             switch_scrutinee: None,
+            in_catch_context: false,
         };
 
         inferrer.check_stmt(&stmt_item.stmt);
@@ -825,6 +826,7 @@ impl<'a> TypeChecker<'a> {
                 errors: &mut self.errors,
                 annotations: &mut self.annotations,
                 switch_scrutinee: None,
+                in_catch_context: false,
             };
 
             for stmt in &body.statements {

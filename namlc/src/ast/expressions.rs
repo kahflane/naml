@@ -50,6 +50,7 @@ pub enum Expression<'ast> {
     Ternary(TernaryExpr<'ast>),
     Elvis(ElvisExpr<'ast>),
     FallibleCast(FallibleCastExpr<'ast>),
+    ForceUnwrap(ForceUnwrapExpr<'ast>),
 }
 
 impl<'ast> Spanned for Expression<'ast> {
@@ -80,6 +81,7 @@ impl<'ast> Spanned for Expression<'ast> {
             Expression::Ternary(e) => e.span,
             Expression::Elvis(e) => e.span,
             Expression::FallibleCast(e) => e.span,
+            Expression::ForceUnwrap(e) => e.span,
         }
     }
 }
@@ -248,6 +250,14 @@ pub struct CastExpr<'ast> {
 pub struct FallibleCastExpr<'ast> {
     pub expr: &'ast Expression<'ast>,
     pub target_ty: NamlType,
+    pub span: Span,
+}
+
+/// Force unwrap expression: `expr!`
+/// Panics at runtime if the option is none
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForceUnwrapExpr<'ast> {
+    pub expr: &'ast Expression<'ast>,
     pub span: Span,
 }
 

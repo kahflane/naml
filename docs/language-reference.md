@@ -119,9 +119,16 @@ Optional values (nullable):
 var maybe: option<int> = some(42);
 var nothing: option<int> = none;
 
-// Null coalescing
-var value: int = maybe ?? 0;  // Returns 42
-var other: int = nothing ?? -1;  // Returns -1
+// Null coalescing - returns value or default
+var value: int = maybe ?? 0;      // 42
+var other: int = nothing ?? -1;   // -1
+
+// Force unwrap - panics if none
+var unwrapped: int = maybe!;      // 42
+
+// Check if option has value
+var has_value: bool = maybe.is_some();   // true
+var is_empty: bool = nothing.is_none();  // true
 ```
 
 ### Channels
@@ -302,17 +309,96 @@ for (i: int in 0..5) { }     // 0, 1, 2, 3, 4
 for (i: int in 0..=5) { }    // 0, 1, 2, 3, 4, 5
 ```
 
-### Other Operators
+### Conditional Operators
 
 | Operator | Description |
 |----------|-------------|
-| `??` | Null coalescing |
-| `as` | Type casting |
-| `is` | Type/variant check |
+| `? :` | Ternary conditional |
+| `?:` | Elvis (default if falsy) |
+
+The **ternary operator** evaluates a condition and returns one of two values:
 
 ```naml
-var value: int = optional ?? default;
+var result: int = condition ? true_value : false_value;
+
+// Examples
+var age: int = 25;
+var status: int = age >= 18 ? 1 : 0;  // 1 (adult)
+
+// Chained ternary for multiple conditions
+var score: int = 85;
+var grade: int = score >= 90 ? 4 : score >= 80 ? 3 : score >= 70 ? 2 : 1;
+```
+
+The **elvis operator** returns the left value if truthy (non-zero/non-empty), otherwise the right value:
+
+```naml
+var result: int = value ?: default;
+
+// Examples
+var count: int = 0;
+var display: int = count ?: 10;  // 10 (count is falsy)
+
+var items: int = 5;
+var actual: int = items ?: 1;    // 5 (items is truthy)
+
+// Chained elvis - returns first truthy value
+var first: int = a ?: b ?: c ?: 99;
+```
+
+### Type Operators
+
+| Operator | Description |
+|----------|-------------|
+| `as` | Type casting (infallible) |
+| `as?` | Fallible cast (returns option) |
+| `is` | Type/variant check |
+| `!` | Force unwrap (panics if none) |
+
+**Type casting** with `as`:
+
+```naml
 var str: string = number as string;
+var num: int = "42" as int;  // Parses string to int
+```
+
+**Fallible cast** with `as?` returns `option<T>` - `some(value)` on success, `none` on failure:
+
+```naml
+var input: string = "42";
+var maybe: option<int> = input as? int;  // some(42)
+var value: int = maybe ?? 0;             // 42
+
+var bad: string = "not a number";
+var failed: option<int> = bad as? int;   // none
+var safe: int = failed ?? -1;            // -1
+
+// Common pattern: parse with default
+var parsed: int = user_input as? int ?? 0;
+```
+
+**Force unwrap** with `!` extracts the value from an option, panicking if none:
+
+```naml
+var opt: option<int> = some(42);
+var value: int = opt!;           // 42
+
+var arr: [int] = [1, 2, 3];
+var last: int = arr.pop()!;      // 3 (panics if array was empty)
+```
+
+### Null Coalescing
+
+| Operator | Description |
+|----------|-------------|
+| `??` | Returns left if some, else right |
+
+```naml
+var maybe: option<int> = some(42);
+var value: int = maybe ?? 0;     // 42
+
+var nothing: option<int> = none;
+var other: int = nothing ?? -1;  // -1
 ```
 
 ---

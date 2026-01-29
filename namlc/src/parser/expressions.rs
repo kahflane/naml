@@ -169,6 +169,12 @@ fn parse_postfix<'a, 'ast>(
                 input = new_input;
                 expr = new_expr;
             }
+            Some(TokenKind::Bang) => {
+                // Force unwrap: expr!
+                let (new_input, new_expr) = parse_force_unwrap(arena, input, expr)?;
+                input = new_input;
+                expr = new_expr;
+            }
             _ => break,
         }
     }
@@ -865,6 +871,24 @@ fn parse_catch<'a, 'ast>(
             expr: arena.alloc(expr),
             error_binding,
             handler: arena.alloc(handler),
+            span,
+        }),
+    ))
+}
+
+fn parse_force_unwrap<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+    expr: Expression<'ast>,
+) -> PResult<'a, Expression<'ast>> {
+    let start_span = expr.span();
+    let (input, bang_tok) = token(TokenKind::Bang)(input)?;
+    let span = start_span.merge(bang_tok.span);
+
+    Ok((
+        input,
+        Expression::ForceUnwrap(ForceUnwrapExpr {
+            expr: arena.alloc(expr),
             span,
         }),
     ))

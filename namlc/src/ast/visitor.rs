@@ -419,6 +419,9 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
             v.visit_expr(e.expr);
             v.visit_type(&e.target_ty);
         }
+        Expression::ForceUnwrap(e) => {
+            v.visit_expr(e.expr);
+        }
     }
 }
 

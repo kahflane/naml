@@ -165,6 +165,12 @@ pub enum TypeError {
         reason: String,
         span: Span,
     },
+
+    #[error("uncaught exception '{exception_type}': must be caught or declared in function's throws clause")]
+    UncaughtException {
+        exception_type: String,
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -199,6 +205,7 @@ impl TypeError {
             TypeError::UnknownModuleSymbol { span, .. } => *span,
             TypeError::PrivateSymbol { span, .. } => *span,
             TypeError::ModuleFileError { span, .. } => *span,
+            TypeError::UncaughtException { span, .. } => *span,
         }
     }
 

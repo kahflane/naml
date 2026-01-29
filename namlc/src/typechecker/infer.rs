@@ -35,6 +35,7 @@ pub struct TypeInferrer<'a> {
     pub errors: &'a mut Vec<TypeError>,
     pub annotations: &'a mut TypeAnnotations,
     pub switch_scrutinee: Option<Type>,
+    pub in_catch_context: bool,
 }
 
 impl<'a> TypeInferrer<'a> {
@@ -65,6 +66,7 @@ impl<'a> TypeInferrer<'a> {
             Expression::Some(some) => self.infer_some(some),
             Expression::Ternary(ternary) => self.infer_ternary(ternary),
             Expression::Elvis(elvis) => self.infer_elvis(elvis),
+            Expression::ForceUnwrap(unwrap) => self.infer_force_unwrap(unwrap),
         };
 
         let resolved_ty = ty.resolve();
@@ -197,6 +199,25 @@ impl<'a> TypeInferrer<'a> {
                     self.errors.push(e);
                 }
                 right_ty.resolve()
+            }
+        }
+    }
+
+    fn infer_force_unwrap(&mut self, unwrap: &ast::ForceUnwrapExpr) -> Type {
+        let expr_ty = self.infer_expr(unwrap.expr);
+        let resolved = expr_ty.resolve();
+
+        match &resolved {
+            Type::Option(inner) => (**inner).clone(),
+            _ => {
+                self.errors.push(TypeError::Custom {
+                    message: format!(
+                        "Force unwrap (!) can only be used on option<T>, found {}",
+                        resolved
+                    ),
+                    span: unwrap.span,
+                });
+                Type::Error
             }
         }
     }
@@ -564,6 +585,11 @@ impl<'a> TypeInferrer<'a> {
                     }
                 }
 
+                // Check for uncaught exceptions
+                if !self.in_catch_context && !func.throws.is_empty() {
+                    self.check_uncaught_exceptions(&func.throws, call.span);
+                }
+
                 (*func.returns).clone()
             }
             Type::Error => Type::Error,
@@ -644,6 +670,16 @@ impl<'a> TypeInferrer<'a> {
         let mangled_name = self.mangle_generic_function(func_name, &resolved_type_args);
         self.annotations
             .record_monomorphization(call.span, func_sig.name, resolved_type_args, mangled_name);
+
+        // Check for uncaught exceptions
+        if !self.in_catch_context && !func_sig.throws.is_empty() {
+            let substituted_throws: Vec<Type> = func_sig
+                .throws
+                .iter()
+                .map(|t| t.substitute(&substitution))
+                .collect();
+            self.check_uncaught_exceptions(&substituted_throws, call.span);
+        }
 
         // Return substituted return type
         func_sig.return_ty.substitute(&substitution)
@@ -932,6 +968,16 @@ impl<'a> TypeInferrer<'a> {
                 if let Err(e) = unify(&arg_ty, &substituted_param_ty, arg.span()) {
                     self.errors.push(e);
                 }
+            }
+
+            // Check for uncaught exceptions
+            if !self.in_catch_context && !method.throws.is_empty() {
+                let substituted_throws: Vec<Type> = method
+                    .throws
+                    .iter()
+                    .map(|t| t.substitute(&substitutions))
+                    .collect();
+                self.check_uncaught_exceptions(&substituted_throws, call.span);
             }
 
             // Substitute type parameters in the return type
@@ -1331,7 +1377,11 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_catch(&mut self, catch: &ast::CatchExpr) -> Type {
+        // Set catch context so the inner expression doesn't report uncaught exceptions
+        let prev_catch_context = self.in_catch_context;
+        self.in_catch_context = true;
         let expr_ty = self.infer_expr(catch.expr);
+        self.in_catch_context = prev_catch_context;
 
         // Determine the exception type from the expression being caught
         let exception_ty = self.get_throws_type(catch.expr);
@@ -1371,6 +1421,38 @@ impl<'a> TypeInferrer<'a> {
                 Type::Error
             }
             _ => Type::Error,
+        }
+    }
+
+    /// Check if exceptions are properly handled or propagated
+    fn check_uncaught_exceptions(&mut self, throws: &[Type], span: crate::source::Span) {
+        // Get the current function's throws clause
+        let current_throws = self
+            .env
+            .current_function()
+            .map(|f| f.throws.clone())
+            .unwrap_or_default();
+
+        for exception_ty in throws {
+            // Check if the current function propagates this exception
+            let is_propagated = current_throws.iter().any(|t| {
+                // Match by exception name
+                match (t, exception_ty) {
+                    (Type::Exception(a), Type::Exception(b)) => a == b,
+                    _ => false,
+                }
+            });
+
+            if !is_propagated {
+                let exception_name = match exception_ty {
+                    Type::Exception(name) => self.interner.resolve(name).to_string(),
+                    _ => exception_ty.to_string(),
+                };
+                self.errors.push(TypeError::UncaughtException {
+                    exception_type: exception_name,
+                    span,
+                });
+            }
         }
     }
 
