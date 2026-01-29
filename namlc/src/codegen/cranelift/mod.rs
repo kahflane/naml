@@ -4913,6 +4913,32 @@ fn compile_method_call(
 
     let recv = compile_expression(ctx, builder, receiver)?;
 
+    // Check for user-defined struct methods FIRST before built-in methods
+    // This ensures struct methods like len() aren't shadowed by built-in array/string methods
+    let receiver_type = ctx.annotations.get_type(receiver.span());
+    if let Some(Type::Struct(s)) = receiver_type {
+        let type_name = ctx.interner.resolve(&s.name).to_string();
+        let full_name = format!("{}_{}", type_name, method_name);
+        if let Some(&func_id) = ctx.functions.get(&full_name) {
+            let ptr_type = ctx.module.target_config().pointer_type();
+            let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+
+            // Compile arguments
+            let mut call_args = vec![recv];
+            for arg in args {
+                call_args.push(compile_expression(ctx, builder, arg)?);
+            }
+
+            let call = builder.ins().call(func_ref, &call_args);
+            let results = builder.inst_results(call);
+            if results.is_empty() {
+                return Ok(builder.ins().iconst(ptr_type, 0));
+            } else {
+                return Ok(results[0]);
+            }
+        }
+    }
+
     match method_name {
         "len" => {
             // Check receiver type to dispatch to correct len function
