@@ -3859,8 +3859,16 @@ fn compile_expression(
             // Fallible cast: returns option<T> as tagged struct
             // Options are 16-byte structs: tag (i32) at offset 0, value (i64) at offset 8
             // Tag: 0 = none, 1 = some
-            let value = compile_expression(ctx, builder, cast_expr.expr)?;
+            let mut value = compile_expression(ctx, builder, cast_expr.expr)?;
             let source_type = ctx.annotations.get_type(cast_expr.expr.span());
+
+            // If source is a string literal, wrap it as NamlString*
+            // String literals compile to raw C-string pointers, but runtime expects NamlString*
+            if matches!(source_type, Some(Type::String)) {
+                if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = cast_expr.expr {
+                    value = call_string_from_cstr(ctx, builder, value)?;
+                }
+            }
 
             // Allocate option struct on stack (16 bytes)
             let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
