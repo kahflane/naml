@@ -122,6 +122,7 @@ impl<'a> JitCompiler<'a> {
         // Print builtins
         builder.symbol("naml_print_int", naml_print_int as *const u8);
         builder.symbol("naml_print_float", naml_print_float as *const u8);
+        builder.symbol("naml_print_bool", naml_print_bool as *const u8);
         builder.symbol("naml_print_str", naml_print_str as *const u8);
         builder.symbol("naml_print_newline", naml_print_newline as *const u8);
 
@@ -318,6 +319,7 @@ impl<'a> JitCompiler<'a> {
         // Print functions
         declare(&mut self.module, &mut self.runtime_funcs, "naml_print_int", &[i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_print_float", &[f64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_print_bool", &[i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_print_str", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_print", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_print_newline", &[], &[])?;
@@ -4004,6 +4006,10 @@ fn print_arg(
             let val = builder.ins().f64const(*f);
             call_print_float(ctx, builder, val)?;
         }
+        Expression::Literal(LiteralExpr { value: Literal::Bool(b), .. }) => {
+            let val = builder.ins().iconst(cranelift::prelude::types::I64, if *b { 1 } else { 0 });
+            call_print_bool(ctx, builder, val)?;
+        }
         _ => {
             let val = compile_expression(ctx, builder, arg)?;
             // Check type from annotations to call appropriate print function
@@ -4015,6 +4021,9 @@ fn print_arg(
                 }
                 Some(Type::Float) => {
                     call_print_float(ctx, builder, val)?;
+                }
+                Some(Type::Bool) => {
+                    call_print_bool(ctx, builder, val)?;
                 }
                 _ => {
                     // Default: check Cranelift value type for F64, otherwise int
@@ -4366,6 +4375,17 @@ fn call_print_float(
     val: Value,
 ) -> Result<(), CodegenError> {
     let func_ref = rt_func_ref(ctx, builder, "naml_print_float")?;
+    builder.ins().call(func_ref, &[val]);
+    Ok(())
+}
+
+fn call_print_bool(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    val: Value,
+) -> Result<(), CodegenError> {
+    let val = ensure_i64(builder, val);
+    let func_ref = rt_func_ref(ctx, builder, "naml_print_bool")?;
     builder.ins().call(func_ref, &[val]);
     Ok(())
 }
@@ -5256,6 +5276,14 @@ extern "C" fn naml_print_int(val: i64) {
 
 extern "C" fn naml_print_float(val: f64) {
     print!("{}", val);
+}
+
+extern "C" fn naml_print_bool(val: i64) {
+    if val != 0 {
+        print!("true");
+    } else {
+        print!("false");
+    }
 }
 
 // Exception handling helper functions
