@@ -278,6 +278,15 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_string_char_len", crate::runtime::naml_string_char_len as *const u8);
         builder.symbol("naml_string_is_empty", crate::runtime::naml_string_is_empty as *const u8);
         builder.symbol("naml_string_trim", crate::runtime::naml_string_trim as *const u8);
+        builder.symbol("naml_string_upper", crate::runtime::naml_string_upper as *const u8);
+        builder.symbol("naml_string_lower", crate::runtime::naml_string_lower as *const u8);
+        builder.symbol("naml_string_contains", crate::runtime::naml_string_contains as *const u8);
+        builder.symbol("naml_string_starts_with", crate::runtime::naml_string_starts_with as *const u8);
+        builder.symbol("naml_string_ends_with", crate::runtime::naml_string_ends_with as *const u8);
+        builder.symbol("naml_string_replace", crate::runtime::naml_string_replace as *const u8);
+        builder.symbol("naml_string_replace_all", crate::runtime::naml_string_replace_all as *const u8);
+        builder.symbol("naml_string_split", crate::runtime::naml_string_split as *const u8);
+        builder.symbol("naml_string_join", crate::runtime::naml_string_join as *const u8);
 
         // Type conversion operations
         builder.symbol("naml_int_to_string", crate::runtime::naml_int_to_string as *const u8);
@@ -379,6 +388,15 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_char_at", &[ptr, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_is_empty", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_trim", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_upper", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_lower", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_contains", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_starts_with", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_ends_with", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_replace", &[ptr, ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_replace_all", &[ptr, ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_split", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_join", &[ptr, ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_decref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_bytes", &[ptr], &[ptr])?;
@@ -3278,6 +3296,69 @@ fn compile_expression(
                         let start = compile_expression(ctx, builder, &call.args[0])?;
                         return call_one_arg_int_runtime(ctx, builder, "naml_metrics_elapsed_ns", start);
                     }
+                    // std::strings functions
+                    "upper" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_string_upper", s);
+                    }
+                    "lower" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_string_lower", s);
+                    }
+                    "split" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let delim = compile_expression(ctx, builder, &call.args[1])?;
+                        let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
+                        return call_two_arg_ptr_runtime(ctx, builder, "naml_string_split", s, delim);
+                    }
+                    "str_contains" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let substr = compile_expression(ctx, builder, &call.args[1])?;
+                        let substr = ensure_naml_string(ctx, builder, substr, &call.args[1])?;
+                        return call_two_arg_bool_runtime(ctx, builder, "naml_string_contains", s, substr);
+                    }
+                    "starts_with" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let prefix = compile_expression(ctx, builder, &call.args[1])?;
+                        let prefix = ensure_naml_string(ctx, builder, prefix, &call.args[1])?;
+                        return call_two_arg_bool_runtime(ctx, builder, "naml_string_starts_with", s, prefix);
+                    }
+                    "ends_with" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let suffix = compile_expression(ctx, builder, &call.args[1])?;
+                        let suffix = ensure_naml_string(ctx, builder, suffix, &call.args[1])?;
+                        return call_two_arg_bool_runtime(ctx, builder, "naml_string_ends_with", s, suffix);
+                    }
+                    "replace" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let old = compile_expression(ctx, builder, &call.args[1])?;
+                        let old = ensure_naml_string(ctx, builder, old, &call.args[1])?;
+                        let new = compile_expression(ctx, builder, &call.args[2])?;
+                        let new = ensure_naml_string(ctx, builder, new, &call.args[2])?;
+                        return call_three_arg_ptr_runtime(ctx, builder, "naml_string_replace", s, old, new);
+                    }
+                    "replace_all" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let old = compile_expression(ctx, builder, &call.args[1])?;
+                        let old = ensure_naml_string(ctx, builder, old, &call.args[1])?;
+                        let new = compile_expression(ctx, builder, &call.args[2])?;
+                        let new = ensure_naml_string(ctx, builder, new, &call.args[2])?;
+                        return call_three_arg_ptr_runtime(ctx, builder, "naml_string_replace_all", s, old, new);
+                    }
+                    "str_join" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let delim = compile_expression(ctx, builder, &call.args[1])?;
+                        let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
+                        return call_two_arg_ptr_runtime(ctx, builder, "naml_string_join", arr, delim);
+                    }
                     _ => {}
                 }
 
@@ -5655,7 +5736,9 @@ fn compile_method_call(
             };
             let func_ref = rt_func_ref(ctx, builder, func_name)?;
             let call = builder.ins().call(func_ref, &[recv]);
-            Ok(builder.inst_results(call)[0])
+            let result = builder.inst_results(call)[0];
+            // Truncate i64 to i8 for bool type
+            Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
         }
         "shift" => {
             // Returns option<T> as tagged struct (16 bytes: tag i32 at offset 0, value i64 at offset 8)
@@ -5857,6 +5940,70 @@ fn call_one_arg_int_runtime(
     let func_ref = rt_func_ref(ctx, builder, name)?;
     let call = builder.ins().call(func_ref, &[arg]);
     Ok(builder.inst_results(call)[0])
+}
+
+fn call_one_arg_ptr_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    arg: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, name)?;
+    let call = builder.ins().call(func_ref, &[arg]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_two_arg_ptr_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    a: Value,
+    b: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, name)?;
+    let call = builder.ins().call(func_ref, &[a, b]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_two_arg_bool_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    a: Value,
+    b: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, name)?;
+    let call = builder.ins().call(func_ref, &[a, b]);
+    let result = builder.inst_results(call)[0];
+    // Truncate i64 to i8 for bool type
+    Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+}
+
+fn call_three_arg_ptr_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    a: Value,
+    b: Value,
+    c: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, name)?;
+    let call = builder.ins().call(func_ref, &[a, b, c]);
+    Ok(builder.inst_results(call)[0])
+}
+
+/// Ensure a value is a NamlString* (convert string literals if needed)
+fn ensure_naml_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    value: Value,
+    expr: &Expression,
+) -> Result<Value, CodegenError> {
+    if matches!(expr, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+        call_string_from_cstr(ctx, builder, value)
+    } else {
+        Ok(value)
+    }
 }
 
 fn call_datetime_format(

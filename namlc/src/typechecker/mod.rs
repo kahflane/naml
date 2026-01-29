@@ -356,6 +356,17 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("elapsed_us", vec![("start_ns", Type::Int)], Type::Int),
                 StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int),
             ]),
+            "strings" => Some(vec![
+                StdModuleFn::new("upper", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("lower", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("split", vec![("s", Type::String), ("delim", Type::String)], Type::Array(Box::new(Type::String))),
+                StdModuleFn::new("str_join", vec![("arr", Type::Array(Box::new(Type::String))), ("delim", Type::String)], Type::String),
+                StdModuleFn::new("str_contains", vec![("s", Type::String), ("substr", Type::String)], Type::Bool),
+                StdModuleFn::new("starts_with", vec![("s", Type::String), ("prefix", Type::String)], Type::Bool),
+                StdModuleFn::new("ends_with", vec![("s", Type::String), ("suffix", Type::String)], Type::Bool),
+                StdModuleFn::new("replace", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
+                StdModuleFn::new("replace_all", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
+            ]),
             _ => None,
         }
     }

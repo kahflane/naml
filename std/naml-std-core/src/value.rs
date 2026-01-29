@@ -407,6 +407,109 @@ pub unsafe extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
     }
 }
 
+/// Convert string to uppercase
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_upper(s: *const NamlString) -> *mut NamlString {
+    unsafe {
+        if s.is_null() {
+            return naml_string_new(std::ptr::null(), 0);
+        }
+        let str_val = (*s).as_str();
+        let upper = str_val.to_uppercase();
+        naml_string_new(upper.as_ptr(), upper.len())
+    }
+}
+
+/// Convert string to lowercase
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_lower(s: *const NamlString) -> *mut NamlString {
+    unsafe {
+        if s.is_null() {
+            return naml_string_new(std::ptr::null(), 0);
+        }
+        let str_val = (*s).as_str();
+        let lower = str_val.to_lowercase();
+        naml_string_new(lower.as_ptr(), lower.len())
+    }
+}
+
+/// Check if string contains a substring
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_contains(s: *const NamlString, substr: *const NamlString) -> i64 {
+    unsafe {
+        if s.is_null() || substr.is_null() {
+            return 0;
+        }
+        let str_val = (*s).as_str();
+        let sub_val = (*substr).as_str();
+        if str_val.contains(sub_val) { 1 } else { 0 }
+    }
+}
+
+/// Check if string starts with a prefix
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_starts_with(s: *const NamlString, prefix: *const NamlString) -> i64 {
+    unsafe {
+        if s.is_null() || prefix.is_null() {
+            return 0;
+        }
+        let str_val = (*s).as_str();
+        let prefix_val = (*prefix).as_str();
+        if str_val.starts_with(prefix_val) { 1 } else { 0 }
+    }
+}
+
+/// Check if string ends with a suffix
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_ends_with(s: *const NamlString, suffix: *const NamlString) -> i64 {
+    unsafe {
+        if s.is_null() || suffix.is_null() {
+            return 0;
+        }
+        let str_val = (*s).as_str();
+        let suffix_val = (*suffix).as_str();
+        if str_val.ends_with(suffix_val) { 1 } else { 0 }
+    }
+}
+
+/// Replace first occurrence of old with new
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_replace(s: *const NamlString, old: *const NamlString, new: *const NamlString) -> *mut NamlString {
+    unsafe {
+        if s.is_null() {
+            return naml_string_new(std::ptr::null(), 0);
+        }
+        if old.is_null() || new.is_null() {
+            naml_string_incref(s as *mut NamlString);
+            return s as *mut NamlString;
+        }
+        let str_val = (*s).as_str();
+        let old_val = (*old).as_str();
+        let new_val = (*new).as_str();
+        let result = str_val.replacen(old_val, new_val, 1);
+        naml_string_new(result.as_ptr(), result.len())
+    }
+}
+
+/// Replace all occurrences of old with new
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_replace_all(s: *const NamlString, old: *const NamlString, new: *const NamlString) -> *mut NamlString {
+    unsafe {
+        if s.is_null() {
+            return naml_string_new(std::ptr::null(), 0);
+        }
+        if old.is_null() || new.is_null() {
+            naml_string_incref(s as *mut NamlString);
+            return s as *mut NamlString;
+        }
+        let str_val = (*s).as_str();
+        let old_val = (*old).as_str();
+        let new_val = (*new).as_str();
+        let result = str_val.replace(old_val, new_val);
+        naml_string_new(result.as_ptr(), result.len())
+    }
+}
+
 /// Free struct memory without refcount check (called by generated decref functions)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_struct_free(s: *mut NamlStruct) {

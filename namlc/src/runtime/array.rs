@@ -380,6 +380,65 @@ pub unsafe extern "C" fn naml_array_print(arr: *const NamlArray) {
     }
 }
 
+/// Split a string by delimiter and return array of strings
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_split(s: *const naml_std_core::NamlString, delim: *const naml_std_core::NamlString) -> *mut NamlArray {
+    unsafe {
+        if s.is_null() {
+            return naml_array_new(0);
+        }
+
+        let str_val = (*s).as_str();
+        let delim_val = if delim.is_null() { "" } else { (*delim).as_str() };
+
+        let parts: Vec<&str> = if delim_val.is_empty() {
+            str_val.chars().map(|c| {
+                let start = str_val.as_ptr();
+                let offset = str_val.char_indices()
+                    .find(|(_, ch)| *ch == c)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(start.add(offset), c.len_utf8()))
+            }).collect()
+        } else {
+            str_val.split(delim_val).collect()
+        };
+
+        let arr = naml_array_new(parts.len());
+        for part in parts {
+            let part_str = naml_std_core::naml_string_new(part.as_ptr(), part.len());
+            naml_array_push(arr, part_str as i64);
+        }
+
+        arr
+    }
+}
+
+/// Join array of strings with delimiter
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_join(arr: *const NamlArray, delim: *const naml_std_core::NamlString) -> *mut naml_std_core::NamlString {
+    unsafe {
+        if arr.is_null() || (*arr).len == 0 {
+            return naml_std_core::naml_string_new(std::ptr::null(), 0);
+        }
+
+        let delim_val = if delim.is_null() { "" } else { (*delim).as_str() };
+
+        let mut result = String::new();
+        for i in 0..(*arr).len {
+            if i > 0 {
+                result.push_str(delim_val);
+            }
+            let str_ptr = *(*arr).data.add(i) as *const naml_std_core::NamlString;
+            if !str_ptr.is_null() {
+                result.push_str((*str_ptr).as_str());
+            }
+        }
+
+        naml_std_core::naml_string_new(result.as_ptr(), result.len())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
