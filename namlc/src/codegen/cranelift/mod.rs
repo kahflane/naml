@@ -9,6 +9,7 @@
 mod types;
 
 use std::collections::{HashMap, HashSet};
+use std::panic;
 
 use cranelift::prelude::*;
 use cranelift_codegen::ir::{AtomicRmwOp, FuncRef};
@@ -79,6 +80,43 @@ unsafe impl Send for LambdaInfo {}
 const ARRAY_LEN_OFFSET: i32 = 16;
 const ARRAY_CAPACITY_OFFSET: i32 = 24;
 const ARRAY_DATA_OFFSET: i32 = 32;
+
+fn convert_cranelift_error(panic_msg: &str, func_name: &str) -> CodegenError {
+    // Parse common Cranelift error patterns and convert to user-friendly messages
+    if panic_msg.contains("declared type of variable") && panic_msg.contains("doesn't match type of value") {
+        CodegenError::JitCompile(format!(
+            "Type mismatch in function '{}': a variable was assigned a value of incompatible type. \
+             This usually indicates a type error that wasn't caught during type checking.",
+            func_name
+        ))
+    } else if panic_msg.contains("block") && panic_msg.contains("not sealed") {
+        CodegenError::JitCompile(format!(
+            "Internal compiler error in function '{}': control flow issue. Please report this bug.",
+            func_name
+        ))
+    } else if panic_msg.contains("undefined value") || panic_msg.contains("undefined variable") {
+        CodegenError::JitCompile(format!(
+            "Internal compiler error in function '{}': variable used before definition. Please report this bug.",
+            func_name
+        ))
+    } else if panic_msg.contains("signature") {
+        CodegenError::JitCompile(format!(
+            "Function signature mismatch in '{}': the function was called with incorrect argument types.",
+            func_name
+        ))
+    } else {
+        // Generic fallback - sanitize internal terms
+        let sanitized = panic_msg
+            .replace("var", "variable ")
+            .replace("v0", "value")
+            .replace("v1", "value")
+            .replace("RUST_BACKTRACE", "debug trace");
+        CodegenError::JitCompile(format!(
+            "Compilation error in function '{}': {}",
+            func_name, sanitized
+        ))
+    }
+}
 
 pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
@@ -804,9 +842,27 @@ impl<'a> JitCompiler<'a> {
 
         builder.finalize();
 
-        self.module
-            .define_function(func_id, &mut self.ctx)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to define {}: {}", func_name, e)))?;
+        let func_name_clone = func_name.clone();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!("Failed to define {}: {}", func_name, e)));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &func_name_clone));
+            }
+        }
 
         self.ctx.clear();
 
@@ -960,9 +1016,27 @@ impl<'a> JitCompiler<'a> {
 
         builder.finalize();
 
-        self.module
-            .define_function(func_id, &mut self.ctx)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to define monomorphized function '{}': {}", mangled_name, e)))?;
+        let mangled_name_clone = mangled_name.to_string();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!("Failed to define monomorphized function '{}': {}", mangled_name, e)));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &mangled_name_clone));
+            }
+        }
 
         self.module.clear_context(&mut self.ctx);
 
@@ -1411,9 +1485,27 @@ impl<'a> JitCompiler<'a> {
 
         builder.finalize();
 
-        self.module
-            .define_function(func_id, &mut self.ctx)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to define trampoline '{}': {}", info.func_name, e)))?;
+        let trampoline_name = info.func_name.clone();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!("Failed to define trampoline '{}': {}", trampoline_name, e)));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &trampoline_name));
+            }
+        }
 
         self.module.clear_context(&mut self.ctx);
 
@@ -1525,9 +1617,27 @@ impl<'a> JitCompiler<'a> {
 
         builder.finalize();
 
-        self.module
-            .define_function(func_id, &mut self.ctx)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to define lambda '{}': {}", info.func_name, e)))?;
+        let lambda_name = info.func_name.clone();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!("Failed to define lambda '{}': {}", lambda_name, e)));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &lambda_name));
+            }
+        }
 
         self.module.clear_context(&mut self.ctx);
 
@@ -1625,9 +1735,27 @@ impl<'a> JitCompiler<'a> {
 
         builder.finalize();
 
-        self.module
-            .define_function(func_id, &mut self.ctx)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to define function '{}': {:?}", name, e)))?;
+        let name_clone = name.to_string();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!("Failed to define function '{}': {:?}", name, e)));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &name_clone));
+            }
+        }
 
         self.module.clear_context(&mut self.ctx);
 
@@ -1763,9 +1891,27 @@ impl<'a> JitCompiler<'a> {
 
         builder.finalize();
 
-        self.module
-            .define_function(func_id, &mut self.ctx)
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to define method '{}': {}", full_name, e)))?;
+        let full_name_clone = full_name.clone();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!("Failed to define method '{}': {}", full_name, e)));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &full_name_clone));
+            }
+        }
 
         self.module.clear_context(&mut self.ctx);
 
