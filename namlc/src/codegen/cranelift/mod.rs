@@ -172,6 +172,10 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_array_set", crate::runtime::naml_array_set as *const u8);
         builder.symbol("naml_array_len", crate::runtime::naml_array_len as *const u8);
         builder.symbol("naml_array_pop", crate::runtime::naml_array_pop as *const u8);
+        builder.symbol("naml_array_is_empty", crate::runtime::naml_array_is_empty as *const u8);
+        builder.symbol("naml_array_shift", crate::runtime::naml_array_shift as *const u8);
+        builder.symbol("naml_array_fill", crate::runtime::naml_array_fill as *const u8);
+        builder.symbol("naml_array_clear", crate::runtime::naml_array_clear as *const u8);
         builder.symbol("naml_array_print", crate::runtime::naml_array_print as *const u8);
         builder.symbol("naml_array_incref", crate::runtime::naml_array_incref as *const u8);
         builder.symbol("naml_array_decref", crate::runtime::naml_array_decref as *const u8);
@@ -272,6 +276,8 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_string_decref", crate::runtime::naml_string_decref as *const u8);
         builder.symbol("naml_string_char_at", crate::runtime::naml_string_char_at as *const u8);
         builder.symbol("naml_string_char_len", crate::runtime::naml_string_char_len as *const u8);
+        builder.symbol("naml_string_is_empty", crate::runtime::naml_string_is_empty as *const u8);
+        builder.symbol("naml_string_trim", crate::runtime::naml_string_trim as *const u8);
 
         // Type conversion operations
         builder.symbol("naml_int_to_string", crate::runtime::naml_int_to_string as *const u8);
@@ -371,6 +377,8 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_from_cstr", &[ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_char_len", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_char_at", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_is_empty", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_trim", &[ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_decref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_bytes", &[ptr], &[ptr])?;
@@ -402,6 +410,10 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_set", &[ptr, i64t, i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_len", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_pop", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_is_empty", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_shift", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_fill", &[ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_clear", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref", &[ptr], &[])?;
@@ -5632,6 +5644,88 @@ fn compile_method_call(
             } else {
                 Err(CodegenError::JitCompile("message() is only available on exception types".to_string()))
             }
+        }
+        "is_empty" => {
+            // Check receiver type to dispatch to correct is_empty function
+            let receiver_type = ctx.annotations.get_type(receiver.span());
+            let func_name = if matches!(receiver_type, Some(Type::String)) {
+                "naml_string_is_empty"
+            } else {
+                "naml_array_is_empty"
+            };
+            let func_ref = rt_func_ref(ctx, builder, func_name)?;
+            let call = builder.ins().call(func_ref, &[recv]);
+            Ok(builder.inst_results(call)[0])
+        }
+        "shift" => {
+            // Returns option<T> as tagged struct (16 bytes: tag i32 at offset 0, value i64 at offset 8)
+            // Tag: 0 = none (empty array), 1 = some (shifted value)
+
+            // First check if array is empty
+            let len = builder.ins().load(
+                cranelift::prelude::types::I64,
+                MemFlags::trusted(),
+                recv,
+                ARRAY_LEN_OFFSET,
+            );
+
+            // Allocate option struct on stack
+            let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                16,
+                0,
+            ));
+            let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+            let empty_block = builder.create_block();
+            let non_empty_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            let is_empty = builder.ins().icmp(IntCC::Equal, len, zero);
+            builder.ins().brif(is_empty, empty_block, &[], non_empty_block, &[]);
+
+            // Empty: return none
+            builder.switch_to_block(empty_block);
+            builder.seal_block(empty_block);
+            let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+            builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+            builder.ins().jump(merge_block, &[]);
+
+            // Non-empty: call shift and return some(value)
+            builder.switch_to_block(non_empty_block);
+            builder.seal_block(non_empty_block);
+            let func_ref = rt_func_ref(ctx, builder, "naml_array_shift")?;
+            let call = builder.ins().call(func_ref, &[recv]);
+            let shifted_value = builder.inst_results(call)[0];
+            let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+            builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+            builder.ins().store(MemFlags::new(), shifted_value, option_ptr, 8);
+            builder.ins().jump(merge_block, &[]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            Ok(option_ptr)
+        }
+        "fill" => {
+            if args.is_empty() {
+                return Err(CodegenError::JitCompile("fill requires a value argument".to_string()));
+            }
+            let val = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_array_fill")?;
+            builder.ins().call(func_ref, &[recv, val]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+        "clear" => {
+            let func_ref = rt_func_ref(ctx, builder, "naml_array_clear")?;
+            builder.ins().call(func_ref, &[recv]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+        "trim" => {
+            let func_ref = rt_func_ref(ctx, builder, "naml_string_trim")?;
+            let call = builder.ins().call(func_ref, &[recv]);
+            Ok(builder.inst_results(call)[0])
         }
         _ => {
             // Try to look up user-defined method

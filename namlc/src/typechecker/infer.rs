@@ -753,6 +753,41 @@ impl<'a> TypeInferrer<'a> {
                     }
                     Type::Unit
                 }
+                "is_empty" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Bool
+                }
+                "shift" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Option(elem.clone())
+                }
+                "fill" => {
+                    if call.args.len() != 1 {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 1,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                        return Type::Unit;
+                    }
+                    let arg_ty = self.infer_expr(&call.args[0]);
+                    if let Err(e) = unify(&arg_ty, elem, call.args[0].span()) {
+                        self.errors.push(e);
+                    }
+                    Type::Unit
+                }
                 "len" => {
                     if !call.args.is_empty() {
                         self.errors.push(TypeError::WrongArgCount {
@@ -907,6 +942,26 @@ impl<'a> TypeInferrer<'a> {
                         self.errors.push(e);
                     }
                     Type::Int
+                }
+                "is_empty" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::Bool
+                }
+                "trim" => {
+                    if !call.args.is_empty() {
+                        self.errors.push(TypeError::WrongArgCount {
+                            expected: 0,
+                            found: call.args.len(),
+                            span: call.span,
+                        });
+                    }
+                    Type::String
                 }
                 _ => {
                     self.errors.push(TypeError::UndefinedMethod {

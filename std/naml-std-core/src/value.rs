@@ -331,6 +331,30 @@ pub unsafe extern "C" fn naml_string_char_len(s: *const NamlString) -> i64 {
     }
 }
 
+/// Check if string is empty
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_is_empty(s: *const NamlString) -> i64 {
+    if s.is_null() {
+        return 1;
+    }
+    unsafe {
+        if (*s).len == 0 { 1 } else { 0 }
+    }
+}
+
+/// Trim whitespace from both ends of string
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_trim(s: *const NamlString) -> *mut NamlString {
+    unsafe {
+        if s.is_null() {
+            return naml_string_new(std::ptr::null(), 0);
+        }
+        let str_val = (*s).as_str();
+        let trimmed = str_val.trim();
+        naml_string_new(trimmed.as_ptr(), trimmed.len())
+    }
+}
+
 /// Allocate a new struct on the heap
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut NamlStruct {

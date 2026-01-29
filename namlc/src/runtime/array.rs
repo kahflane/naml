@@ -295,6 +295,71 @@ pub unsafe extern "C" fn naml_array_clone(arr: *const NamlArray) -> *mut NamlArr
     }
 }
 
+/// Check if array is empty
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_is_empty(arr: *const NamlArray) -> i64 {
+    if arr.is_null() {
+        return 1;
+    }
+    unsafe {
+        if (*arr).len == 0 { 1 } else { 0 }
+    }
+}
+
+/// Remove and return first element (shift)
+/// Returns the value at index 0 and shifts all elements left
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_shift(arr: *mut NamlArray) -> i64 {
+    if arr.is_null() {
+        return 0;
+    }
+
+    unsafe {
+        if (*arr).len == 0 {
+            return 0;
+        }
+
+        let first = *(*arr).data;
+
+        // Shift all elements left by one
+        if (*arr).len > 1 {
+            std::ptr::copy(
+                (*arr).data.add(1),
+                (*arr).data,
+                (*arr).len - 1
+            );
+        }
+
+        (*arr).len -= 1;
+        first
+    }
+}
+
+/// Fill all elements with a value
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_fill(arr: *mut NamlArray, value: i64) {
+    if arr.is_null() {
+        return;
+    }
+
+    unsafe {
+        for i in 0..(*arr).len {
+            *(*arr).data.add(i) = value;
+        }
+    }
+}
+
+/// Clear the array (set length to 0)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_clear(arr: *mut NamlArray) {
+    if arr.is_null() {
+        return;
+    }
+    unsafe {
+        (*arr).len = 0;
+    }
+}
+
 /// Print array contents (for debugging)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_array_print(arr: *const NamlArray) {
