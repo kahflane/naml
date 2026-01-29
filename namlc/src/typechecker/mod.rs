@@ -367,6 +367,24 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("replace", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
                 StdModuleFn::new("replace_all", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
             ]),
+            "collections" => Some(vec![
+                // Access functions
+                StdModuleFn::new("first", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("last", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+                // Aggregation
+                StdModuleFn::new("sum", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Int),
+                StdModuleFn::new("min", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("max", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+                // Transformation
+                StdModuleFn::new("reversed", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                // Slicing
+                StdModuleFn::new("take", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("drop", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("slice", vec![("arr", Type::Array(Box::new(Type::Int))), ("start", Type::Int), ("end", Type::Int)], Type::Array(Box::new(Type::Int))),
+                // Search
+                StdModuleFn::new("index_of", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("arr_contains", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Bool),
+            ]),
             _ => None,
         }
     }

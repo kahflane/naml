@@ -439,6 +439,185 @@ pub unsafe extern "C" fn naml_string_join(arr: *const NamlArray, delim: *const n
     }
 }
 
+/// Get first element of array (returns 0 if empty, use with option wrapper)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_first(arr: *const NamlArray) -> i64 {
+    unsafe {
+        if arr.is_null() || (*arr).len == 0 {
+            return 0;
+        }
+        *(*arr).data
+    }
+}
+
+/// Get last element of array (returns 0 if empty, use with option wrapper)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_last(arr: *const NamlArray) -> i64 {
+    unsafe {
+        if arr.is_null() || (*arr).len == 0 {
+            return 0;
+        }
+        *(*arr).data.add((*arr).len - 1)
+    }
+}
+
+/// Sum all elements (assumes int array)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_sum(arr: *const NamlArray) -> i64 {
+    unsafe {
+        if arr.is_null() {
+            return 0;
+        }
+        let mut sum: i64 = 0;
+        for i in 0..(*arr).len {
+            sum = sum.wrapping_add(*(*arr).data.add(i));
+        }
+        sum
+    }
+}
+
+/// Find minimum element (returns i64::MAX if empty)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_min(arr: *const NamlArray) -> i64 {
+    unsafe {
+        if arr.is_null() || (*arr).len == 0 {
+            return i64::MAX;
+        }
+        let mut min = *(*arr).data;
+        for i in 1..(*arr).len {
+            let val = *(*arr).data.add(i);
+            if val < min {
+                min = val;
+            }
+        }
+        min
+    }
+}
+
+/// Find maximum element (returns i64::MIN if empty)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_max(arr: *const NamlArray) -> i64 {
+    unsafe {
+        if arr.is_null() || (*arr).len == 0 {
+            return i64::MIN;
+        }
+        let mut max = *(*arr).data;
+        for i in 1..(*arr).len {
+            let val = *(*arr).data.add(i);
+            if val > max {
+                max = val;
+            }
+        }
+        max
+    }
+}
+
+/// Reverse array in place and return it
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_reverse(arr: *mut NamlArray) -> *mut NamlArray {
+    unsafe {
+        if arr.is_null() || (*arr).len <= 1 {
+            return arr;
+        }
+        let len = (*arr).len;
+        for i in 0..len / 2 {
+            let j = len - 1 - i;
+            let tmp = *(*arr).data.add(i);
+            *(*arr).data.add(i) = *(*arr).data.add(j);
+            *(*arr).data.add(j) = tmp;
+        }
+        arr
+    }
+}
+
+/// Create a new reversed copy of array
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_reversed(arr: *const NamlArray) -> *mut NamlArray {
+    unsafe {
+        if arr.is_null() {
+            return naml_array_new(0);
+        }
+        let len = (*arr).len;
+        let new_arr = naml_array_new(len);
+        for i in 0..len {
+            let val = *(*arr).data.add(len - 1 - i);
+            naml_array_push(new_arr, val);
+        }
+        new_arr
+    }
+}
+
+/// Take first n elements
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_take(arr: *const NamlArray, n: i64) -> *mut NamlArray {
+    unsafe {
+        if arr.is_null() || n <= 0 {
+            return naml_array_new(0);
+        }
+        let take_count = std::cmp::min(n as usize, (*arr).len);
+        let new_arr = naml_array_new(take_count);
+        for i in 0..take_count {
+            naml_array_push(new_arr, *(*arr).data.add(i));
+        }
+        new_arr
+    }
+}
+
+/// Drop first n elements
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_drop(arr: *const NamlArray, n: i64) -> *mut NamlArray {
+    unsafe {
+        if arr.is_null() {
+            return naml_array_new(0);
+        }
+        let skip = std::cmp::min(n as usize, (*arr).len);
+        let remaining = (*arr).len - skip;
+        let new_arr = naml_array_new(remaining);
+        for i in skip..(*arr).len {
+            naml_array_push(new_arr, *(*arr).data.add(i));
+        }
+        new_arr
+    }
+}
+
+/// Slice array from start to end (exclusive)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_slice(arr: *const NamlArray, start: i64, end: i64) -> *mut NamlArray {
+    unsafe {
+        if arr.is_null() {
+            return naml_array_new(0);
+        }
+        let len = (*arr).len;
+        let start_idx = std::cmp::max(0, start) as usize;
+        let end_idx = std::cmp::min(end as usize, len);
+        if start_idx >= end_idx {
+            return naml_array_new(0);
+        }
+        let slice_len = end_idx - start_idx;
+        let new_arr = naml_array_new(slice_len);
+        for i in start_idx..end_idx {
+            naml_array_push(new_arr, *(*arr).data.add(i));
+        }
+        new_arr
+    }
+}
+
+/// Find index of value (returns -1 if not found)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_index_of(arr: *const NamlArray, value: i64) -> i64 {
+    unsafe {
+        if arr.is_null() {
+            return -1;
+        }
+        for i in 0..(*arr).len {
+            if *(*arr).data.add(i) == value {
+                return i as i64;
+            }
+        }
+        -1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

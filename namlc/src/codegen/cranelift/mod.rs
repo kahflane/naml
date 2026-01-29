@@ -176,6 +176,18 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_array_shift", crate::runtime::naml_array_shift as *const u8);
         builder.symbol("naml_array_fill", crate::runtime::naml_array_fill as *const u8);
         builder.symbol("naml_array_clear", crate::runtime::naml_array_clear as *const u8);
+        builder.symbol("naml_array_first", crate::runtime::naml_array_first as *const u8);
+        builder.symbol("naml_array_last", crate::runtime::naml_array_last as *const u8);
+        builder.symbol("naml_array_sum", crate::runtime::naml_array_sum as *const u8);
+        builder.symbol("naml_array_min", crate::runtime::naml_array_min as *const u8);
+        builder.symbol("naml_array_max", crate::runtime::naml_array_max as *const u8);
+        builder.symbol("naml_array_reverse", crate::runtime::naml_array_reverse as *const u8);
+        builder.symbol("naml_array_reversed", crate::runtime::naml_array_reversed as *const u8);
+        builder.symbol("naml_array_take", crate::runtime::naml_array_take as *const u8);
+        builder.symbol("naml_array_drop", crate::runtime::naml_array_drop as *const u8);
+        builder.symbol("naml_array_slice", crate::runtime::naml_array_slice as *const u8);
+        builder.symbol("naml_array_index_of", crate::runtime::naml_array_index_of as *const u8);
+        builder.symbol("naml_array_contains", crate::runtime::naml_array_contains as *const u8);
         builder.symbol("naml_array_print", crate::runtime::naml_array_print as *const u8);
         builder.symbol("naml_array_incref", crate::runtime::naml_array_incref as *const u8);
         builder.symbol("naml_array_decref", crate::runtime::naml_array_decref as *const u8);
@@ -432,6 +444,18 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_shift", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_fill", &[ptr, i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_clear", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_first", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_last", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_sum", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_min", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_max", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_reverse", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_reversed", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_take", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_drop", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_slice", &[ptr, i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_index_of", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_contains", &[ptr, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref", &[ptr], &[])?;
@@ -3359,6 +3383,57 @@ fn compile_expression(
                         let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
                         return call_two_arg_ptr_runtime(ctx, builder, "naml_string_join", arr, delim);
                     }
+                    // std::collections functions
+                    "first" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return compile_option_from_array_access(ctx, builder, arr, "naml_array_first");
+                    }
+                    "last" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return compile_option_from_array_access(ctx, builder, arr, "naml_array_last");
+                    }
+                    "sum" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_array_sum", arr);
+                    }
+                    "min" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return compile_option_from_minmax(ctx, builder, arr, "naml_array_min", true);
+                    }
+                    "max" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return compile_option_from_minmax(ctx, builder, arr, "naml_array_max", false);
+                    }
+                    "reversed" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_array_reversed", arr);
+                    }
+                    "take" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let n = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_two_arg_ptr_runtime(ctx, builder, "naml_array_take", arr, n);
+                    }
+                    "drop" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let n = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_two_arg_ptr_runtime(ctx, builder, "naml_array_drop", arr, n);
+                    }
+                    "slice" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let start = compile_expression(ctx, builder, &call.args[1])?;
+                        let end = compile_expression(ctx, builder, &call.args[2])?;
+                        return call_three_arg_ptr_runtime(ctx, builder, "naml_array_slice", arr, start, end);
+                    }
+                    "index_of" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let val = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_option_from_index_of(ctx, builder, arr, val);
+                    }
+                    "arr_contains" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let val = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_array_contains_bool(ctx, builder, arr, val);
+                    }
                     _ => {}
                 }
 
@@ -4500,6 +4575,10 @@ fn print_arg(
                 }
                 Some(Type::Bool) => {
                     call_print_bool(ctx, builder, val)?;
+                }
+                Some(Type::Array(_)) => {
+                    let func_ref = rt_func_ref(ctx, builder, "naml_array_print")?;
+                    builder.ins().call(func_ref, &[val]);
                 }
                 _ => {
                     // Default: check Cranelift value type for F64, otherwise int
@@ -5990,6 +6069,122 @@ fn call_three_arg_ptr_runtime(
     let func_ref = rt_func_ref(ctx, builder, name)?;
     let call = builder.ins().call(func_ref, &[a, b, c]);
     Ok(builder.inst_results(call)[0])
+}
+
+fn compile_option_from_array_access(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        16,
+        0,
+    ));
+    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let len = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
+
+    let empty_block = builder.create_block();
+    let nonempty_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let is_empty = builder.ins().icmp(IntCC::Equal, len, zero);
+    builder.ins().brif(is_empty, empty_block, &[], nonempty_block, &[]);
+
+    builder.switch_to_block(empty_block);
+    builder.seal_block(empty_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(nonempty_block);
+    builder.seal_block(nonempty_block);
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[arr]);
+    let value = builder.inst_results(call)[0];
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
+}
+
+fn compile_option_from_minmax(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    runtime_fn: &str,
+    _is_min: bool,
+) -> Result<Value, CodegenError> {
+    compile_option_from_array_access(ctx, builder, arr, runtime_fn)
+}
+
+fn compile_option_from_index_of(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    val: Value,
+) -> Result<Value, CodegenError> {
+    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        16,
+        0,
+    ));
+    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_index_of")?;
+    let call = builder.ins().call(func_ref, &[arr, val]);
+    let index = builder.inst_results(call)[0];
+
+    let found_block = builder.create_block();
+    let not_found_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let neg_one = builder.ins().iconst(cranelift::prelude::types::I64, -1i64 as i64);
+    let not_found = builder.ins().icmp(IntCC::Equal, index, neg_one);
+    builder.ins().brif(not_found, not_found_block, &[], found_block, &[]);
+
+    builder.switch_to_block(not_found_block);
+    builder.seal_block(not_found_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(found_block);
+    builder.seal_block(found_block);
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), index, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
+}
+
+fn call_array_contains_bool(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    val: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_contains")?;
+    let call = builder.ins().call(func_ref, &[arr, val]);
+    let result = builder.inst_results(call)[0];
+    Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
 }
 
 /// Ensure a value is a NamlString* (convert string literals if needed)
