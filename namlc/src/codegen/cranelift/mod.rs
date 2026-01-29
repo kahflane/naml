@@ -2657,7 +2657,8 @@ fn compile_statement(
         Statement::Const(const_stmt) => {
             // Constants are treated like immutable variables
             let var_name = ctx.interner.resolve(&const_stmt.name.symbol).to_string();
-            let var = Variable::new(ctx.variables.len());
+            let var = Variable::new(ctx.var_counter);
+            ctx.var_counter += 1;
             ctx.variables.insert(var_name.clone(), var);
             builder.declare_var(var, cranelift::prelude::types::I64);
 
