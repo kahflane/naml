@@ -210,7 +210,6 @@ fn parse_receiver<'a>(input: TokenStream<'a>) -> PResult<'a, Receiver> {
         Receiver {
             name,
             ty,
-            mutable: true,
             span: start.span.merge(end.span),
         },
     ))

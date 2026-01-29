@@ -388,10 +388,6 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
                 v.visit_expr(tail);
             }
         }
-        Expression::OrDefault(e) => {
-            v.visit_expr(e.expr);
-            v.visit_expr(e.default);
-        }
         Expression::Cast(e) => {
             v.visit_expr(e.expr);
             v.visit_type(&e.target_ty);

@@ -37,7 +37,6 @@ pub struct FunctionSig {
 pub struct MethodSig {
     pub name: Spur,
     pub receiver_ty: Type,
-    pub receiver_mutable: bool,
     pub type_params: Vec<TypeParam>,
     pub params: Vec<(Spur, Type)>,
     pub return_ty: Type,
@@ -283,7 +282,6 @@ mod tests {
                     type_params: vec![],
                     type_args: vec![],
                 }),
-                receiver_mutable: false,
                 type_params: vec![],
                 params: vec![],
                 return_ty: Type::Float,

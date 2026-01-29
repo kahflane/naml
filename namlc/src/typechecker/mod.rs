@@ -591,7 +591,6 @@ impl<'a> TypeChecker<'a> {
             MethodSig {
                 name: func.name.symbol,
                 receiver_ty,
-                receiver_mutable: recv.mutable,
                 type_params,
                 params,
                 return_ty,
@@ -809,7 +808,7 @@ impl<'a> TypeChecker<'a> {
 
         if let Some(recv) = &func.receiver {
             let ty = self.convert_type(&recv.ty);
-            self.env.define(recv.name.symbol, ty, recv.mutable);
+            self.env.define(recv.name.symbol, ty, true);
         }
 
         for param in &func.params {

@@ -88,7 +88,6 @@ pub struct Parameter {
 pub struct Receiver {
     pub name: Ident,
     pub ty: NamlType,
-    pub mutable: bool,
     pub span: Span,
 }
 

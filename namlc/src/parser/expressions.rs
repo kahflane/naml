@@ -734,29 +734,16 @@ fn parse_field_or_method<'a, 'ast>(
 
         let (input, end) = token(TokenKind::RParen)(input)?;
 
-        let method_name = input.span_text(field.span);
-        if method_name == "or_default" && args.len() == 1 {
-            let default_expr = args.into_iter().next().unwrap();
-            Ok((
-                input,
-                Expression::OrDefault(OrDefaultExpr {
-                    expr: arena.alloc(base),
-                    default: arena.alloc(default_expr),
-                    span: start_span.merge(end.span),
-                }),
-            ))
-        } else {
-            Ok((
-                input,
-                Expression::MethodCall(MethodCallExpr {
-                    receiver: arena.alloc(base),
-                    method: field,
-                    type_args: Vec::new(),
-                    args,
-                    span: start_span.merge(end.span),
-                }),
-            ))
-        }
+        Ok((
+            input,
+            Expression::MethodCall(MethodCallExpr {
+                receiver: arena.alloc(base),
+                method: field,
+                type_args: Vec::new(),
+                args,
+                span: start_span.merge(end.span),
+            }),
+        ))
     } else {
         Ok((
             input,

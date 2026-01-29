@@ -58,7 +58,6 @@ impl<'a> TypeInferrer<'a> {
             Expression::Spawn(spawn) => self.infer_spawn(spawn),
             Expression::Try(try_expr) => self.infer_try(try_expr),
             Expression::Catch(catch) => self.infer_catch(catch),
-            Expression::OrDefault(or_default) => self.infer_or_default(or_default),
             Expression::Cast(cast) => self.infer_cast(cast),
             Expression::Range(range) => self.infer_range(range),
             Expression::Grouped(grouped) => self.infer_expr(grouped.inner),
@@ -626,21 +625,6 @@ impl<'a> TypeInferrer<'a> {
                         });
                     }
                     Type::Bool
-                }
-                "or_default" => {
-                    if call.args.len() != 1 {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 1,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                        return (**inner).clone();
-                    }
-                    let default_ty = self.infer_expr(&call.args[0]);
-                    if let Err(e) = unify(&default_ty, inner, call.args[0].span()) {
-                        self.errors.push(e);
-                    }
-                    (**inner).clone()
                 }
                 _ => {
                     self.errors.push(TypeError::UndefinedMethod {
@@ -1347,22 +1331,6 @@ impl<'a> TypeInferrer<'a> {
             }
             _ => Type::Error,
         }
-    }
-
-    fn infer_or_default(&mut self, or_default: &ast::OrDefaultExpr) -> Type {
-        let expr_ty = self.infer_expr(or_default.expr);
-        let default_ty = self.infer_expr(or_default.default);
-
-        let inner_ty = match expr_ty.resolve() {
-            Type::Option(inner) => *inner,
-            other => other,
-        };
-
-        if let Err(e) = unify(&inner_ty, &default_ty, or_default.span) {
-            self.errors.push(e);
-        }
-
-        inner_ty
     }
 
     fn infer_cast(&mut self, cast: &ast::CastExpr) -> Type {

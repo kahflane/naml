@@ -3585,55 +3585,6 @@ fn compile_expression(
             Ok(final_result)
         }
 
-        Expression::OrDefault(or_default_expr) => {
-            // Compile the option expression (returns pointer to option struct)
-            let option_ptr = compile_expression(ctx, builder, or_default_expr.expr)?;
-
-            // Load the tag from offset 0 (0 = none, 1 = some)
-            let tag = builder.ins().load(
-                cranelift::prelude::types::I32,
-                MemFlags::new(),
-                option_ptr,
-                0,
-            );
-
-            // Create blocks for the conditional
-            let some_block = builder.create_block();
-            let none_block = builder.create_block();
-            let merge_block = builder.create_block();
-
-            // Add a block parameter for the result
-            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
-
-            // Branch based on tag (tag != 0 means some)
-            let zero = builder.ins().iconst(cranelift::prelude::types::I32, 0);
-            let is_some = builder.ins().icmp(IntCC::NotEqual, tag, zero);
-            builder.ins().brif(is_some, some_block, &[], none_block, &[]);
-
-            // Some block: load and return the inner value
-            builder.switch_to_block(some_block);
-            builder.seal_block(some_block);
-            let inner_val = builder.ins().load(
-                cranelift::prelude::types::I64,
-                MemFlags::new(),
-                option_ptr,
-                8,
-            );
-            builder.ins().jump(merge_block, &[inner_val]);
-
-            // None block: compile and return the default value
-            builder.switch_to_block(none_block);
-            builder.seal_block(none_block);
-            let default_val = compile_expression(ctx, builder, or_default_expr.default)?;
-            builder.ins().jump(merge_block, &[default_val]);
-
-            // Merge block: return the result
-            builder.switch_to_block(merge_block);
-            builder.seal_block(merge_block);
-            let result = builder.block_params(merge_block)[0];
-            Ok(result)
-        }
-
         Expression::Cast(cast_expr) => {
             // Evaluate the expression to cast
             let value = compile_expression(ctx, builder, cast_expr.expr)?;
@@ -4943,7 +4894,7 @@ fn compile_method_call(
     method_name: &str,
     args: &[Expression<'_>],
 ) -> Result<Value, CodegenError> {
-    // Handle option methods first (before compiling receiver for or_default)
+    // Handle option methods first (before compiling receiver)
     match method_name {
         "is_some" => {
             let opt_ptr = compile_expression(ctx, builder, receiver)?;
@@ -4956,20 +4907,6 @@ fn compile_method_call(
             let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
             let zero = builder.ins().iconst(cranelift::prelude::types::I32, 0);
             return Ok(builder.ins().icmp(IntCC::Equal, tag, zero));
-        }
-        "or_default" => {
-            let opt_ptr = compile_expression(ctx, builder, receiver)?;
-            if args.is_empty() {
-                return Err(CodegenError::JitCompile("or_default requires a default value argument".to_string()));
-            }
-            let default_val = compile_expression(ctx, builder, &args[0])?;
-
-            let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
-            let is_some = builder.ins().icmp_imm(IntCC::Equal, tag, 1);
-
-            let some_val = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), opt_ptr, 8);
-
-            return Ok(builder.ins().select(is_some, some_val, default_val));
         }
         _ => {}
     }
