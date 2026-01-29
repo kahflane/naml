@@ -59,6 +59,7 @@ impl<'a> TypeInferrer<'a> {
             Expression::Try(try_expr) => self.infer_try(try_expr),
             Expression::Catch(catch) => self.infer_catch(catch),
             Expression::Cast(cast) => self.infer_cast(cast),
+            Expression::FallibleCast(cast) => self.infer_fallible_cast(cast),
             Expression::Range(range) => self.infer_range(range),
             Expression::Grouped(grouped) => self.infer_expr(grouped.inner),
             Expression::Some(some) => self.infer_some(some),
@@ -1376,6 +1377,12 @@ impl<'a> TypeInferrer<'a> {
     fn infer_cast(&mut self, cast: &ast::CastExpr) -> Type {
         self.infer_expr(cast.expr);
         self.convert_ast_type(&cast.target_ty)
+    }
+
+    fn infer_fallible_cast(&mut self, cast: &ast::FallibleCastExpr) -> Type {
+        self.infer_expr(cast.expr);
+        let target_ty = self.convert_ast_type(&cast.target_ty);
+        Type::Option(Box::new(target_ty))
     }
 
     fn infer_range(&mut self, range: &ast::RangeExpr) -> Type {

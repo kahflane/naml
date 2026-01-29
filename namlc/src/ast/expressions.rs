@@ -49,6 +49,7 @@ pub enum Expression<'ast> {
     Some(SomeExpr<'ast>),
     Ternary(TernaryExpr<'ast>),
     Elvis(ElvisExpr<'ast>),
+    FallibleCast(FallibleCastExpr<'ast>),
 }
 
 impl<'ast> Spanned for Expression<'ast> {
@@ -78,6 +79,7 @@ impl<'ast> Spanned for Expression<'ast> {
             Expression::Some(e) => e.span,
             Expression::Ternary(e) => e.span,
             Expression::Elvis(e) => e.span,
+            Expression::FallibleCast(e) => e.span,
         }
     }
 }
@@ -237,6 +239,13 @@ pub struct CatchExpr<'ast> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CastExpr<'ast> {
+    pub expr: &'ast Expression<'ast>,
+    pub target_ty: NamlType,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FallibleCastExpr<'ast> {
     pub expr: &'ast Expression<'ast>,
     pub target_ty: NamlType,
     pub span: Span,

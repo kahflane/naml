@@ -1,0 +1,25 @@
+fn main() {
+    // Test fallible cast (as?) for string to int
+    var valid_int: string = "42";
+    var maybe_int: option<int> = valid_int as? int;
+    println("Parsed valid int:");
+    println(maybe_int ?? 0);
+
+    // Test with invalid input - should return default
+    var invalid_int: string = "not a number";
+    var maybe_invalid: option<int> = invalid_int as? int;
+    println("Invalid parse (default 0):");
+    println(maybe_invalid ?? 0);
+
+    // Comparison: regular cast vs fallible cast
+    var bad_str: string = "hello";
+    var forced_int: int = bad_str as int;
+    println("Regular cast of 'hello' to int:");
+    println(forced_int);
+
+    // Fallible cast returns none on failure
+    var safe_int: option<int> = bad_str as? int;
+    var result: int = safe_int ?? -1;
+    println("Fallible cast of 'hello' to int (with default -1):");
+    println(result);
+}

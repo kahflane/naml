@@ -810,17 +810,37 @@ fn parse_cast<'a, 'ast>(
 ) -> PResult<'a, Expression<'ast>> {
     let start_span = expr.span();
     let (input, _) = keyword(Keyword::As)(input)?;
+
+    // Check for '?' for fallible cast (as?)
+    let (input, is_fallible) = if check(TokenKind::Question)(input) {
+        let (new_input, _) = token(TokenKind::Question)(input)?;
+        (new_input, true)
+    } else {
+        (input, false)
+    };
+
     let (input, target_ty) = parse_type(input)?;
     let span = start_span.merge(input.current_span());
 
-    Ok((
-        input,
-        Expression::Cast(CastExpr {
-            expr: arena.alloc(expr),
-            target_ty,
-            span,
-        }),
-    ))
+    if is_fallible {
+        Ok((
+            input,
+            Expression::FallibleCast(FallibleCastExpr {
+                expr: arena.alloc(expr),
+                target_ty,
+                span,
+            }),
+        ))
+    } else {
+        Ok((
+            input,
+            Expression::Cast(CastExpr {
+                expr: arena.alloc(expr),
+                target_ty,
+                span,
+            }),
+        ))
+    }
 }
 
 fn parse_catch<'a, 'ast>(

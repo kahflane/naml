@@ -277,6 +277,8 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_float_to_string", crate::runtime::naml_float_to_string as *const u8);
         builder.symbol("naml_string_to_int", crate::runtime::naml_string_to_int as *const u8);
         builder.symbol("naml_string_to_float", crate::runtime::naml_string_to_float as *const u8);
+        builder.symbol("naml_string_try_to_int", crate::runtime::naml_string_try_to_int as *const u8);
+        builder.symbol("naml_string_try_to_float", crate::runtime::naml_string_try_to_float as *const u8);
 
         // Bytes operations
         builder.symbol("naml_bytes_new", crate::runtime::naml_bytes_new as *const u8);
@@ -378,6 +380,8 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_float_to_string", &[f64t], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_int", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_float", &[ptr], &[f64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_try_to_int", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_try_to_float", &[ptr, ptr], &[i64t])?;
 
         // I/O
         declare(&mut self.module, &mut self.runtime_funcs, "naml_read_line", &[], &[ptr])?;
@@ -1210,6 +1214,9 @@ impl<'a> JitCompiler<'a> {
                 self.scan_expression_for_spawns(elvis.left)?;
                 self.scan_expression_for_spawns(elvis.right)?;
             }
+            Expression::FallibleCast(cast) => {
+                self.scan_expression_for_spawns(cast.expr)?;
+            }
             _ => {}
         }
         Ok(())
@@ -1407,6 +1414,9 @@ impl<'a> JitCompiler<'a> {
             Expression::Elvis(elvis) => {
                 self.collect_vars_in_expression(elvis.left, captured, defined);
                 self.collect_vars_in_expression(elvis.right, captured, defined);
+            }
+            Expression::FallibleCast(cast) => {
+                self.collect_vars_in_expression(cast.expr, captured, defined);
             }
             _ => {}
         }
@@ -3819,6 +3829,96 @@ fn compile_expression(
                 }
                 _ => {
                     // For other casts, just pass through the value
+                    Ok(value)
+                }
+            }
+        }
+
+        Expression::FallibleCast(cast_expr) => {
+            // Fallible cast: returns option<T> as simple value (0 = none, value = some)
+            let value = compile_expression(ctx, builder, cast_expr.expr)?;
+            let source_type = ctx.annotations.get_type(cast_expr.expr.span());
+
+            match (&cast_expr.target_ty, source_type) {
+                (NamlType::Int, Some(Type::String)) => {
+                    // String to int fallible conversion
+                    // Returns 0 if failed, parsed value if successful
+                    let value_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,
+                        0,
+                    ));
+                    let value_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, value_slot, 0);
+
+                    let func_ref = rt_func_ref(ctx, builder, "naml_string_try_to_int")?;
+                    let call = builder.ins().call(func_ref, &[value, value_ptr]);
+                    let success = builder.inst_results(call)[0];
+
+                    // Create blocks for conditional return
+                    let success_block = builder.create_block();
+                    let fail_block = builder.create_block();
+                    let merge_block = builder.create_block();
+                    builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+                    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let is_success = builder.ins().icmp(IntCC::NotEqual, success, zero);
+                    builder.ins().brif(is_success, success_block, &[], fail_block, &[]);
+
+                    // Success: return the parsed value
+                    builder.switch_to_block(success_block);
+                    builder.seal_block(success_block);
+                    let parsed_value = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), value_ptr, 0);
+                    builder.ins().jump(merge_block, &[parsed_value]);
+
+                    // Failure: return 0 (none)
+                    builder.switch_to_block(fail_block);
+                    builder.seal_block(fail_block);
+                    builder.ins().jump(merge_block, &[zero]);
+
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
+                    Ok(builder.block_params(merge_block)[0])
+                }
+                (NamlType::Float, Some(Type::String)) => {
+                    // String to float fallible conversion
+                    let value_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,
+                        0,
+                    ));
+                    let value_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, value_slot, 0);
+
+                    let func_ref = rt_func_ref(ctx, builder, "naml_string_try_to_float")?;
+                    let call = builder.ins().call(func_ref, &[value, value_ptr]);
+                    let success = builder.inst_results(call)[0];
+
+                    // Create blocks for conditional return
+                    let success_block = builder.create_block();
+                    let fail_block = builder.create_block();
+                    let merge_block = builder.create_block();
+                    builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+                    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let is_success = builder.ins().icmp(IntCC::NotEqual, success, zero);
+                    builder.ins().brif(is_success, success_block, &[], fail_block, &[]);
+
+                    // Success: return the parsed value (f64 bits as i64)
+                    builder.switch_to_block(success_block);
+                    builder.seal_block(success_block);
+                    let parsed_value = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), value_ptr, 0);
+                    builder.ins().jump(merge_block, &[parsed_value]);
+
+                    // Failure: return 0 (none)
+                    builder.switch_to_block(fail_block);
+                    builder.seal_block(fail_block);
+                    builder.ins().jump(merge_block, &[zero]);
+
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
+                    Ok(builder.block_params(merge_block)[0])
+                }
+                _ => {
+                    // For other conversions, return the value directly (always succeeds)
                     Ok(value)
                 }
             }

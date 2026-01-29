@@ -266,6 +266,44 @@ pub unsafe extern "C" fn naml_string_to_float(s: *const NamlString) -> f64 {
     }
 }
 
+/// Try to convert a string to an integer (fallible)
+/// Returns 1 if successful and writes result to out_value, 0 if failed
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_try_to_int(s: *const NamlString, out_value: *mut i64) -> i64 {
+    if s.is_null() || out_value.is_null() {
+        return 0;
+    }
+    unsafe {
+        let str_val = (*s).as_str();
+        match str_val.trim().parse::<i64>() {
+            Ok(v) => {
+                *out_value = v;
+                1
+            }
+            Err(_) => 0,
+        }
+    }
+}
+
+/// Try to convert a string to a float (fallible)
+/// Returns 1 if successful and writes result to out_value, 0 if failed
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_string_try_to_float(s: *const NamlString, out_value: *mut f64) -> i64 {
+    if s.is_null() || out_value.is_null() {
+        return 0;
+    }
+    unsafe {
+        let str_val = (*s).as_str();
+        match str_val.trim().parse::<f64>() {
+            Ok(v) => {
+                *out_value = v;
+                1
+            }
+            Err(_) => 0,
+        }
+    }
+}
+
 /// Get character (as UTF-8 codepoint) at index
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_string_char_at(s: *const NamlString, index: i64) -> i64 {
