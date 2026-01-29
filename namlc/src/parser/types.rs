@@ -24,6 +24,7 @@ pub fn parse_type(input: TokenStream) -> PResult<NamlType> {
         Some(TokenKind::Keyword(Keyword::Int)) => parse_primitive(input),
         Some(TokenKind::Keyword(Keyword::Uint)) => parse_primitive(input),
         Some(TokenKind::Keyword(Keyword::Float)) => parse_primitive(input),
+        Some(TokenKind::Keyword(Keyword::Decimal)) => parse_decimal_type(input),
         Some(TokenKind::Keyword(Keyword::Bool)) => parse_primitive(input),
         Some(TokenKind::Keyword(Keyword::String)) => parse_primitive(input),
         Some(TokenKind::Keyword(Keyword::Bytes)) => parse_primitive(input),
@@ -55,6 +56,28 @@ fn parse_primitive(input: TokenStream) -> PResult<NamlType> {
         map(keyword(Keyword::String), |_| NamlType::String),
         map(keyword(Keyword::Bytes), |_| NamlType::Bytes),
     ))(input)
+}
+
+fn parse_decimal_type(input: TokenStream) -> PResult<NamlType> {
+    let (input, _) = keyword(Keyword::Decimal)(input)?;
+
+    // Optional (precision, scale) parameters - defaults to (10, 2)
+    if check(TokenKind::LParen)(input) {
+        let (input, _) = token(TokenKind::LParen)(input)?;
+        let (input, precision) = int_lit(input)?;
+        let (input, _) = token(TokenKind::Comma)(input)?;
+        let (input, scale) = int_lit(input)?;
+        let (input, _) = token(TokenKind::RParen)(input)?;
+        Ok((input, NamlType::Decimal {
+            precision: precision.0 as u8,
+            scale: scale.0 as u8,
+        }))
+    } else {
+        Ok((input, NamlType::Decimal {
+            precision: 10,
+            scale: 2,
+        }))
+    }
 }
 
 fn parse_option_type(input: TokenStream) -> PResult<NamlType> {

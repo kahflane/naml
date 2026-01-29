@@ -34,7 +34,7 @@ pub fn naml_to_cranelift(ty: &NamlType) -> Type {
         NamlType::Named(_) => types::I64,
         NamlType::Generic(_, _) => types::I64,
         NamlType::Function { .. } => types::I64,
-        NamlType::Decimal { .. } => types::I64,
+        NamlType::Decimal { .. } => types::F64,
         NamlType::Inferred => types::I64,
     }
 }

@@ -400,6 +400,7 @@ pub enum Keyword {
     Int,
     Uint,
     Float,
+    Decimal,
     Bool,
     String,
     Bytes,
@@ -933,6 +934,7 @@ impl<'a> Lexer<'a> {
             (0x61666564, 0x6C75, b't') => TokenKind::Keyword(Keyword::Default),  // "default"
             (0x6E616863, 0x656E, b'l') => TokenKind::Keyword(Keyword::Channel),  // "channel"
             (0x776F7262, 0x6573, b'r') => TokenKind::Keyword(Keyword::Browser),  // "browser"
+            (0x69636564, 0x616D, b'l') => TokenKind::Keyword(Keyword::Decimal),  // "decimal"
             _ => TokenKind::Ident,
         }
     }
