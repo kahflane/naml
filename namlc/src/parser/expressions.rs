@@ -55,7 +55,54 @@ fn pratt_expr<'a, 'ast>(
         });
     }
 
+    // Parse ternary (? :) and elvis (?:) operators with lowest precedence
+    if min_prec == 0 && check(TokenKind::Question)(input) {
+        let (new_input, expr) = parse_ternary_or_elvis(arena, input, left)?;
+        return Ok((new_input, expr));
+    }
+
     Ok((input, left))
+}
+
+fn parse_ternary_or_elvis<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+    condition: Expression<'ast>,
+) -> PResult<'a, Expression<'ast>> {
+    let start_span = condition.span();
+    let (input, _) = token(TokenKind::Question)(input)?;
+
+    // Check if this is elvis operator (?:) or ternary (? ... :)
+    if check(TokenKind::Colon)(input) {
+        // Elvis operator: condition ?: default
+        let (input, _) = token(TokenKind::Colon)(input)?;
+        let (input, right) = parse_expression(arena, input)?;
+        let span = start_span.merge(right.span());
+        return Ok((
+            input,
+            Expression::Elvis(ElvisExpr {
+                left: arena.alloc(condition),
+                right: arena.alloc(right),
+                span,
+            }),
+        ));
+    }
+
+    // Ternary operator: condition ? true_expr : false_expr
+    let (input, true_expr) = parse_expression(arena, input)?;
+    let (input, _) = token(TokenKind::Colon)(input)?;
+    let (input, false_expr) = parse_expression(arena, input)?;
+    let span = start_span.merge(false_expr.span());
+
+    Ok((
+        input,
+        Expression::Ternary(TernaryExpr {
+            condition: arena.alloc(condition),
+            true_expr: arena.alloc(true_expr),
+            false_expr: arena.alloc(false_expr),
+            span,
+        }),
+    ))
 }
 
 fn parse_unary<'a, 'ast>(

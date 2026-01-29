@@ -1,0 +1,64 @@
+// Ternary and Elvis Operator Examples
+// Demonstrates the conditional expression operators in naml
+
+fn main() {
+    // Basic ternary operator: condition ? true_value : false_value
+    var age: int = 25;
+    var is_adult: int = age >= 18 ? 1 : 0;
+    println("Is adult (1=yes, 0=no):");
+    println(is_adult);
+
+    // Ternary with numeric comparison
+    var score: int = 85;
+    var grade: int = score >= 90 ? 4 : score >= 80 ? 3 : score >= 70 ? 2 : 1;
+    println("Grade (4=A, 3=B, 2=C, 1=D):");
+    println(grade);
+
+    // Ternary returning different values
+    var temperature: int = 72;
+    var comfort: int = temperature > 80 ? -1 : temperature < 60 ? 1 : 0;
+    println("Comfort level (-1=hot, 0=ok, 1=cold):");
+    println(comfort);
+
+    // Elvis operator: value ?: default
+    // Returns value if truthy (non-zero), otherwise returns default
+    var count: int = 0;
+    var display_count: int = count ?: 10;
+    println("Display count (0 defaults to 10):");
+    println(display_count);
+
+    var items: int = 5;
+    var actual_items: int = items ?: 1;
+    println("Actual items (5 is truthy):");
+    println(actual_items);
+
+    // Combining ternary with expressions
+    var x: int = 10;
+    var y: int = 20;
+    var max: int = x > y ? x : y;
+    var min: int = x < y ? x : y;
+    println("Max of 10 and 20:");
+    println(max);
+    println("Min of 10 and 20:");
+    println(min);
+
+    // Elvis for default values
+    var user_limit: int = 0;
+    var effective_limit: int = user_limit ?: 100;
+    println("Effective limit (0 defaults to 100):");
+    println(effective_limit);
+
+    // Ternary with boolean condition
+    var flag: bool = true;
+    var result: int = flag ? 42 : 0;
+    println("Result when flag is true:");
+    println(result);
+
+    // Chained elvis
+    var a: int = 0;
+    var b: int = 0;
+    var c: int = 5;
+    var first_truthy: int = a ?: b ?: c ?: 99;
+    println("First truthy value (0, 0, 5, 99):");
+    println(first_truthy);
+}

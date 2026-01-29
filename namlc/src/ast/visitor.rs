@@ -406,6 +406,15 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
         Expression::Some(e) => {
             v.visit_expr(e.value);
         }
+        Expression::Ternary(e) => {
+            v.visit_expr(e.condition);
+            v.visit_expr(e.true_expr);
+            v.visit_expr(e.false_expr);
+        }
+        Expression::Elvis(e) => {
+            v.visit_expr(e.left);
+            v.visit_expr(e.right);
+        }
     }
 }
 

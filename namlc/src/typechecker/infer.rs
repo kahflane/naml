@@ -62,6 +62,8 @@ impl<'a> TypeInferrer<'a> {
             Expression::Range(range) => self.infer_range(range),
             Expression::Grouped(grouped) => self.infer_expr(grouped.inner),
             Expression::Some(some) => self.infer_some(some),
+            Expression::Ternary(ternary) => self.infer_ternary(ternary),
+            Expression::Elvis(elvis) => self.infer_elvis(elvis),
         };
 
         let resolved_ty = ty.resolve();
@@ -158,6 +160,44 @@ impl<'a> TypeInferrer<'a> {
     fn infer_some(&mut self, some: &ast::SomeExpr) -> Type {
         let inner_ty = self.infer_expr(some.value);
         Type::Option(Box::new(inner_ty))
+    }
+
+    fn infer_ternary(&mut self, ternary: &ast::TernaryExpr) -> Type {
+        let cond_ty = self.infer_expr(ternary.condition);
+        if let Err(e) = unify(&cond_ty, &Type::Bool, ternary.condition.span()) {
+            self.errors.push(e);
+        }
+
+        let true_ty = self.infer_expr(ternary.true_expr);
+        let false_ty = self.infer_expr(ternary.false_expr);
+
+        if let Err(e) = unify(&true_ty, &false_ty, ternary.span) {
+            self.errors.push(e);
+            return Type::Error;
+        }
+
+        true_ty.resolve()
+    }
+
+    fn infer_elvis(&mut self, elvis: &ast::ElvisExpr) -> Type {
+        let left_ty = self.infer_expr(elvis.left);
+        let right_ty = self.infer_expr(elvis.right);
+        let left_resolved = left_ty.resolve();
+
+        match &left_resolved {
+            Type::Option(inner) => {
+                if let Err(e) = unify(inner, &right_ty, elvis.span) {
+                    self.errors.push(e);
+                }
+                right_ty.resolve()
+            }
+            _ => {
+                if let Err(e) = unify(&left_ty, &right_ty, elvis.span) {
+                    self.errors.push(e);
+                }
+                right_ty.resolve()
+            }
+        }
     }
 
     fn infer_literal(&mut self, lit: &ast::LiteralExpr) -> Type {

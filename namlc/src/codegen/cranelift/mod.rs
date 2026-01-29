@@ -1201,6 +1201,15 @@ impl<'a> JitCompiler<'a> {
             Expression::Grouped(grouped) => {
                 self.scan_expression_for_spawns(grouped.inner)?;
             }
+            Expression::Ternary(ternary) => {
+                self.scan_expression_for_spawns(ternary.condition)?;
+                self.scan_expression_for_spawns(ternary.true_expr)?;
+                self.scan_expression_for_spawns(ternary.false_expr)?;
+            }
+            Expression::Elvis(elvis) => {
+                self.scan_expression_for_spawns(elvis.left)?;
+                self.scan_expression_for_spawns(elvis.right)?;
+            }
             _ => {}
         }
         Ok(())
@@ -1389,6 +1398,15 @@ impl<'a> JitCompiler<'a> {
                     lambda_defined.insert(name);
                 }
                 self.collect_vars_in_expression(lambda.body, captured, &lambda_defined);
+            }
+            Expression::Ternary(ternary) => {
+                self.collect_vars_in_expression(ternary.condition, captured, defined);
+                self.collect_vars_in_expression(ternary.true_expr, captured, defined);
+                self.collect_vars_in_expression(ternary.false_expr, captured, defined);
+            }
+            Expression::Elvis(elvis) => {
+                self.collect_vars_in_expression(elvis.left, captured, defined);
+                self.collect_vars_in_expression(elvis.right, captured, defined);
             }
             _ => {}
         }
@@ -3804,6 +3822,74 @@ fn compile_expression(
                     Ok(value)
                 }
             }
+        }
+
+        Expression::Ternary(ternary) => {
+            // Compile: condition ? true_expr : false_expr
+            let cond = compile_expression(ctx, builder, ternary.condition)?;
+
+            // Create blocks for branching
+            let then_block = builder.create_block();
+            let else_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Branch on condition (condition is already a boolean value)
+            builder.ins().brif(cond, then_block, &[], else_block, &[]);
+
+            // Then block: evaluate true expression
+            builder.switch_to_block(then_block);
+            builder.seal_block(then_block);
+            let true_val = compile_expression(ctx, builder, ternary.true_expr)?;
+            builder.ins().jump(merge_block, &[true_val]);
+
+            // Else block: evaluate false expression
+            builder.switch_to_block(else_block);
+            builder.seal_block(else_block);
+            let false_val = compile_expression(ctx, builder, ternary.false_expr)?;
+            builder.ins().jump(merge_block, &[false_val]);
+
+            // Merge block: result is block parameter
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        Expression::Elvis(elvis) => {
+            // Compile: left ?: right
+            // Returns left if truthy, otherwise right
+            let left = compile_expression(ctx, builder, elvis.left)?;
+
+            // Create blocks for branching
+            let then_block = builder.create_block();
+            let else_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Check if left is falsy (zero/null)
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            let is_falsy = builder.ins().icmp(IntCC::Equal, left, zero);
+            builder.ins().brif(is_falsy, else_block, &[], then_block, &[]);
+
+            // Then block: left is truthy, use left
+            builder.switch_to_block(then_block);
+            builder.seal_block(then_block);
+            builder.ins().jump(merge_block, &[left]);
+
+            // Else block: left is falsy, evaluate and use right
+            builder.switch_to_block(else_block);
+            builder.seal_block(else_block);
+            let right = compile_expression(ctx, builder, elvis.right)?;
+            builder.ins().jump(merge_block, &[right]);
+
+            // Merge block: result is block parameter
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
         }
 
         _ => {

@@ -47,6 +47,8 @@ pub enum Expression<'ast> {
     Range(RangeExpr<'ast>),
     Grouped(GroupedExpr<'ast>),
     Some(SomeExpr<'ast>),
+    Ternary(TernaryExpr<'ast>),
+    Elvis(ElvisExpr<'ast>),
 }
 
 impl<'ast> Spanned for Expression<'ast> {
@@ -74,6 +76,8 @@ impl<'ast> Spanned for Expression<'ast> {
             Expression::Range(e) => e.span,
             Expression::Grouped(e) => e.span,
             Expression::Some(e) => e.span,
+            Expression::Ternary(e) => e.span,
+            Expression::Elvis(e) => e.span,
         }
     }
 }
@@ -255,6 +259,21 @@ pub struct GroupedExpr<'ast> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SomeExpr<'ast> {
     pub value: &'ast Expression<'ast>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TernaryExpr<'ast> {
+    pub condition: &'ast Expression<'ast>,
+    pub true_expr: &'ast Expression<'ast>,
+    pub false_expr: &'ast Expression<'ast>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElvisExpr<'ast> {
+    pub left: &'ast Expression<'ast>,
+    pub right: &'ast Expression<'ast>,
     pub span: Span,
 }
 
