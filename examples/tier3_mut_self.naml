@@ -1,21 +1,21 @@
 ///
-/// Tier 3 Test: Mutable Self Parameters
+/// Tier 3 Test: Method Receivers (self mutability)
 ///
 
 struct Counter {
     value: int
 }
 
-// Method with mutable self - can modify fields
-pub fn (mut self: Counter) increment() {
+// Methods can mutate self fields directly
+pub fn (self: Counter) increment() {
     self.value = self.value + 1;
 }
 
-pub fn (mut self: Counter) add(amount: int) {
+pub fn (self: Counter) add(amount: int) {
     self.value = self.value + amount;
 }
 
-// Method with immutable self - read only
+// Read-only method
 pub fn (self: Counter) get_value() -> int {
     return self.value;
 }
@@ -29,7 +29,7 @@ struct Point {
     y: int
 }
 
-pub fn (mut self: Point) translate(dx: int, dy: int) {
+pub fn (self: Point) translate(dx: int, dy: int) {
     self.x = self.x + dx;
     self.y = self.y + dy;
 }
@@ -39,7 +39,7 @@ pub fn (self: Point) distance_squared() -> int {
 }
 
 fn main() {
-    println("=== Mutable Self Tests ===");
+    println("=== Method Receiver Tests ===");
 
     var c: Counter = Counter { value: 0 };
 
@@ -76,5 +76,5 @@ fn main() {
     print(", y: ");
     println(p.y);
 
-    println("=== Mutable Self Tests Complete ===");
+    println("=== Method Receiver Tests Complete ===");
 }

@@ -192,12 +192,13 @@ fn parse_function_item<'a, 'ast>(
 fn parse_receiver<'a>(input: TokenStream<'a>) -> PResult<'a, Receiver> {
     let (input, start) = token(TokenKind::LParen)(input)?;
 
-    let (input, mutable) = if check_keyword(Keyword::Mut)(input) {
-        let (input, _) = keyword(Keyword::Mut)(input)?;
-        (input, true)
-    } else {
-        (input, false)
-    };
+    // Receivers are always mutable - mut keyword is not allowed
+    if check_keyword(Keyword::Mut)(input) {
+        return Err(nom::Err::Error(PError {
+            input,
+            kind: PErrorKind::MutNotAllowedOnReceiver,
+        }));
+    }
 
     let (input, name) = ident(input)?;
     let (input, _) = token(TokenKind::Colon)(input)?;
@@ -209,7 +210,7 @@ fn parse_receiver<'a>(input: TokenStream<'a>) -> PResult<'a, Receiver> {
         Receiver {
             name,
             ty,
-            mutable,
+            mutable: true,
             span: start.span.merge(end.span),
         },
     ))

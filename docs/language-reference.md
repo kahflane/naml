@@ -532,14 +532,16 @@ pub fn (self: Point) get_y() -> int {
 }
 ```
 
-### Mutable Methods
+### Mutating Methods
+
+Methods can mutate `self` fields directly since receivers are always mutable:
 
 ```naml
-pub fn (mut self: Counter) increment() {
+pub fn (self: Counter) increment() {
     self.value = self.value + 1;
 }
 
-pub fn (mut self: Counter) reset() {
+pub fn (self: Counter) reset() {
     self.value = 0;
 }
 ```

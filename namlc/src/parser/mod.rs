@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_mut_receiver() {
-        assert_parses("fn (mut self: List<T>) add(item: T) { }");
+    fn test_parse_receiver() {
+        assert_parses("fn (self: List<T>) add(item: T) { }");
     }
 }

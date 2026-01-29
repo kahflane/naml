@@ -32,6 +32,7 @@ pub enum PErrorKind {
     ExpectedStatement,
     ExpectedItem,
     MutNotAllowedOnVar,
+    MutNotAllowedOnReceiver,
     Nom(ErrorKind),
 }
 

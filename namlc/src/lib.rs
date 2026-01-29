@@ -78,7 +78,7 @@ pub fn (self: point) distance_from_origin() -> float {
     return (self.x * self.x + self.y * self.y);
 }
 
-fn (mut self: point) move_by(dx: float, dy: float) {
+fn (self: point) move_by(dx: float, dy: float) {
     self.x = self.x + dx;
     self.y = self.y + dy;
 }

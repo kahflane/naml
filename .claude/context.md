@@ -471,7 +471,7 @@ pub fn (self: rectangle) area() -> float {
 return self.width * self.height;
 }
 
-fn (mut self: point) move_by(dx: float, dy: float) {
+fn (self: point) move_by(dx: float, dy: float) {
 self.x = self.x + dx;
 self.y = self.y + dy;
 }
