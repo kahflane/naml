@@ -85,7 +85,7 @@ fn (mut self: point) move_by(dx: float, dy: float) {
 
 var r: rectangle = rectangle { width: 10.0, height: 5.0 };
 var c: circle = circle { radius: 3.0 };
-var mut p: point = point { x: 3.0, y: 4.0 };
+var p: point = point { x: 3.0, y: 4.0 };
 
 print("Rectangle area: {}", r.area());
 print("Rectangle perimeter: {}", r.perimeter());

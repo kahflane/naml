@@ -323,7 +323,7 @@ Use `var` to declare mutable variables. **Type annotation is always required**:
 ```naml
 var x: int = 10;
 var y: float = 3.14;
-var mut z: int = 30;   // Explicitly mutable (var is mutable by default)
+var z: int = 30;
 ```
 
 **Important**: Type inference is not supported. The following is **invalid**:

@@ -155,7 +155,7 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
         TypeError::ImmutableAssignment { name, .. } => (
             format!("cannot assign to immutable variable '{}'", name),
             "immutable".to_string(),
-            Some("declare with 'var mut' to make mutable".to_string()),
+            Some("use 'var' instead of 'const' to make mutable".to_string()),
         ),
         TypeError::MissingReturn { .. } => (
             "function must return a value".to_string(),

@@ -11,7 +11,8 @@
 //! - Error handling: throw
 //!
 //! Design notes:
-//! - VarStmt supports both `var x` and `var mut x` for mutability
+//! - VarStmt declares mutable variables with `var x: Type`
+//! - ConstStmt declares immutable values with `const x: Type`
 //! - ForStmt supports optional index binding `for (i, val in collection)`
 //! - IfStmt vs IfExpr: statements don't require else, expressions do
 //!

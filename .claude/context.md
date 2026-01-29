@@ -406,11 +406,9 @@ Syntax Reference
 
 Variables and Constants
 
-var x: int = 42;              // Immutable
-var mut counter: int = 0;     // Mutable
-const PI: float = 3.14159;    // Constant
+var x: int = 42;              // Mutable
+const PI: float = 3.14159;    // Constant (immutable)
 pub const MAX: int = 100;     // Public constant
-var x = 42;                   // Type inference
 
 Primitive Types
 ┌──────────────┬──────────────────────────────┐
