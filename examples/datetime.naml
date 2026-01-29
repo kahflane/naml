@@ -1,0 +1,53 @@
+///
+/// Datetime Example
+///
+/// Demonstrates the std::datetime module functions.
+///
+
+use std::datetime::*;
+
+fn main() {
+    println("=== DateTime Demo ===");
+    println("");
+
+    // Get current timestamp
+    var ts: int = now_ms();
+    println("Current timestamp (ms): {}", ts);
+    println("Current timestamp (s):  {}", now_s());
+    println("");
+
+    // Extract date components
+    println("Date Components:");
+    println("  Year:   {}", year(ts));
+    println("  Month:  {}", month(ts));
+    println("  Day:    {}", day(ts));
+    println("");
+
+    // Extract time components
+    println("Time Components (UTC):");
+    println("  Hour:   {}", hour(ts));
+    println("  Minute: {}", minute(ts));
+    println("  Second: {}", second(ts));
+    println("");
+
+    // Day of week
+    var dow: int = day_of_week(ts);
+    println("Day of Week: {} (0=Sun, 6=Sat)", dow);
+    println("");
+
+    // Format date
+    println("Formatted Dates:");
+    println("  ISO:    {}", format_date(ts, "YYYY-MM-DD"));
+    println("  Full:   {}", format_date(ts, "YYYY-MM-DD HH:mm:ss"));
+    println("");
+
+    // Test with known date (Jan 1, 2024 00:00:00 UTC)
+    var known_ts: int = 1704067200000;
+    println("Known Date (2024-01-01):");
+    println("  Year:  {}", year(known_ts));
+    println("  Month: {}", month(known_ts));
+    println("  Day:   {}", day(known_ts));
+
+    println("");
+    println("Done!");
+}

@@ -22,6 +22,8 @@ pub use naml_std_core::*;
 pub use naml_std_random::*;
 pub use naml_std_io::*;
 pub use naml_std_threads::*;
+pub use naml_std_datetime::*;
+pub use naml_std_metrics::*;
 
 pub use array::*;
 pub use map::*;

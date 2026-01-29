@@ -338,6 +338,24 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::generic("open_channel", vec!["T"], vec![("capacity", Type::Int)],
                     Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
             ]),
+            "datetime" => Some(vec![
+                StdModuleFn::new("now_ms", vec![], Type::Int),
+                StdModuleFn::new("now_s", vec![], Type::Int),
+                StdModuleFn::new("year", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("month", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("day", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("hour", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("minute", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("second", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("day_of_week", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("format_date", vec![("timestamp_ms", Type::Int), ("fmt", Type::String)], Type::String),
+            ]),
+            "metrics" => Some(vec![
+                StdModuleFn::new("perf_now", vec![], Type::Int),
+                StdModuleFn::new("elapsed_ms", vec![("start_ns", Type::Int)], Type::Int),
+                StdModuleFn::new("elapsed_us", vec![("start_ns", Type::Int)], Type::Int),
+                StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int),
+            ]),
             _ => None,
         }
     }

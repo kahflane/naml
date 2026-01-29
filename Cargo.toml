@@ -13,6 +13,8 @@ members = [
     "std/naml-std-random",
     "std/naml-std-io",
     "std/naml-std-threads",
+    "std/naml-std-datetime",
+    "std/naml-std-metrics",
 ]
 
 [workspace.package]
@@ -124,6 +126,8 @@ naml-std-core = { path = "std/naml-std-core" }
 naml-std-random = { path = "std/naml-std-random" }
 naml-std-io = { path = "std/naml-std-io" }
 naml-std-threads = { path = "std/naml-std-threads" }
+naml-std-datetime = { path = "std/naml-std-datetime" }
+naml-std-metrics = { path = "std/naml-std-metrics" }
 
 [profile.release]
 lto = true

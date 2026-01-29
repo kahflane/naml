@@ -174,6 +174,24 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_terminal_width", crate::runtime::naml_terminal_width as *const u8);
         builder.symbol("naml_terminal_height", crate::runtime::naml_terminal_height as *const u8);
 
+        // Datetime operations
+        builder.symbol("naml_datetime_now_ms", crate::runtime::naml_datetime_now_ms as *const u8);
+        builder.symbol("naml_datetime_now_s", crate::runtime::naml_datetime_now_s as *const u8);
+        builder.symbol("naml_datetime_year", crate::runtime::naml_datetime_year as *const u8);
+        builder.symbol("naml_datetime_month", crate::runtime::naml_datetime_month as *const u8);
+        builder.symbol("naml_datetime_day", crate::runtime::naml_datetime_day as *const u8);
+        builder.symbol("naml_datetime_hour", crate::runtime::naml_datetime_hour as *const u8);
+        builder.symbol("naml_datetime_minute", crate::runtime::naml_datetime_minute as *const u8);
+        builder.symbol("naml_datetime_second", crate::runtime::naml_datetime_second as *const u8);
+        builder.symbol("naml_datetime_day_of_week", crate::runtime::naml_datetime_day_of_week as *const u8);
+        builder.symbol("naml_datetime_format", crate::runtime::naml_datetime_format as *const u8);
+
+        // Metrics operations
+        builder.symbol("naml_metrics_perf_now", crate::runtime::naml_metrics_perf_now as *const u8);
+        builder.symbol("naml_metrics_elapsed_ms", crate::runtime::naml_metrics_elapsed_ms as *const u8);
+        builder.symbol("naml_metrics_elapsed_us", crate::runtime::naml_metrics_elapsed_us as *const u8);
+        builder.symbol("naml_metrics_elapsed_ns", crate::runtime::naml_metrics_elapsed_ns as *const u8);
+
         // Channel operations
         builder.symbol("naml_channel_new", crate::runtime::naml_channel_new as *const u8);
         builder.symbol("naml_channel_send", crate::runtime::naml_channel_send as *const u8);
@@ -409,6 +427,24 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_set", &[ptr, i64t, i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_bytes_decref", &[ptr], &[])?;
+
+        // Datetime operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_now_ms", &[], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_now_s", &[], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_year", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_month", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_day", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_hour", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_minute", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_second", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_day_of_week", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_datetime_format", &[i64t, ptr], &[ptr])?;
+
+        // Metrics operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_metrics_perf_now", &[], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_metrics_elapsed_ms", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_metrics_elapsed_us", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_metrics_elapsed_ns", &[i64t], &[i64t])?;
 
         Ok(())
     }
@@ -2984,6 +3020,62 @@ fn compile_expression(
                     "terminal_height" => {
                         return call_int_runtime(ctx, builder, "naml_terminal_height");
                     }
+                    // Datetime functions
+                    "now_ms" => {
+                        return call_int_runtime(ctx, builder, "naml_datetime_now_ms");
+                    }
+                    "now_s" => {
+                        return call_int_runtime(ctx, builder, "naml_datetime_now_s");
+                    }
+                    "year" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_datetime_year", ts);
+                    }
+                    "month" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_datetime_month", ts);
+                    }
+                    "day" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_datetime_day", ts);
+                    }
+                    "hour" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_datetime_hour", ts);
+                    }
+                    "minute" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_datetime_minute", ts);
+                    }
+                    "second" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_datetime_second", ts);
+                    }
+                    "day_of_week" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_datetime_day_of_week", ts);
+                    }
+                    "format_date" => {
+                        let ts = compile_expression(ctx, builder, &call.args[0])?;
+                        let fmt = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_datetime_format(ctx, builder, ts, fmt);
+                    }
+                    // Metrics functions
+                    "perf_now" => {
+                        return call_int_runtime(ctx, builder, "naml_metrics_perf_now");
+                    }
+                    "elapsed_ms" => {
+                        let start = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_metrics_elapsed_ms", start);
+                    }
+                    "elapsed_us" => {
+                        let start = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_metrics_elapsed_us", start);
+                    }
+                    "elapsed_ns" => {
+                        let start = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_metrics_elapsed_ns", start);
+                    }
                     _ => {}
                 }
 
@@ -5068,6 +5160,29 @@ fn call_two_arg_runtime(
     let func_ref = rt_func_ref(ctx, builder, name)?;
     builder.ins().call(func_ref, &[a, b]);
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn call_one_arg_int_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    arg: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, name)?;
+    let call = builder.ins().call(func_ref, &[arg]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn call_datetime_format(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    timestamp: Value,
+    fmt: Value,
+) -> Result<Value, CodegenError> {
+    let fmt_str = call_string_from_cstr(ctx, builder, fmt)?;
+    let func_ref = rt_func_ref(ctx, builder, "naml_datetime_format")?;
+    let call = builder.ins().call(func_ref, &[timestamp, fmt_str]);
+    Ok(builder.inst_results(call)[0])
 }
 
 // Channel helper functions

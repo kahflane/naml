@@ -95,7 +95,9 @@ naml/
     ├── naml-std-core/    # Core types (HeapHeader, NamlString, NamlStruct)
     ├── naml-std-random/  # Random number generation
     ├── naml-std-io/      # Terminal I/O and console control
-    └── naml-std-threads/ # M:N scheduler and channels
+    ├── naml-std-threads/ # M:N scheduler and channels
+    ├── naml-std-datetime/# Date and time utilities
+    └── naml-std-metrics/ # Performance measurement
 ```
 
 ### Standard Library Architecture
@@ -104,7 +106,9 @@ naml-std-core     → Base types shared by all std crates
     ↑
     ├── naml-std-random   → random(min, max), random_float()
     ├── naml-std-io       → read_key(), terminal_*, cursor control
-    └── naml-std-threads  → spawn, channels, join
+    ├── naml-std-threads  → spawn, channels, join
+    ├── naml-std-datetime → now_ms(), year(), format_date()
+    └── naml-std-metrics  → perf_now(), elapsed_ms/us/ns()
 ```
 
 ## Testing
@@ -149,6 +153,8 @@ naml test                       # Run tests
 - `naml-std-random` - Random number generation (std::random)
 - `naml-std-io` - Terminal I/O (std::io)
 - `naml-std-threads` - Concurrency primitives (std::threads)
+- `naml-std-datetime` - Date and time utilities (std::datetime)
+- `naml-std-metrics` - Performance measurement (std::metrics)
 
 ### Serialization
 - `serde` / `toml` - Config files

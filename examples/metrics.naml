@@ -1,0 +1,61 @@
+///
+/// Metrics Example
+///
+/// Demonstrates the std::metrics module for performance measurement.
+///
+
+use std::metrics::*;
+
+fn fib(n: int) -> int {
+    if (n <= 1) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn main() {
+    println("=== Metrics Demo ===");
+    println("");
+
+    // Measure simple operation
+    println("Measuring loop performance:");
+    var start: int = perf_now();
+
+    var sum: int = 0;
+    for (i: int in 0..1000000) {
+        sum = sum + i;
+    }
+
+    println("  Sum: {}", sum);
+    println("  Elapsed: {} ms", elapsed_ms(start));
+    println("  Elapsed: {} us", elapsed_us(start));
+    println("  Elapsed: {} ns", elapsed_ns(start));
+    println("");
+
+    // Measure recursive fibonacci
+    println("Measuring fibonacci(30):");
+    start = perf_now();
+
+    var result: int = fib(30);
+
+    println("  Result: {}", result);
+    println("  Elapsed: {} ms", elapsed_ms(start));
+    println("");
+
+    // Multiple measurements
+    println("Timing comparison (fib 25 vs 28):");
+
+    start = perf_now();
+    var r1: int = fib(25);
+    var t1: int = elapsed_ms(start);
+
+    start = perf_now();
+    var r2: int = fib(28);
+    var t2: int = elapsed_ms(start);
+
+    println("  fib(25) = {} in {} ms", r1, t1);
+    println("  fib(28) = {} in {} ms", r2, t2);
+
+    println("");
+    println("Done!");
+}

@@ -1,0 +1,21 @@
+##
+## naml-std-metrics - Performance measurement utilities
+##
+## Provides high-resolution timing for benchmarking naml programs:
+## - perf_now() - High-resolution monotonic time in nanoseconds
+## - elapsed_ms/us/ns - Calculate elapsed time since start
+##
+
+[package]
+name = "naml-std-metrics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Performance measurement utilities for the naml programming language"
+
+[lib]
+name = "naml_std_metrics"
+path = "src/lib.rs"
+
+[dependencies]

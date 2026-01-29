@@ -1,0 +1,24 @@
+##
+## naml-std-datetime - Date and time utilities
+##
+## Provides time and date operations for naml programs:
+## - now_ms() / now_s() - Get current Unix timestamp
+## - year/month/day/hour/minute/second extraction
+## - day_of_week calculation
+## - format_date for string formatting
+##
+
+[package]
+name = "naml-std-datetime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Date and time utilities for the naml programming language"
+
+[lib]
+name = "naml_std_datetime"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true

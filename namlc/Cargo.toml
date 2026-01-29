@@ -102,6 +102,8 @@ naml-std-core.workspace = true
 naml-std-random.workspace = true
 naml-std-io.workspace = true
 naml-std-threads.workspace = true
+naml-std-datetime.workspace = true
+naml-std-metrics.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
