@@ -1376,11 +1376,23 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_try(&mut self, try_expr: &ast::TryExpr) -> Type {
-        
-        self.infer_expr(try_expr.expr)
+        // Check for redundant try+catch combination
+        if let Expression::Catch(_) = try_expr.expr {
+            self.errors.push(TypeError::TryWithCatch { span: try_expr.span });
+        }
+
+        // Set catch context so the inner expression doesn't report uncaught exceptions
+        // (try converts exceptions to option<T>)
+        let prev_catch_context = self.in_catch_context;
+        self.in_catch_context = true;
+        let expr_ty = self.infer_expr(try_expr.expr);
+        self.in_catch_context = prev_catch_context;
+
+        expr_ty
     }
 
     fn infer_catch(&mut self, catch: &ast::CatchExpr) -> Type {
+
         // Set catch context so the inner expression doesn't report uncaught exceptions
         let prev_catch_context = self.in_catch_context;
         self.in_catch_context = true;

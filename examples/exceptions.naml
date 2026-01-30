@@ -71,12 +71,10 @@ fn main() {
 
     // Example 4: Nested function with throw
     println("Example 4: Another division by zero");
-    var result4: int = safe_divide(10, 0) catch e {
-        println("Division by zero caught!");
-    };
+    var result4: int = safe_divide(10, 0)??1;
     println("Result (default -2):");
     println(result4);
-
+    
     println("");
     println("Examples completed!");
 }

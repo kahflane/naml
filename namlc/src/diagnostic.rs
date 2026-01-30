@@ -236,6 +236,11 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             format!("throws {}", exception_type),
             Some("add 'catch' block or declare 'throws' in function signature".to_string()),
         ),
+        TypeError::TryWithCatch { .. } => (
+            "`try` and `catch` cannot be used together".to_string(),
+            "remove `try`".to_string(),
+            Some("use either `try expr ?? default` or `expr catch e { handler }`".to_string()),
+        ),
     }
 }
 

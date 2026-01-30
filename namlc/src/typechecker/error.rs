@@ -171,6 +171,9 @@ pub enum TypeError {
         exception_type: String,
         span: Span,
     },
+
+    #[error("`try` and `catch` cannot be used together")]
+    TryWithCatch { span: Span },
 }
 
 impl TypeError {
@@ -206,6 +209,7 @@ impl TypeError {
             TypeError::PrivateSymbol { span, .. } => *span,
             TypeError::ModuleFileError { span, .. } => *span,
             TypeError::UncaughtException { span, .. } => *span,
+            TypeError::TryWithCatch { span } => *span,
         }
     }
 
