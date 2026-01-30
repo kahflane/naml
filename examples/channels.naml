@@ -14,15 +14,15 @@ fn main() {
 
     // Receive values
     println("Receiving values...");
-    var v1: int = receive(ch);
+    var v1: int = receive(ch)??0;
     print("Received: ");
     println(v1);
 
-    var v2: int = receive(ch);
+    var v2: int = receive(ch)??0;
     print("Received: ");
     println(v2);
 
-    var v3: int = receive(ch);
+    var v3: int = receive(ch)??0;
     print("Received: ");
     println(v3);
 
@@ -37,7 +37,7 @@ fn main() {
     var sum: int = 0;
     i = 0;
     while (i < 5) {
-        sum = sum + receive(ch);
+        sum = sum + (receive(ch)??0);
         i = i + 1;
     }
     print("Sum of received values: ");
