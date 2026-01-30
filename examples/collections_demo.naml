@@ -51,8 +51,8 @@ fn main() {
     println(any(nums, fn(x: int) -> bool { return x > 7; }));
     print("all > 0: ");
     println(all(nums, fn(x: int) -> bool { return x > 0; }));
-    print("count > 3: ");
-    println(count(nums, fn(x: int) -> bool { return x > 3; }));
+    print("count_if > 3: ");
+    println(count_if(nums, fn(x: int) -> bool { return x > 3; }));
 
     // apply (map)
     print("doubled: ");

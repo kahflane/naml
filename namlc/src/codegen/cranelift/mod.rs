@@ -23,7 +23,7 @@ use crate::ast::{
 };
 use crate::codegen::CodegenError;
 use crate::source::Spanned;
-use crate::typechecker::{SymbolTable, Type, TypeAnnotations};
+use crate::typechecker::{Type, TypeAnnotations};
 
 #[derive(Clone)]
 pub struct StructDef {
@@ -121,7 +121,6 @@ fn convert_cranelift_error(panic_msg: &str, func_name: &str) -> CodegenError {
 pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
     annotations: &'a TypeAnnotations,
-    symbols: &'a SymbolTable,
     module: JITModule,
     ctx: codegen::Context,
     functions: HashMap<String, FuncId>,
@@ -142,7 +141,6 @@ impl<'a> JitCompiler<'a> {
     pub fn new(
         interner: &'a Rodeo,
         annotations: &'a TypeAnnotations,
-        symbols: &'a SymbolTable,
     ) -> Result<Self, CodegenError> {
         let mut flag_builder = settings::builder();
         flag_builder.set("use_colocated_libcalls", "false").unwrap();
@@ -190,7 +188,7 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_array_contains", crate::runtime::naml_array_contains as *const u8);
         builder.symbol("naml_array_any", crate::runtime::naml_array_any as *const u8);
         builder.symbol("naml_array_all", crate::runtime::naml_array_all as *const u8);
-        builder.symbol("naml_array_count", crate::runtime::naml_array_count as *const u8);
+        builder.symbol("naml_array_count_if", crate::runtime::naml_array_count_if as *const u8);
         builder.symbol("naml_array_map", crate::runtime::naml_array_map as *const u8);
         builder.symbol("naml_array_filter", crate::runtime::naml_array_filter as *const u8);
         builder.symbol("naml_array_find", crate::runtime::naml_array_find as *const u8);
@@ -366,7 +364,6 @@ impl<'a> JitCompiler<'a> {
         let mut compiler = Self {
             interner,
             annotations,
-            symbols,
             module,
             ctx,
             functions: HashMap::new(),
@@ -486,7 +483,7 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_contains", &[ptr, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_any", &[ptr, i64t, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_all", &[ptr, i64t, i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_count", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_count_if", &[ptr, i64t, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_map", &[ptr, i64t, i64t], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_filter", &[ptr, i64t, i64t], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_find", &[ptr, i64t, i64t, ptr], &[i64t])?;
@@ -1066,6 +1063,8 @@ impl<'a> JitCompiler<'a> {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
+        let func_return_type = func.return_ty.as_ref().map(|ty| types::naml_to_cranelift(ty));
+
         let mut ctx = CompileContext {
             interner: self.interner,
             module: &mut self.module,
@@ -1087,6 +1086,7 @@ impl<'a> JitCompiler<'a> {
             current_lambda_id: 0,
             annotations: self.annotations,
             type_substitutions,
+            func_return_type,
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -1577,6 +1577,7 @@ impl<'a> JitCompiler<'a> {
             current_lambda_id: 0,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
+            func_return_type: None, // Spawn trampolines don't return values
         };
 
         // Load captured variables from closure data
@@ -1705,6 +1706,7 @@ impl<'a> JitCompiler<'a> {
             current_lambda_id: 0,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
+            func_return_type: Some(cranelift::prelude::types::I64), // Lambdas always return i64
         };
 
         // Load captured variables from closure data
@@ -1822,6 +1824,8 @@ impl<'a> JitCompiler<'a> {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
+        let func_return_type = func.return_ty.as_ref().map(|ty| types::naml_to_cranelift(ty));
+
         let mut ctx = CompileContext {
             interner: self.interner,
             module: &mut self.module,
@@ -1843,6 +1847,7 @@ impl<'a> JitCompiler<'a> {
             current_lambda_id: 0,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
+            func_return_type,
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -1969,6 +1974,8 @@ impl<'a> JitCompiler<'a> {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
+        let func_return_type = func.return_ty.as_ref().map(|ty| types::naml_to_cranelift(ty));
+
         let mut ctx = CompileContext {
             interner: self.interner,
             module: &mut self.module,
@@ -1990,6 +1997,7 @@ impl<'a> JitCompiler<'a> {
             current_lambda_id: 0,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
+            func_return_type,
         };
 
         // Set up receiver variable (self)
@@ -2145,6 +2153,7 @@ struct CompileContext<'a> {
     current_lambda_id: u32,
     annotations: &'a TypeAnnotations,
     type_substitutions: HashMap<String, String>,
+    func_return_type: Option<cranelift::prelude::Type>,
 }
 
 fn compile_statement(
@@ -2411,9 +2420,11 @@ fn compile_statement(
                 // Cleanup all local heap variables except the returned one
                 emit_cleanup_all_vars(ctx, builder, exclude_var)?;
 
-                // Ensure return value matches function signature (i64 for lambdas)
+                // Only extend i8 to i64 if the function signature expects i64 (lambdas)
+                // Regular bool-returning functions should return i8 directly
                 let val_type = builder.func.dfg.value_type(val);
-                let val = if val_type == cranelift::prelude::types::I8 {
+                let val = if val_type == cranelift::prelude::types::I8
+                    && ctx.func_return_type == Some(cranelift::prelude::types::I64) {
                     builder.ins().uextend(cranelift::prelude::types::I64, val)
                 } else {
                     val
@@ -3288,6 +3299,21 @@ fn compile_expression(
                         };
                         return call_channel_new(ctx, builder, capacity);
                     }
+                    // std::threads channel functions (Go-style)
+                    "send" => {
+                        let ch = compile_expression(ctx, builder, &call.args[0])?;
+                        let val = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_channel_send(ctx, builder, ch, val);
+                    }
+                    "receive" => {
+                        let ch = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_channel_receive(ctx, builder, ch);
+                    }
+                    "close" => {
+                        let ch = compile_expression(ctx, builder, &call.args[0])?;
+                        let _ = call_channel_close(ctx, builder, ch)?;
+                        return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
+                    }
                     "warn" | "error" | "panic" => {
                         return compile_stderr_call(ctx, builder, &call.args, func_name);
                     }
@@ -3376,7 +3402,19 @@ fn compile_expression(
                         let start = compile_expression(ctx, builder, &call.args[0])?;
                         return call_one_arg_int_runtime(ctx, builder, "naml_metrics_elapsed_ns", start);
                     }
-                    // std::strings functions
+                    // std::strings basic functions (Go-style)
+                    "len" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_string_char_len", s);
+                    }
+                    "char_at" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let index = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_two_arg_int_runtime(ctx, builder, "naml_string_char_at", s, index);
+                    }
+                    // std::strings case functions
                     "upper" => {
                         let s = compile_expression(ctx, builder, &call.args[0])?;
                         let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
@@ -3488,7 +3526,40 @@ fn compile_expression(
                         let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
                         return call_one_arg_ptr_runtime(ctx, builder, "naml_string_chars", s);
                     }
-                    // std::collections functions
+                    // std::collections basic functions (Go-style)
+                    "count" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_int_runtime(ctx, builder, "naml_array_len", arr);
+                    }
+                    "push" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let val = compile_expression(ctx, builder, &call.args[1])?;
+                        call_array_push(ctx, builder, arr, val)?;
+                        return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
+                    }
+                    "pop" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return compile_option_from_array_access(ctx, builder, arr, "naml_array_pop");
+                    }
+                    "shift" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return compile_option_from_array_access(ctx, builder, arr, "naml_array_shift");
+                    }
+                    "fill" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let val = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_array_fill_runtime(ctx, builder, arr, val);
+                    }
+                    "clear" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_array_clear_runtime(ctx, builder, arr);
+                    }
+                    "get" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let index = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_option_from_array_get(ctx, builder, arr, index);
+                    }
+                    // std::collections access functions
                     "first" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
                         return compile_option_from_array_access(ctx, builder, arr, "naml_array_first");
@@ -3550,10 +3621,10 @@ fn compile_expression(
                         let closure = compile_expression(ctx, builder, &call.args[1])?;
                         return compile_lambda_bool_collection(ctx, builder, arr, closure, "naml_array_all");
                     }
-                    "count" => {
+                    "count_if" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
                         let closure = compile_expression(ctx, builder, &call.args[1])?;
-                        return compile_lambda_int_collection(ctx, builder, arr, closure, "naml_array_count");
+                        return compile_lambda_int_collection(ctx, builder, arr, closure, "naml_array_count_if");
                     }
                     "apply" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
@@ -5325,75 +5396,6 @@ fn call_array_push(
     Ok(())
 }
 
-fn call_array_get(
-    _ctx: &mut CompileContext<'_>,
-    builder: &mut FunctionBuilder<'_>,
-    arr: Value,
-    index: Value,
-) -> Result<Value, CodegenError> {
-    // Returns option<T> as tagged struct (16 bytes: tag i32 at offset 0, value i64 at offset 8)
-    // Tag: 0 = none (out of bounds), 1 = some (valid index)
-
-    // Allocate option struct on stack
-    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
-        StackSlotKind::ExplicitSlot,
-        16,
-        0,
-    ));
-    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
-
-    let len = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::trusted(),
-        arr,
-        ARRAY_LEN_OFFSET,
-    );
-
-    let in_bounds_block = builder.create_block();
-    let out_of_bounds_block = builder.create_block();
-    let merge_block = builder.create_block();
-
-    let is_out_of_bounds = builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, index, len);
-    builder.ins().brif(is_out_of_bounds, out_of_bounds_block, &[], in_bounds_block, &[]);
-
-    // Out of bounds: return none
-    builder.switch_to_block(out_of_bounds_block);
-    builder.seal_block(out_of_bounds_block);
-    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
-    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
-    builder.ins().jump(merge_block, &[]);
-
-    // In bounds: return some(value)
-    builder.switch_to_block(in_bounds_block);
-    builder.seal_block(in_bounds_block);
-
-    let data_ptr = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::trusted(),
-        arr,
-        ARRAY_DATA_OFFSET,
-    );
-
-    let offset = builder.ins().imul_imm(index, 8);
-    let elem_addr = builder.ins().iadd(data_ptr, offset);
-
-    let value = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::trusted(),
-        elem_addr,
-        0,
-    );
-    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
-    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
-    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
-    builder.ins().jump(merge_block, &[]);
-
-    builder.switch_to_block(merge_block);
-    builder.seal_block(merge_block);
-
-    Ok(option_ptr)
-}
-
 /// Direct array indexing: arr[index]
 /// Returns the raw value (0 if out of bounds) - used for direct indexing expressions
 fn call_array_index(
@@ -5632,60 +5634,6 @@ fn call_map_set_typed(
     Ok(())
 }
 
-fn call_map_get(
-    ctx: &mut CompileContext<'_>,
-    builder: &mut FunctionBuilder<'_>,
-    map: Value,
-    key: Value,
-) -> Result<Value, CodegenError> {
-    // Returns option<V> as tagged struct (16 bytes: tag i32 at offset 0, value i64 at offset 8)
-    // Tag: 0 = none (key not found), 1 = some (key found)
-
-    // Allocate option struct on stack
-    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
-        StackSlotKind::ExplicitSlot,
-        16,
-        0,
-    ));
-    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
-
-    // First check if the key exists
-    let contains_ref = rt_func_ref(ctx, builder, "naml_map_contains")?;
-    let call = builder.ins().call(contains_ref, &[map, key]);
-    let exists = builder.inst_results(call)[0];
-
-    let found_block = builder.create_block();
-    let not_found_block = builder.create_block();
-    let merge_block = builder.create_block();
-
-    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-    let key_found = builder.ins().icmp(IntCC::NotEqual, exists, zero);
-    builder.ins().brif(key_found, found_block, &[], not_found_block, &[]);
-
-    // Key found: get value and return some(value)
-    builder.switch_to_block(found_block);
-    builder.seal_block(found_block);
-    let get_ref = rt_func_ref(ctx, builder, "naml_map_get")?;
-    let get_call = builder.ins().call(get_ref, &[map, key]);
-    let value = builder.inst_results(get_call)[0];
-    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
-    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
-    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
-    builder.ins().jump(merge_block, &[]);
-
-    // Key not found: return none
-    builder.switch_to_block(not_found_block);
-    builder.seal_block(not_found_block);
-    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
-    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
-    builder.ins().jump(merge_block, &[]);
-
-    builder.switch_to_block(merge_block);
-    builder.seal_block(merge_block);
-
-    Ok(option_ptr)
-}
-
 fn call_map_contains(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -5793,27 +5741,9 @@ fn compile_method_call(
     method_name: &str,
     args: &[Expression<'_>],
 ) -> Result<Value, CodegenError> {
-    // Handle option methods first (before compiling receiver)
-    match method_name {
-        "is_some" => {
-            let opt_ptr = compile_expression(ctx, builder, receiver)?;
-            let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
-            let one = builder.ins().iconst(cranelift::prelude::types::I32, 1);
-            return Ok(builder.ins().icmp(IntCC::Equal, tag, one));
-        }
-        "is_none" => {
-            let opt_ptr = compile_expression(ctx, builder, receiver)?;
-            let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), opt_ptr, 0);
-            let zero = builder.ins().iconst(cranelift::prelude::types::I32, 0);
-            return Ok(builder.ins().icmp(IntCC::Equal, tag, zero));
-        }
-        _ => {}
-    }
-
     let recv = compile_expression(ctx, builder, receiver)?;
 
-    // Check for user-defined struct methods FIRST before built-in methods
-    // This ensures struct methods like len() aren't shadowed by built-in array/string methods
+    // Check for user-defined struct methods FIRST
     let receiver_type = ctx.annotations.get_type(receiver.span());
     if let Some(Type::Struct(s)) = receiver_type {
         let type_name = ctx.interner.resolve(&s.name).to_string();
@@ -5839,105 +5769,7 @@ fn compile_method_call(
     }
 
     match method_name {
-        "len" => {
-            // Check receiver type to dispatch to correct len function
-            let receiver_type = ctx.annotations.get_type(receiver.span());
-            if matches!(receiver_type, Some(Type::String)) {
-                call_string_char_len(ctx, builder, recv)
-            } else {
-                call_array_len(ctx, builder, recv)
-            }
-        }
-        "char_at" => {
-            // String char_at method
-            if args.is_empty() {
-                return Err(CodegenError::JitCompile("char_at requires an index argument".to_string()));
-            }
-            let idx = compile_expression(ctx, builder, &args[0])?;
-            call_string_char_at(ctx, builder, recv, idx)
-        }
-        "push" => {
-            if args.is_empty() {
-                return Err(CodegenError::JitCompile("push requires an argument".to_string()));
-            }
-            let val = compile_expression(ctx, builder, &args[0])?;
-            call_array_push(ctx, builder, recv, val)?;
-            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
-        }
-        "pop" => {
-            // Returns option<T> as tagged struct (16 bytes: tag i32 at offset 0, value i64 at offset 8)
-            // Tag: 0 = none (empty array), 1 = some (popped value)
-
-            // First check if array is empty
-            let len = builder.ins().load(
-                cranelift::prelude::types::I64,
-                MemFlags::trusted(),
-                recv,
-                ARRAY_LEN_OFFSET,
-            );
-
-            // Allocate option struct on stack
-            let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
-                StackSlotKind::ExplicitSlot,
-                16,
-                0,
-            ));
-            let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
-
-            let empty_block = builder.create_block();
-            let non_empty_block = builder.create_block();
-            let merge_block = builder.create_block();
-
-            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-            let is_empty = builder.ins().icmp(IntCC::Equal, len, zero);
-            builder.ins().brif(is_empty, empty_block, &[], non_empty_block, &[]);
-
-            // Empty: return none
-            builder.switch_to_block(empty_block);
-            builder.seal_block(empty_block);
-            let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
-            builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
-            builder.ins().jump(merge_block, &[]);
-
-            // Non-empty: call pop and return some(value)
-            builder.switch_to_block(non_empty_block);
-            builder.seal_block(non_empty_block);
-            let func_ref = rt_func_ref(ctx, builder, "naml_array_pop")?;
-            let call = builder.ins().call(func_ref, &[recv]);
-            let popped_value = builder.inst_results(call)[0];
-            let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
-            builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
-            builder.ins().store(MemFlags::new(), popped_value, option_ptr, 8);
-            builder.ins().jump(merge_block, &[]);
-
-            builder.switch_to_block(merge_block);
-            builder.seal_block(merge_block);
-
-            Ok(option_ptr)
-        }
-        "get" => {
-            if args.is_empty() {
-                return Err(CodegenError::JitCompile("get requires an index argument".to_string()));
-            }
-            let idx = compile_expression(ctx, builder, &args[0])?;
-            call_array_get(ctx, builder, recv, idx)
-        }
-        // Channel methods
-        "send" => {
-            if args.is_empty() {
-                return Err(CodegenError::JitCompile("send requires a value argument".to_string()));
-            }
-            let val = compile_expression(ctx, builder, &args[0])?;
-            call_channel_send(ctx, builder, recv, val)
-        }
-        "receive" => {
-            call_channel_receive(ctx, builder, recv)
-        }
-        "close" => {
-            call_channel_close(ctx, builder, recv)?;
-            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
-        }
-        // Map methods
+        // Map methods (maps still use method syntax)
         "contains" => {
             if args.is_empty() {
                 return Err(CodegenError::JitCompile("contains requires a key argument".to_string()));
@@ -5954,8 +5786,8 @@ fn compile_method_call(
             call_map_set(ctx, builder, recv, key, value)?;
             Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
         }
+        // Exception method (exceptions still use method syntax)
         "message" => {
-            // Exception message() method - load string from offset 0
             let receiver_type = ctx.annotations.get_type(receiver.span());
             if matches!(receiver_type, Some(Type::Exception(_))) {
                 // Exception message is stored at offset 0
@@ -5969,90 +5801,6 @@ fn compile_method_call(
             } else {
                 Err(CodegenError::JitCompile("message() is only available on exception types".to_string()))
             }
-        }
-        "is_empty" => {
-            // Check receiver type to dispatch to correct is_empty function
-            let receiver_type = ctx.annotations.get_type(receiver.span());
-            let func_name = if matches!(receiver_type, Some(Type::String)) {
-                "naml_string_is_empty"
-            } else {
-                "naml_array_is_empty"
-            };
-            let func_ref = rt_func_ref(ctx, builder, func_name)?;
-            let call = builder.ins().call(func_ref, &[recv]);
-            let result = builder.inst_results(call)[0];
-            // Truncate i64 to i8 for bool type
-            Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
-        }
-        "shift" => {
-            // Returns option<T> as tagged struct (16 bytes: tag i32 at offset 0, value i64 at offset 8)
-            // Tag: 0 = none (empty array), 1 = some (shifted value)
-
-            // First check if array is empty
-            let len = builder.ins().load(
-                cranelift::prelude::types::I64,
-                MemFlags::trusted(),
-                recv,
-                ARRAY_LEN_OFFSET,
-            );
-
-            // Allocate option struct on stack
-            let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
-                StackSlotKind::ExplicitSlot,
-                16,
-                0,
-            ));
-            let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
-
-            let empty_block = builder.create_block();
-            let non_empty_block = builder.create_block();
-            let merge_block = builder.create_block();
-
-            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-            let is_empty = builder.ins().icmp(IntCC::Equal, len, zero);
-            builder.ins().brif(is_empty, empty_block, &[], non_empty_block, &[]);
-
-            // Empty: return none
-            builder.switch_to_block(empty_block);
-            builder.seal_block(empty_block);
-            let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
-            builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
-            builder.ins().jump(merge_block, &[]);
-
-            // Non-empty: call shift and return some(value)
-            builder.switch_to_block(non_empty_block);
-            builder.seal_block(non_empty_block);
-            let func_ref = rt_func_ref(ctx, builder, "naml_array_shift")?;
-            let call = builder.ins().call(func_ref, &[recv]);
-            let shifted_value = builder.inst_results(call)[0];
-            let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
-            builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
-            builder.ins().store(MemFlags::new(), shifted_value, option_ptr, 8);
-            builder.ins().jump(merge_block, &[]);
-
-            builder.switch_to_block(merge_block);
-            builder.seal_block(merge_block);
-
-            Ok(option_ptr)
-        }
-        "fill" => {
-            if args.is_empty() {
-                return Err(CodegenError::JitCompile("fill requires a value argument".to_string()));
-            }
-            let val = compile_expression(ctx, builder, &args[0])?;
-            let func_ref = rt_func_ref(ctx, builder, "naml_array_fill")?;
-            builder.ins().call(func_ref, &[recv, val]);
-            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
-        }
-        "clear" => {
-            let func_ref = rt_func_ref(ctx, builder, "naml_array_clear")?;
-            builder.ins().call(func_ref, &[recv]);
-            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
-        }
-        "trim" => {
-            let func_ref = rt_func_ref(ctx, builder, "naml_string_trim")?;
-            let call = builder.ins().call(func_ref, &[recv]);
-            Ok(builder.inst_results(call)[0])
         }
         _ => {
             // Try to look up user-defined method
@@ -6209,6 +5957,18 @@ fn call_two_arg_ptr_runtime(
     Ok(builder.inst_results(call)[0])
 }
 
+fn call_two_arg_int_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    a: Value,
+    b: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, name)?;
+    let call = builder.ins().call(func_ref, &[a, b]);
+    Ok(builder.inst_results(call)[0])
+}
+
 fn call_two_arg_bool_runtime(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -6294,6 +6054,79 @@ fn compile_option_from_minmax(
     _is_min: bool,
 ) -> Result<Value, CodegenError> {
     compile_option_from_array_access(ctx, builder, arr, runtime_fn)
+}
+
+fn call_array_fill_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    val: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_fill")?;
+    builder.ins().call(func_ref, &[arr, val]);
+    Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn call_array_clear_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_clear")?;
+    builder.ins().call(func_ref, &[arr]);
+    Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
+fn compile_option_from_array_get(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    index: Value,
+) -> Result<Value, CodegenError> {
+    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        16,
+        0,
+    ));
+    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let len = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
+
+    let valid_block = builder.create_block();
+    let invalid_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let in_bounds_low = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, index, zero);
+    let in_bounds_high = builder.ins().icmp(IntCC::SignedLessThan, index, len);
+    let in_bounds = builder.ins().band(in_bounds_low, in_bounds_high);
+    builder.ins().brif(in_bounds, valid_block, &[], invalid_block, &[]);
+
+    builder.switch_to_block(invalid_block);
+    builder.seal_block(invalid_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(valid_block);
+    builder.seal_block(valid_block);
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_get")?;
+    let call = builder.ins().call(func_ref, &[arr, index]);
+    let value = builder.inst_results(call)[0];
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
 }
 
 fn compile_option_from_index_of(

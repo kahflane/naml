@@ -9,11 +9,13 @@
 ///             inorder, preorder, postorder, tree_size, tree_height.
 ///
 
+use std::collections::{count, push};
+
 fn insert(vals: [int], lefts: [int], rights: [int], root: int, val: int) -> int {
-    var idx: int = vals.len();
-    vals.push(val);
-    lefts.push(-1);
-    rights.push(-1);
+    var idx: int = count(vals);
+    push(vals, val);
+    push(lefts, -1);
+    push(rights, -1);
 
     if (root == -1) {
         return idx;

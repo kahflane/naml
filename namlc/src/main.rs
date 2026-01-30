@@ -106,7 +106,6 @@ fn run_file(file: &PathBuf, cached: bool) {
         &parse_result.ast,
         &interner,
         &type_result.annotations,
-        &type_result.symbols,
         &type_result.imported_modules,
     ) {
         Ok(()) => {}

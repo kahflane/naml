@@ -288,20 +288,14 @@ impl<'a> TypeChecker<'a> {
                 .collect();
 
             let mut return_ty = module_fn.return_ty.clone();
-            if let Type::Channel(inner) = &mut return_ty {
-                if let Type::Generic(g_spur, _) = inner.as_mut() {
-                    if *g_spur == lasso::Spur::default() {
-                        if let Some(tp) = type_params.first() {
-                            *g_spur = tp.name;
-                        }
-                    }
-                }
-            }
+            Self::fix_default_generic_spur(&mut return_ty, &type_params);
 
             let params: Vec<_> = module_fn.params.iter()
                 .map(|(pname, pty)| {
                     let pspur = self.interner.get(pname).unwrap_or(spur);
-                    (pspur, pty.clone())
+                    let mut param_ty = pty.clone();
+                    Self::fix_default_generic_spur(&mut param_ty, &type_params);
+                    (pspur, param_ty)
                 })
                 .collect();
 
@@ -315,6 +309,27 @@ impl<'a> TypeChecker<'a> {
                 is_variadic: module_fn.is_variadic,
                 span: Span::dummy(),
             });
+        }
+    }
+
+    /// Recursively fix Type::Generic with default spur to use the first type parameter
+    fn fix_default_generic_spur(ty: &mut Type, type_params: &[TypeParam]) {
+        match ty {
+            Type::Generic(g_spur, _) => {
+                if *g_spur == lasso::Spur::default() {
+                    if let Some(tp) = type_params.first() {
+                        *g_spur = tp.name;
+                    }
+                }
+            }
+            Type::Channel(inner) => Self::fix_default_generic_spur(inner, type_params),
+            Type::Array(inner) => Self::fix_default_generic_spur(inner, type_params),
+            Type::Option(inner) => Self::fix_default_generic_spur(inner, type_params),
+            Type::Map(k, v) => {
+                Self::fix_default_generic_spur(k, type_params);
+                Self::fix_default_generic_spur(v, type_params);
+            }
+            _ => {}
         }
     }
 
@@ -337,6 +352,17 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("join", vec![], Type::Unit),
                 StdModuleFn::generic("open_channel", vec!["T"], vec![("capacity", Type::Int)],
                     Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
+                // Channel functions (Go-style)
+                StdModuleFn::generic("send", vec!["T"], vec![
+                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
+                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
+                ], Type::Int),
+                StdModuleFn::generic("receive", vec!["T"], vec![
+                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
+                ], Type::Generic(lasso::Spur::default(), vec![])),
+                StdModuleFn::generic("close", vec!["T"], vec![
+                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
+                ], Type::Unit),
             ]),
             "datetime" => Some(vec![
                 StdModuleFn::new("now_ms", vec![], Type::Int),
@@ -357,6 +383,10 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int),
             ]),
             "strings" => Some(vec![
+                // Basic functions (Go-style)
+                StdModuleFn::new("len", vec![("s", Type::String)], Type::Int),
+                StdModuleFn::new("char_at", vec![("s", Type::String), ("index", Type::Int)], Type::Int),
+                // Case conversion
                 StdModuleFn::new("upper", vec![("s", Type::String)], Type::String),
                 StdModuleFn::new("lower", vec![("s", Type::String)], Type::String),
                 StdModuleFn::new("split", vec![("s", Type::String), ("delim", Type::String)], Type::Array(Box::new(Type::String))),
@@ -376,6 +406,14 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("chars", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
             ]),
             "collections" => Some(vec![
+                // Basic functions (Go-style)
+                StdModuleFn::new("count", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Int),
+                StdModuleFn::new("push", vec![("arr", Type::Array(Box::new(Type::Int))), ("value", Type::Int)], Type::Unit),
+                StdModuleFn::new("pop", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("shift", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("fill", vec![("arr", Type::Array(Box::new(Type::Int))), ("value", Type::Int)], Type::Unit),
+                StdModuleFn::new("clear", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Unit),
+                StdModuleFn::new("get", vec![("arr", Type::Array(Box::new(Type::Int))), ("index", Type::Int)], Type::Option(Box::new(Type::Int))),
                 // Access functions
                 StdModuleFn::new("first", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
                 StdModuleFn::new("last", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
@@ -401,7 +439,7 @@ impl<'a> TypeChecker<'a> {
                     ("arr", Type::Array(Box::new(Type::Int))),
                     ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
                 ], Type::Bool),
-                StdModuleFn::new("count", vec![
+                StdModuleFn::new("count_if", vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
                     ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
                 ], Type::Int),

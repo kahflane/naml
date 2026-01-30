@@ -1,4 +1,4 @@
-use std::threads::{open_channel, join};
+use std::threads::{open_channel, join, send, receive, close};
 
 fn main() {
     println("Testing spawn:");
@@ -11,16 +11,16 @@ fn main() {
 
     spawn {
         sleep(10);
-        ch.send(100);
+        send(ch, 100);
     };
 
     spawn {
         sleep(5);
-        ch.send(200);
+        send(ch, 200);
     };
 
     spawn {
-        ch.send(300);
+        send(ch, 300);
     };
 
     // Wait for all spawned tasks
@@ -31,13 +31,13 @@ fn main() {
     var sum: int = 0;
     var i: int = 0;
     while (i < 3) {
-        sum = sum + ch.receive();
+        sum = sum + std::threads::receive(ch);
         i = i + 1;
     }
 
     print("Sum: ");
     println(sum);
 
-    ch.close();
+    close(ch);
     println("Done!");
 }

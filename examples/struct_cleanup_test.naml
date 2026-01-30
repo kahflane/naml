@@ -5,6 +5,8 @@
 /// Each struct should have its heap fields decremented when the struct is freed.
 ///
 
+use std::collections::count;
+
 struct Person {
     name: string,
     age: int
@@ -18,16 +20,16 @@ struct PersonWithScores {
 
 struct SimpleStruct {
     value: int,
-    count: int
+    count_val: int
 }
 
 fn test_simple_struct() {
     println("=== Simple Struct Test (no heap fields) ===");
-    var s: SimpleStruct = SimpleStruct { value: 42, count: 10 };
+    var s: SimpleStruct = SimpleStruct { value: 42, count_val: 10 };
     print("Value: ");
     println(s.value);
     print("Count: ");
-    println(s.count);
+    println(s.count_val);
 }
 
 fn test_struct_with_string() {
@@ -50,7 +52,7 @@ fn test_struct_with_array() {
     print("Name: ");
     println(ps.name);
     print("Scores length: ");
-    println(ps.scores.len());
+    println(count(ps.scores));
 }
 
 fn test_struct_reassignment() {
@@ -65,12 +67,12 @@ fn test_struct_reassignment() {
 
 fn test_loop_struct_creation() {
     println("=== Loop Struct Creation Test ===");
-    var count: int = 0;
-    while (count < 3) {
-        var p: Person = Person { name: "Temp", age: count };
+    var loop_count: int = 0;
+    while (loop_count < 3) {
+        var p: Person = Person { name: "Temp", age: loop_count };
         print("Loop iteration: ");
-        println(count);
-        count = count + 1;
+        println(loop_count);
+        loop_count = loop_count + 1;
     }
     println("Loop completed");
 }

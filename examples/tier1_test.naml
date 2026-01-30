@@ -4,12 +4,14 @@
 /// Tests the core features implemented in Tier 1:
 /// - Enums with unit variants
 /// - Enum pattern matching with switch
-/// - Option type (some, none, is_some, is_none)
+/// - Option type (some, none, pattern matching)
 /// - Maps (creation, indexing, assignment)
 /// - Structs (definition, instantiation, field access)
-/// - Arrays (creation, len, iteration with for)
+/// - Arrays (creation, count, iteration with for)
 /// - Control flow (if, while, for)
 ///
+
+use std::collections::count;
 
 enum Color {
     Red,
@@ -115,37 +117,43 @@ fn test_options() {
     var opt_some: option<int> = some(42);
     var opt_none: option<int> = none;
 
-    print("Testing is_some on some(42): ");
-    if (opt_some.is_some()) {
+    print("Testing force unwrap on some(42): ");
+    var unwrapped: int = opt_some!;
+    if (unwrapped == 42) {
+        println("PASS");
+    } else {
+        println("FAIL - wrong value");
+    }
+
+    print("Testing ?? operator on some: ");
+    var with_default: int = opt_some ?? 0;
+    if (with_default == 42) {
         println("PASS");
     } else {
         println("FAIL");
     }
 
-    print("Testing is_none on none: ");
-    if (opt_none.is_none()) {
+    print("Testing ?? operator on none: ");
+    var none_default: int = opt_none ?? 99;
+    if (none_default == 99) {
         println("PASS");
     } else {
         println("FAIL");
     }
 
-    print("Testing is_none on some: ");
-    if (opt_some.is_none()) {
-        println("FAIL");
-    } else {
+    print("Testing ?? with expression: ");
+    var first: option<int> = none;
+    var result: int = first ?? (10 + 40);
+    if (result == 50) {
         println("PASS");
-    }
-
-    print("Testing is_some on none: ");
-    if (opt_none.is_some()) {
-        println("FAIL");
     } else {
-        println("PASS");
+        println("FAIL");
     }
 
     var opt_point: option<Point> = some(Point { x: 10, y: 20 });
-    print("Testing option<struct>: ");
-    if (opt_point.is_some()) {
+    print("Testing option<struct> force unwrap: ");
+    var pt: Point = opt_point!;
+    if (pt.x == 10 and pt.y == 20) {
         println("PASS");
     } else {
         println("FAIL");
@@ -191,7 +199,7 @@ fn test_arrays() {
     var numbers: [int] = [10, 20, 30, 40, 50];
 
     print("Testing array length: ");
-    if (numbers.len() == 5) {
+    if (count(numbers) == 5) {
         println("PASS");
     } else {
         println("FAIL");
@@ -221,7 +229,7 @@ fn test_arrays() {
 
     var empty: [int] = [];
     print("Testing empty array length: ");
-    if (empty.len() == 0) {
+    if (count(empty) == 0) {
         println("PASS");
     } else {
         println("FAIL");
@@ -283,13 +291,13 @@ fn test_control_flow() {
     }
 
     print("Testing while loop: ");
-    var count: int = 0;
+    var count_val: int = 0;
     var i: int = 0;
     while (i < 5) {
-        count = count + 1;
+        count_val = count_val + 1;
         i = i + 1;
     }
-    if (count == 5) {
+    if (count_val == 5) {
         println("PASS");
     } else {
         println("FAIL");
@@ -331,20 +339,22 @@ fn test_combined() {
 
     print("Testing enum in loop: ");
     var colors: [Color] = [Color::Red, Color::Green, Color::Blue];
-    var count: int = 0;
+    var color_count: int = 0;
     for (c: Color in colors) {
-        count = count + 1;
+        color_count = color_count + 1;
     }
-    if (count == 3) {
+    if (color_count == 3) {
         println("PASS");
     } else {
         println("FAIL");
     }
 
-    print("Testing option is_some and is_none together: ");
+    print("Testing option ?? and else together: ");
     var opt1: option<int> = some(10);
     var opt2: option<int> = none;
-    if (opt1.is_some() && opt2.is_none()) {
+    var opt1_value: int = opt1 ?? -1;
+    var opt2_value: int = opt2 ?? -1;
+    if (opt1_value == 10 and opt2_value == -1) {
         println("PASS");
     } else {
         println("FAIL");

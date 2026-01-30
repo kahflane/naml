@@ -5,6 +5,8 @@
 /// Run this multiple times and monitor memory usage to verify no leaks.
 ///
 
+use std::collections::count;
+
 fn test_string_cleanup() {
     println("=== String Cleanup Test ===");
     var s: string = "hello world";
@@ -28,7 +30,7 @@ fn test_array_cleanup() {
     println("=== Array Cleanup Test ===");
     var arr: [int] = [1, 2, 3, 4, 5];
     print("Array length: ");
-    println(arr.len());
+    println(count(arr));
 }
 
 fn test_map_cleanup() {
@@ -44,13 +46,13 @@ fn test_map_cleanup() {
 
 fn test_loop_allocations() {
     println("=== Loop Allocation Test ===");
-    var count: int = 0;
-    while (count < 5) {
+    var loop_count: int = 0;
+    while (loop_count < 5) {
         var temp: string = "iteration";
         print(temp);
         print(": ");
-        println(count);
-        count = count + 1;
+        println(loop_count);
+        loop_count = loop_count + 1;
     }
     println("Loop completed");
 }

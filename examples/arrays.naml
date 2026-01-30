@@ -1,10 +1,12 @@
+use std::collections::{count, push, pop};
+
 fn main() {
     println("Testing arrays with for loop:");
 
     var arr: [int] = [10, 20, 30, 40, 50];
 
     print("Array length: ");
-    println(arr.len());
+    println(count(arr));
 
     println("Iterating with for loop:");
     for (val: int in arr) {
@@ -30,9 +32,9 @@ fn main() {
 
     var numbers: [int] = [1,2,3,4];
     var first: int = numbers[0];      // Indexing
-    var len: int = numbers.len();     // Length
+    var len: int = count(numbers);    // Length
     print("Length {}\n",len);
-    numbers.push(6);                   // Append
-    var last: option<int> = numbers.pop();    // Remove last
+    push(numbers, 6);                  // Append
+    var last: option<int> = pop(numbers);    // Remove last
     print("{} \n",last ?? -1);
 }

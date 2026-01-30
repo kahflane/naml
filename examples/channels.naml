@@ -8,21 +8,21 @@ fn main() {
 
     // Send values
     println("Sending values...");
-    ch.send(10);
-    ch.send(20);
-    ch.send(30);
+    send(ch, 10);
+    send(ch, 20);
+    send(ch, 30);
 
     // Receive values
     println("Receiving values...");
-    var v1: int = ch.receive();
+    var v1: int = receive(ch);
     print("Received: ");
     println(v1);
 
-    var v2: int = ch.receive();
+    var v2: int = receive(ch);
     print("Received: ");
     println(v2);
 
-    var v3: int = ch.receive();
+    var v3: int = receive(ch);
     print("Received: ");
     println(v3);
 
@@ -30,19 +30,19 @@ fn main() {
     println("Testing channel with loop:");
     var i: int = 0;
     while (i < 5) {
-        ch.send(i * 10);
+        send(ch, i * 10);
         i = i + 1;
     }
 
     var sum: int = 0;
     i = 0;
     while (i < 5) {
-        sum = sum + ch.receive();
+        sum = sum + receive(ch);
         i = i + 1;
     }
     print("Sum of received values: ");
     println(sum);
 
-    ch.close();
+    close(ch);
     println("Channel closed.");
 }

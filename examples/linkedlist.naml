@@ -8,17 +8,19 @@
 ///             get, contains, size, print_list.
 ///
 
+use std::collections::{count, push};
+
 fn push_front(vals: [int], nexts: [int], head: int) -> int {
-    var idx: int = vals.len();
-    vals.push(0);
-    nexts.push(head);
+    var idx: int = count(vals);
+    push(vals, 0);
+    push(nexts, head);
     return idx;
 }
 
 fn push_back(vals: [int], nexts: [int], head: int) -> int {
-    var idx: int = vals.len();
-    vals.push(0);
-    nexts.push(-1);
+    var idx: int = count(vals);
+    push(vals, 0);
+    push(nexts, -1);
     if (head == -1) {
         return idx;
     }
@@ -31,9 +33,9 @@ fn push_back(vals: [int], nexts: [int], head: int) -> int {
 }
 
 fn insert_at(vals: [int], nexts: [int], head: int, pos: int, val: int) -> int {
-    var idx: int = vals.len();
-    vals.push(val);
-    nexts.push(-1);
+    var idx: int = count(vals);
+    push(vals, val);
+    push(nexts, -1);
     if (pos == 0) {
         nexts[idx] = head;
         return idx;
@@ -95,13 +97,13 @@ fn contains(vals: [int], nexts: [int], head: int, val: int) -> bool {
 }
 
 fn list_size(nexts: [int], head: int) -> int {
-    var count: int = 0;
+    var size_count: int = 0;
     var cur: int = head;
     while (cur != -1) {
-        count = count + 1;
+        size_count = size_count + 1;
         cur = nexts[cur];
     }
-    return count;
+    return size_count;
 }
 
 fn print_list(vals: [int], nexts: [int], head: int) {
@@ -141,7 +143,7 @@ fn main() {
     println("");
     println("Push back: 40");
     head = push_back(vals, nexts, head);
-    vals[vals.len() - 1] = 40;
+    vals[count(vals) - 1] = 40;
     print("  ");
     print_list(vals, nexts, head);
 

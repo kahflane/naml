@@ -1,5 +1,6 @@
 use std::io::*;
 use std::random::*;
+use std::collections::{count, push};
 use snake::*;
 use food::*;
 use grid::*;
@@ -39,7 +40,7 @@ fn main() {
         print("Score: {} | WASD to move | Q to quit", score);
 
         var i: int = 0;
-        while (i < xs.len()) {
+        while (i < count(xs)) {
             if (i == 0) {
                 draw_at(xs[i], ys[i], "@");
             } else {
@@ -75,16 +76,16 @@ fn main() {
                 alive = false;
             }
 
-            if (alive and hit_self(xs, ys, nx, ny, xs.len())) {
+            if (alive and hit_self(xs, ys, nx, ny, count(xs))) {
                 alive = false;
             }
 
             if (alive) {
-                var tail_x: int = xs[xs.len() - 1];
-                var tail_y: int = ys[ys.len() - 1];
+                var tail_x: int = xs[count(xs) - 1];
+                var tail_y: int = ys[count(ys) - 1];
                 clear_cell(tail_x, tail_y);
 
-                var j: int = xs.len() - 1;
+                var j: int = count(xs) - 1;
                 while (j > 0) {
                     xs[j] = xs[j - 1];
                     ys[j] = ys[j - 1];
@@ -96,8 +97,8 @@ fn main() {
 
                 if (nx == fx and ny == fy) {
                     score = score + 1;
-                    xs.push(tail_x);
-                    ys.push(tail_y);
+                    push(xs, tail_x);
+                    push(ys, tail_y);
 
                     fx = spawn_food_x(w);
                     fy = spawn_food_y(h);

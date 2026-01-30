@@ -1,7 +1,8 @@
 enum Color {
     Red,
     Green,
-    Blue
+    Blue,
+    Black(string)
 }
 
 fn main() {
@@ -44,6 +45,19 @@ fn main() {
         }
         case Blue: {
             println("Color is blue");
+        }
+    }
+
+    c = Color::Black("me");
+    switch (c) {
+        case Red: {
+            println("Color is red");
+        }
+        case Green: {
+            println("Color is green");
+        }
+        case Black(name): {
+            print("Black is {}\n",name);
         }
     }
 

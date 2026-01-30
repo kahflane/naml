@@ -23,10 +23,19 @@
 //! - `index_of(arr: [int], val: int) -> option<int>` - Find index of value
 //! - `contains(arr: [int], val: int) -> bool` - Check if contains
 //!
+//! ## Basic Functions
+//! - `count(arr: [int]) -> int` - Get array length
+//! - `push(arr: [int], val: int) -> unit` - Append element
+//! - `pop(arr: [int]) -> option<int>` - Remove and return last element
+//! - `shift(arr: [int]) -> option<int>` - Remove and return first element
+//! - `fill(arr: [int], val: int) -> unit` - Fill array with value
+//! - `clear(arr: [int]) -> unit` - Remove all elements
+//! - `get(arr: [int], index: int) -> option<int>` - Safe index access
+//!
 //! ## Lambda-based Functions
 //! - `any(arr: [int], fn: fn(int) -> bool) -> bool` - Check if any match
 //! - `all(arr: [int], fn: fn(int) -> bool) -> bool` - Check if all match
-//! - `count(arr: [int], fn: fn(int) -> bool) -> int` - Count matches
+//! - `count_if(arr: [int], fn: fn(int) -> bool) -> int` - Count matches
 //! - `apply(arr: [int], fn: fn(int) -> int) -> [int]` - Map function
 //! - `where(arr: [int], fn: fn(int) -> bool) -> [int]` - Filter function
 //! - `find(arr: [int], fn: fn(int) -> bool) -> option<int>` - Find first match
@@ -249,7 +258,7 @@ pub unsafe extern "C" fn naml_array_all(
 
 /// Count elements satisfying the predicate
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_array_count(
+pub unsafe extern "C" fn naml_array_count_if(
     arr: *const NamlArray,
     func_ptr: i64,
     data_ptr: i64,

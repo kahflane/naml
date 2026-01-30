@@ -1,3 +1,5 @@
+use std::collections::pop;
+
 fn main() {
     println("Testing force unwrap operator (!):");
 
@@ -9,20 +11,20 @@ fn main() {
 
     // Test 2: Force unwrap on array pop result
     var arr: [int] = [1, 2, 3];
-    var last: int = arr.pop()!;
+    var last: int = pop(arr)!;
     print("Popped and unwrapped: ");
     println(last);
 
     // Test 3: Force unwrap in expression context
     var nums: [int] = [10, 20];
-    var doubled: int = nums.pop()! * 2;
+    var doubled: int = pop(nums)! * 2;
     print("Doubled: ");
     println(doubled);
 
-    // Test 4: Chain with method call
+    // Test 4: Chain with function call
     var data: [int] = [100];
     print("Direct force unwrap: ");
-    println(data.pop()!);
+    println(pop(data)!);
 
     println("All force unwrap tests passed!");
 }

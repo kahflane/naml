@@ -16,7 +16,7 @@ use lasso::Rodeo;
 use thiserror::Error;
 
 use crate::ast::SourceFile;
-use crate::typechecker::{ImportedModule, SymbolTable, TypeAnnotations};
+use crate::typechecker::{ImportedModule, TypeAnnotations};
 
 #[derive(Debug, Error)]
 pub enum CodegenError {
@@ -37,10 +37,9 @@ pub fn compile_and_run(
     ast: &SourceFile<'_>,
     interner: &Rodeo,
     annotations: &TypeAnnotations,
-    symbols: &SymbolTable,
     imported_modules: &[ImportedModule],
 ) -> Result<(), CodegenError> {
-    let mut jit = cranelift::JitCompiler::new(interner, annotations, symbols)?;
+    let mut jit = cranelift::JitCompiler::new(interner, annotations)?;
     for module in imported_modules {
         jit.compile_module_source(&module.source_text)?;
     }

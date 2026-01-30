@@ -689,174 +689,37 @@ impl<'a> TypeInferrer<'a> {
         let receiver_ty = self.infer_expr(call.receiver);
         let resolved = receiver_ty.resolve();
 
-        // Handle built-in option methods
-        if let Type::Option(inner) = &resolved {
+        // Option types have no builtin methods - use pattern matching instead
+        if let Type::Option(_) = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
-            return match method_name {
-                "is_some" | "is_none" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Bool
-                }
-                _ => {
-                    self.errors.push(TypeError::UndefinedMethod {
-                        ty: resolved.to_string(),
-                        method: method_name.to_string(),
-                        span: call.span,
-                    });
-                    Type::Error
-                }
-            };
+            self.errors.push(TypeError::UndefinedMethod {
+                ty: resolved.to_string(),
+                method: method_name.to_string(),
+                span: call.span,
+            });
+            return Type::Error;
         }
 
-        // Handle built-in array methods
-        if let Type::Array(elem) = &resolved {
+        // Array types have no builtin methods - use std::collections functions instead
+        if let Type::Array(_) = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
-            return match method_name {
-                "push" => {
-                    if call.args.len() != 1 {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 1,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                        return Type::Unit;
-                    }
-                    let arg_ty = self.infer_expr(&call.args[0]);
-                    if let Err(e) = unify(&arg_ty, elem, call.args[0].span()) {
-                        self.errors.push(e);
-                    }
-                    Type::Unit
-                }
-                "pop" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Option(elem.clone())
-                }
-                "clear" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Unit
-                }
-                "is_empty" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Bool
-                }
-                "shift" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Option(elem.clone())
-                }
-                "fill" => {
-                    if call.args.len() != 1 {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 1,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                        return Type::Unit;
-                    }
-                    let arg_ty = self.infer_expr(&call.args[0]);
-                    if let Err(e) = unify(&arg_ty, elem, call.args[0].span()) {
-                        self.errors.push(e);
-                    }
-                    Type::Unit
-                }
-                "len" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Int
-                }
-                _ => {
-                    self.errors.push(TypeError::UndefinedMethod {
-                        ty: resolved.to_string(),
-                        method: method_name.to_string(),
-                        span: call.span,
-                    });
-                    Type::Error
-                }
-            };
+            self.errors.push(TypeError::UndefinedMethod {
+                ty: resolved.to_string(),
+                method: method_name.to_string(),
+                span: call.span,
+            });
+            return Type::Error;
         }
 
-        // Handle built-in channel methods
-        if let Type::Channel(inner) = &resolved {
+        // Channel types have no builtin methods - use std::threads functions instead
+        if let Type::Channel(_) = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
-            return match method_name {
-                "send" => {
-                    if call.args.len() != 1 {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 1,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                        return Type::Int;
-                    }
-                    let arg_ty = self.infer_expr(&call.args[0]);
-                    if let Err(e) = unify(&arg_ty, inner, call.args[0].span()) {
-                        self.errors.push(e);
-                    }
-                    Type::Int
-                }
-                "receive" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    (**inner).clone()
-                }
-                "close" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Unit
-                }
-                _ => {
-                    self.errors.push(TypeError::UndefinedMethod {
-                        ty: resolved.to_string(),
-                        method: method_name.to_string(),
-                        span: call.span,
-                    });
-                    Type::Error
-                }
-            };
+            self.errors.push(TypeError::UndefinedMethod {
+                ty: resolved.to_string(),
+                method: method_name.to_string(),
+                span: call.span,
+            });
+            return Type::Error;
         }
 
         // Check if receiver is a bare type parameter (T with no type args)
@@ -914,64 +777,15 @@ impl<'a> TypeInferrer<'a> {
             };
         }
 
-        // Handle built-in string methods
+        // String types have no builtin methods - use std::strings functions instead
         if let Type::String = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
-            return match method_name {
-                "len" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Int
-                }
-                "char_at" => {
-                    if call.args.len() != 1 {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 1,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                        return Type::Int;
-                    }
-                    let arg_ty = self.infer_expr(&call.args[0]);
-                    if let Err(e) = unify(&arg_ty, &Type::Int, call.args[0].span()) {
-                        self.errors.push(e);
-                    }
-                    Type::Int
-                }
-                "is_empty" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::Bool
-                }
-                "trim" => {
-                    if !call.args.is_empty() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: 0,
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                    }
-                    Type::String
-                }
-                _ => {
-                    self.errors.push(TypeError::UndefinedMethod {
-                        ty: resolved.to_string(),
-                        method: method_name.to_string(),
-                        span: call.span,
-                    });
-                    Type::Error
-                }
-            };
+            self.errors.push(TypeError::UndefinedMethod {
+                ty: resolved.to_string(),
+                method: method_name.to_string(),
+                span: call.span,
+            });
+            return Type::Error;
         }
 
         let type_name = match &resolved {
