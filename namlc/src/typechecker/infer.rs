@@ -1007,7 +1007,8 @@ impl<'a> TypeInferrer<'a> {
                 if let Err(e) = unify(&index_ty, &Type::Int, idx.index.span()) {
                     self.errors.push(e);
                 }
-                (*elem).clone()
+                // Array indexing returns option<T> since index might be out of bounds
+                Type::Option(elem.clone())
             }
             Type::Map(key, val) => {
                 if let Err(e) = unify(&index_ty, &key, idx.index.span()) {
@@ -1706,8 +1707,8 @@ impl<'a> TypeInferrer<'a> {
                 self.env.define(c.name.symbol, ty, false);
             }
             Assign(assign) => {
-                // Special case for map index assignment: map[key] = value
-                // The value should be of type V, not option<V>
+                // Special case for map/array index assignment: container[key] = value
+                // The value should be of type T, not option<T>
                 if let ast::Expression::Index(idx) = &assign.target {
                     let base_ty = self.infer_expr(idx.base);
                     let index_ty = self.infer_expr(idx.index);
@@ -1719,6 +1720,17 @@ impl<'a> TypeInferrer<'a> {
                         }
                         let value_ty = self.infer_expr(&assign.value);
                         if let Err(e) = unify(&value_ty, &val, assign.value.span()) {
+                            self.errors.push(e);
+                        }
+                        return;
+                    }
+
+                    if let Type::Array(elem) | Type::FixedArray(elem, _) = resolved {
+                        if let Err(e) = unify(&index_ty, &Type::Int, idx.index.span()) {
+                            self.errors.push(e);
+                        }
+                        let value_ty = self.infer_expr(&assign.value);
+                        if let Err(e) = unify(&value_ty, &elem, assign.value.span()) {
                             self.errors.push(e);
                         }
                         return;

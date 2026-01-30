@@ -31,7 +31,7 @@ fn main() {
     println(sum);
 
     var numbers: [int] = [1,2,3,4];
-    var first: int = numbers[0];      // Indexing
+    var first: int = numbers[0]!;     // Indexing returns option<T>, use ! to unwrap
     var len: int = count(numbers);    // Length
     print("Length {}\n",len);
     push(numbers, 6);                  // Append

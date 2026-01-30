@@ -3993,17 +3993,14 @@ fn compile_expression(
         Expression::Index(index_expr) => {
             let base = compile_expression(ctx, builder, index_expr.base)?;
 
-            // Direct indexing returns raw values, not options
-            // Use call_array_index/call_map_index for arr[i] and map["key"]
-            // Use call_array_get/call_map_get only for .get() method which returns option<T>
+            // Indexing returns option<T> for safety (none if out of bounds / key not found)
             if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = index_expr.index {
                 let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
                 let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
-                call_map_index(ctx, builder, base, naml_str)
+                compile_option_from_map_get(ctx, builder, base, naml_str)
             } else {
-                // Default to array access for integer indices
                 let index = compile_expression(ctx, builder, index_expr.index)?;
-                call_array_index(ctx, builder, base, index)
+                compile_option_from_array_get(ctx, builder, base, index)
             }
         }
 
@@ -5579,7 +5576,8 @@ fn call_array_index(
 }
 
 /// Direct map indexing: map["key"]
-/// Returns the raw value (0 if key not found) - used for direct indexing expressions
+/// Returns the raw value (0 if key not found) - kept for potential future use
+#[allow(dead_code)]
 fn call_map_index(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -6242,6 +6240,53 @@ fn compile_option_from_array_get(
     let func_ref = rt_func_ref(ctx, builder, "naml_array_get")?;
     let call = builder.ins().call(func_ref, &[arr, index]);
     let value = builder.inst_results(call)[0];
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
+}
+
+fn compile_option_from_map_get(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    key: Value,
+) -> Result<Value, CodegenError> {
+    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        16,
+        0,
+    ));
+    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let found_block = builder.create_block();
+    let not_found_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let contains_ref = rt_func_ref(ctx, builder, "naml_map_contains")?;
+    let contains_call = builder.ins().call(contains_ref, &[map, key]);
+    let contains = builder.inst_results(contains_call)[0];
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let key_exists = builder.ins().icmp(IntCC::NotEqual, contains, zero);
+    builder.ins().brif(key_exists, found_block, &[], not_found_block, &[]);
+
+    builder.switch_to_block(not_found_block);
+    builder.seal_block(not_found_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(found_block);
+    builder.seal_block(found_block);
+    let get_ref = rt_func_ref(ctx, builder, "naml_map_get")?;
+    let get_call = builder.ins().call(get_ref, &[map, key]);
+    let value = builder.inst_results(get_call)[0];
     let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
     builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
     builder.ins().store(MemFlags::new(), value, option_ptr, 8);
