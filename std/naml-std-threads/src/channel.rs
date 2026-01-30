@@ -103,9 +103,10 @@ pub unsafe extern "C" fn naml_channel_send(ch: *mut NamlChannel, value: i64) -> 
 }
 
 /// Receive a value from the channel (blocks if empty)
-/// Returns the value, or 0 if channel is closed and empty
+/// Returns 1 and writes value to out_value if successful, returns 0 if channel is closed
+/// This returns option<T>: tag=1 means some(value), tag=0 means none (channel closed)
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_channel_receive(ch: *mut NamlChannel) -> i64 {
+pub unsafe extern "C" fn naml_channel_receive(ch: *mut NamlChannel, out_value: *mut i64) -> i64 {
     if ch.is_null() {
         return 0;
     }
@@ -120,9 +121,12 @@ pub unsafe extern "C" fn naml_channel_receive(ch: *mut NamlChannel) -> i64 {
 
         if let Some(value) = inner.buffer.pop_front() {
             channel.not_full.notify_one();
-            value
+            if !out_value.is_null() {
+                *out_value = value;
+            }
+            1 // some
         } else {
-            0
+            0 // none (channel closed)
         }
     }
 }
@@ -226,8 +230,12 @@ mod tests {
 
             assert_eq!(naml_channel_send(ch, 42), 1);
             assert_eq!(naml_channel_send(ch, 43), 1);
-            assert_eq!(naml_channel_receive(ch), 42);
-            assert_eq!(naml_channel_receive(ch), 43);
+
+            let mut value: i64 = 0;
+            assert_eq!(naml_channel_receive(ch, &mut value), 1);
+            assert_eq!(value, 42);
+            assert_eq!(naml_channel_receive(ch, &mut value), 1);
+            assert_eq!(value, 43);
 
             naml_channel_decref(ch);
         }
@@ -249,8 +257,11 @@ mod tests {
         let receiver = thread::spawn(move || unsafe {
             let ch = ch_recv as *mut NamlChannel;
             let mut sum = 0i64;
+            let mut value: i64 = 0;
             for _ in 0..5 {
-                sum += naml_channel_receive(ch);
+                if naml_channel_receive(ch, &mut value) == 1 {
+                    sum += value;
+                }
             }
             sum
         });

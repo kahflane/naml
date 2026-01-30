@@ -67,12 +67,12 @@ pub struct TypeChecker<'a> {
     imported_modules: Vec<ImportedModule>,
 }
 
-struct StdModuleFn {
-    name: &'static str,
-    type_params: Vec<&'static str>,
-    params: Vec<(&'static str, Type)>,
-    return_ty: Type,
-    is_variadic: bool,
+pub(crate) struct StdModuleFn {
+    pub name: &'static str,
+    pub type_params: Vec<&'static str>,
+    pub params: Vec<(&'static str, Type)>,
+    pub return_ty: Type,
+    pub is_variadic: bool,
 }
 
 impl StdModuleFn {
@@ -83,6 +83,10 @@ impl StdModuleFn {
     fn generic(name: &'static str, type_params: Vec<&'static str>, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
         Self { name, type_params, params, return_ty, is_variadic: false }
     }
+}
+
+pub(crate) fn get_std_module_functions(module: &str) -> Option<Vec<StdModuleFn>> {
+    TypeChecker::get_std_module_functions_impl(module)
 }
 
 impl<'a> TypeChecker<'a> {
@@ -240,7 +244,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn resolve_std_module(&mut self, module: &str, items: &UseItems, span: crate::source::Span) {
-        let module_fns = match Self::get_std_module_functions(module) {
+        let module_fns = match get_std_module_functions(module) {
             Some(fns) => fns,
             None => {
                 self.errors.push(TypeError::UnknownModule {
@@ -333,7 +337,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_std_module_functions(module: &str) -> Option<Vec<StdModuleFn>> {
+    fn get_std_module_functions_impl(module: &str) -> Option<Vec<StdModuleFn>> {
         match module {
             "random" => Some(vec![
                 StdModuleFn::new("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int),
@@ -359,7 +363,7 @@ impl<'a> TypeChecker<'a> {
                 ], Type::Int),
                 StdModuleFn::generic("receive", vec!["T"], vec![
                     ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
-                ], Type::Generic(lasso::Spur::default(), vec![])),
+                ], Type::Option(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
                 StdModuleFn::generic("close", vec!["T"], vec![
                     ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
                 ], Type::Unit),

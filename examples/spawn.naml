@@ -10,12 +10,12 @@ fn main() {
     println("Spawning 3 tasks...");
 
     spawn {
-        sleep(10);
+        sleep(1000);
         send(ch, 100);
     };
 
     spawn {
-        sleep(5);
+        sleep(5000);
         send(ch, 200);
     };
 
@@ -26,12 +26,13 @@ fn main() {
     // Wait for all spawned tasks
     join();
 
-    // Read results
+    // Read results - receive now returns option<int>
     println("Tasks complete. Reading results:");
     var sum: int = 0;
     var i: int = 0;
     while (i < 3) {
-        sum = sum + std::threads::receive(ch);
+        var value: int = std::threads::receive(ch) ?? 0;
+        sum = sum + value;
         i = i + 1;
     }
 

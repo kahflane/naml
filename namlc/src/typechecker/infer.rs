@@ -279,6 +279,37 @@ impl<'a> TypeInferrer<'a> {
         }
 
         let first = &path.segments[0];
+        let first_name = self.interner.resolve(&first.symbol);
+
+        if first_name == "std" && path.segments.len() >= 3 {
+            let module_name = self.interner.resolve(&path.segments[1].symbol).to_string();
+            let func_name = self.interner.resolve(&path.segments[2].symbol).to_string();
+
+            if let Some(module_fns) = super::get_std_module_functions(&module_name) {
+                if let Some(module_fn) = module_fns.iter().find(|f| f.name == func_name) {
+                    let params: Vec<Type> = module_fn.params.iter().map(|(_, ty)| ty.clone()).collect();
+                    return Type::Function(FunctionType {
+                        params,
+                        returns: Box::new(module_fn.return_ty.clone()),
+                        throws: vec![],
+                        is_variadic: module_fn.is_variadic,
+                    });
+                } else {
+                    self.errors.push(TypeError::Custom {
+                        message: format!("unknown function '{}' in module std::{}", func_name, module_name),
+                        span: path.span,
+                    });
+                    return Type::Error;
+                }
+            } else {
+                self.errors.push(TypeError::Custom {
+                    message: format!("unknown module 'std::{}'", module_name),
+                    span: path.span,
+                });
+                return Type::Error;
+            }
+        }
+
         if let Some(def) = self.symbols.get_type(first.symbol) {
             use super::symbols::TypeDef;
             match def {
@@ -288,7 +319,6 @@ impl<'a> TypeInferrer<'a> {
                         let variant_name = path.segments[1].symbol;
                         for (name, fields) in &e.variants {
                             if *name == variant_name {
-                                // If variant has associated data, return function type
                                 if let Some(field_types) = fields {
                                     return Type::Function(FunctionType {
                                         params: field_types.clone(),
@@ -552,6 +582,25 @@ impl<'a> TypeInferrer<'a> {
                 }
         }
 
+        // Check if callee is a std path expression with generic function
+        if let ast::Expression::Path(path) = call.callee {
+            if path.segments.len() >= 3 {
+                let first_name = self.interner.resolve(&path.segments[0].symbol);
+                if first_name == "std" {
+                    let module_name = self.interner.resolve(&path.segments[1].symbol).to_string();
+                    let func_name = self.interner.resolve(&path.segments[2].symbol).to_string();
+
+                    if let Some(module_fns) = super::get_std_module_functions(&module_name) {
+                        if let Some(module_fn) = module_fns.iter().find(|f| f.name == func_name) {
+                            if !module_fn.type_params.is_empty() {
+                                return self.infer_generic_std_call(call, module_fn);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let callee_ty = self.infer_expr(call.callee);
         let resolved = callee_ty.resolve();
 
@@ -683,6 +732,92 @@ impl<'a> TypeInferrer<'a> {
 
         // Return substituted return type
         func_sig.return_ty.substitute(&substitution)
+    }
+
+    fn infer_generic_std_call(
+        &mut self,
+        call: &ast::CallExpr,
+        module_fn: &super::StdModuleFn,
+    ) -> Type {
+        // For std generic functions, we infer the type from the arguments
+        // Currently handles: receive(ch), send(ch, val), close(ch), open_channel(cap)
+
+        // Check argument count
+        if call.args.len() != module_fn.params.len() {
+            self.errors.push(TypeError::WrongArgCount {
+                expected: module_fn.params.len(),
+                found: call.args.len(),
+                span: call.span,
+            });
+            return Type::Error;
+        }
+
+        // Infer argument types
+        let arg_types: Vec<Type> = call.args.iter().map(|arg| self.infer_expr(arg)).collect();
+
+        // For channel operations, extract the element type from the channel argument
+        match module_fn.name {
+            "receive" => {
+                // receive(ch: channel<T>) -> option<T>
+                // First argument is the channel, return option of its element type
+                if let Type::Channel(elem_ty) = arg_types[0].resolve() {
+                    Type::Option(elem_ty)
+                } else {
+                    self.errors.push(TypeError::Custom {
+                        message: format!("expected channel type, found {}", arg_types[0]),
+                        span: call.args[0].span(),
+                    });
+                    Type::Error
+                }
+            }
+            "send" => {
+                // send(ch: channel<T>, value: T) -> int
+                // Verify the value type matches the channel element type
+                if let Type::Channel(elem_ty) = arg_types[0].resolve() {
+                    if let Err(e) = unify(&arg_types[1], &elem_ty, call.args[1].span()) {
+                        self.errors.push(e);
+                    }
+                } else {
+                    self.errors.push(TypeError::Custom {
+                        message: format!("expected channel type, found {}", arg_types[0]),
+                        span: call.args[0].span(),
+                    });
+                }
+                Type::Int
+            }
+            "close" => {
+                // close(ch: channel<T>) -> unit
+                if !matches!(arg_types[0].resolve(), Type::Channel(_)) {
+                    self.errors.push(TypeError::Custom {
+                        message: format!("expected channel type, found {}", arg_types[0]),
+                        span: call.args[0].span(),
+                    });
+                }
+                Type::Unit
+            }
+            "open_channel" => {
+                // open_channel(capacity: int) -> channel<T>
+                // For open_channel with explicit type args, use those; otherwise infer from context
+                if !call.type_args.is_empty() {
+                    let elem_ty = self.convert_ast_type(&call.type_args[0]);
+                    Type::Channel(Box::new(elem_ty))
+                } else {
+                    // Create a fresh type var for the element type
+                    let elem_ty = fresh_type_var(self.next_var_id);
+                    Type::Channel(Box::new(elem_ty))
+                }
+            }
+            _ => {
+                // For other generic functions, try to unify and return the result
+                let params: Vec<Type> = module_fn.params.iter().map(|(_, ty)| ty.clone()).collect();
+                for (arg_ty, param_ty) in arg_types.iter().zip(params.iter()) {
+                    if let Err(e) = unify(arg_ty, param_ty, call.span) {
+                        self.errors.push(e);
+                    }
+                }
+                module_fn.return_ty.clone()
+            }
+        }
     }
 
     fn infer_method_call(&mut self, call: &ast::MethodCallExpr) -> Type {

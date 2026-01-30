@@ -432,8 +432,8 @@ Handle initialization failures:
 ```naml
 var value: int = get_optional() else {
     // Handle none case
-    return -1;
-};
+    return -1; // this is stop executing further
+} ?? 0; // alternate value
 ```
 
 ---
@@ -1011,16 +1011,23 @@ fn main() {
     var ch: channel<int> = open_channel(10);
 
     spawn {
-        ch.send(42);
+        send(ch, 42);
     };
 
-    var value: int = ch.receive();
+    join();
+
+    // receive() returns option<T> - none if channel is closed
+    var value: int = receive(ch) ?? 0;
     println(value);
-    ch.close();
+    close(ch);
 }
 ```
 
-Channel methods: `.send(value)`, `.receive()`, `.close()`, `.len()`.
+Channel functions:
+- `open_channel(capacity)` - Create a buffered channel
+- `send(ch, value)` - Send a value (blocks if full)
+- `receive(ch) -> option<T>` - Receive a value (blocks if empty, returns `none` if closed)
+- `close(ch)` - Close the channel
 
 ### Join
 
@@ -1298,12 +1305,12 @@ fn main() {
     var ch: channel<int> = open_channel(1);
 
     spawn {
-        ch.send(42);
+        send(ch, 42);
     };
 
     join();
-    var result: int = ch.receive();
+    var result: int = receive(ch) ?? 0;  // receive returns option<T>
     println(result);
-    ch.close();
+    close(ch);
 }
 ```
