@@ -979,10 +979,9 @@ impl<'a> JitCompiler<'a> {
             // Get the generic function AST
             let func_ptr = match self.generic_functions.get(&func_name) {
                 Some(ptr) => *ptr,
-                None => continue, // Skip if function not found (might be external)
+                None => continue,
             };
 
-            // Build type substitution map: param_name -> concrete_type_name
             let func = unsafe { &*func_ptr };
             let mut type_substitutions = HashMap::new();
             for (param, arg_ty) in func.generics.iter().zip(mono_info.type_args.iter()) {
@@ -1023,6 +1022,8 @@ impl<'a> JitCompiler<'a> {
         mangled_name: &str,
     ) -> Result<FuncId, CodegenError> {
         let mut sig = self.module.make_signature();
+
+        sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
 
         for param in &func.params {
             let ty = types::naml_to_cranelift(&param.ty);
@@ -1091,7 +1092,7 @@ impl<'a> JitCompiler<'a> {
 
         for (i, param) in func.params.iter().enumerate() {
             let param_name = self.interner.resolve(&param.name.symbol).to_string();
-            let val = builder.block_params(entry_block)[i];
+            let val = builder.block_params(entry_block)[i + 1];
             let var = Variable::new(ctx.var_counter);
             ctx.var_counter += 1;
             let ty = types::naml_to_cranelift(&param.ty);
@@ -1525,7 +1526,6 @@ impl<'a> JitCompiler<'a> {
     }
 
     fn declare_spawn_trampoline(&mut self, _id: u32, info: &SpawnBlockInfo) -> Result<FuncId, CodegenError> {
-        // Spawn trampolines take a single pointer parameter (closure data)
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(cranelift::prelude::types::I64)); // *mut u8 as i64
 
@@ -1577,7 +1577,7 @@ impl<'a> JitCompiler<'a> {
             current_lambda_id: 0,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
-            func_return_type: None, // Spawn trampolines don't return values
+            func_return_type: None, 
         };
 
         // Load captured variables from closure data
@@ -1598,9 +1598,6 @@ impl<'a> JitCompiler<'a> {
             builder.def_var(var, val);
             ctx.variables.insert(var_name.clone(), var);
         }
-
-        // Compile the spawn block body
-        // Safety: body_ptr is valid within the same compile() call
         let body = unsafe { &*info.body_ptr };
         for stmt in &body.statements {
             compile_statement(&mut ctx, &mut builder, stmt)?;
@@ -1609,7 +1606,6 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
-        // Return (trampolines return void)
         if !ctx.block_terminated {
             builder.ins().return_(&[]);
         }
@@ -1742,7 +1738,6 @@ impl<'a> JitCompiler<'a> {
         let body = unsafe { &*info.body_ptr };
         let result = compile_expression(&mut ctx, &mut builder, body)?;
 
-        // Return the result (ensure it's I64 for FFI compatibility)
         if !ctx.block_terminated {
             let result_type = builder.func.dfg.value_type(result);
             let result_i64 = if result_type == cranelift::prelude::types::I8 {
@@ -1788,6 +1783,8 @@ impl<'a> JitCompiler<'a> {
         let name = self.interner.resolve(&func.name.symbol);
 
         let mut sig = self.module.make_signature();
+
+        sig.params.push(AbiParam::new(cranelift::prelude::types::I64));
 
         for param in &func.params {
             let ty = types::naml_to_cranelift(&param.ty);
@@ -1849,10 +1846,10 @@ impl<'a> JitCompiler<'a> {
             type_substitutions: HashMap::new(),
             func_return_type,
         };
-
+        
         for (i, param) in func.params.iter().enumerate() {
             let param_name = self.interner.resolve(&param.name.symbol).to_string();
-            let val = builder.block_params(entry_block)[i];
+            let val = builder.block_params(entry_block)[i + 1];
             let var = Variable::new(ctx.var_counter);
             ctx.var_counter += 1;
             let ty = types::naml_to_cranelift(&param.ty);
@@ -1871,7 +1868,6 @@ impl<'a> JitCompiler<'a> {
         }
 
         if !ctx.block_terminated && func.return_ty.is_none() {
-            // Cleanup all heap variables before implicit void return
             emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
             builder.ins().return_(&[]);
         }
@@ -2072,9 +2068,9 @@ impl<'a> JitCompiler<'a> {
             .ok_or_else(|| CodegenError::Execution("No main function found".to_string()))?;
 
         let main_ptr = self.module.get_finalized_function(*main_id);
-
-        let main_fn: fn() = unsafe { std::mem::transmute(main_ptr) };
-        main_fn();
+        
+        let main_fn: fn(i64) = unsafe { std::mem::transmute(main_ptr) };
+        main_fn(0);
 
         Ok(())
     }
@@ -3085,7 +3081,7 @@ fn bind_pattern_vars(
 
                 match found {
                     Some(pair) => pair,
-                    None => return Ok(()), // Variant not found, nothing to bind
+                    None => return Ok(()),
                 }
             } else {
                 let enum_name = ctx.interner.resolve(&variant.path[0].symbol).to_string();
@@ -3150,6 +3146,26 @@ fn compile_expression(
             let name = ctx.interner.resolve(&ident.ident.symbol).to_string();
             if let Some(&var) = ctx.variables.get(&name) {
                 Ok(builder.use_var(var))
+            } else if let Some(&func_id) = ctx.functions.get(&name) {
+                let ptr_type = cranelift::prelude::types::I64;
+                let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+                let func_addr = builder.ins().func_addr(ptr_type, func_ref);
+
+                let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    24,
+                    0,
+                ));
+                let slot_addr = builder.ins().stack_addr(ptr_type, slot, 0);
+
+                builder.ins().store(MemFlags::new(), func_addr, slot_addr, 0);
+
+                let null_ptr = builder.ins().iconst(ptr_type, 0);
+                builder.ins().store(MemFlags::new(), null_ptr, slot_addr, 8);
+
+                builder.ins().store(MemFlags::new(), null_ptr, slot_addr, 16);
+
+                Ok(slot_addr)
             } else {
                 Err(CodegenError::JitCompile(format!("Undefined variable: {}", name)))
             }
@@ -3187,10 +3203,7 @@ fn compile_expression(
         }
 
         Expression::Binary(bin) => {
-            // Handle null coalescing operator: lhs ?? rhs
-            // Returns the inner value of lhs if some, otherwise rhs
-            // Options are 16-byte structs: tag (i32) at offset 0, value (i64) at offset 8
-            // Tag: 0 = none, 1 = some
+
             if bin.op == BinaryOp::NullCoalesce {
                 let lhs = compile_expression(ctx, builder, bin.left)?;
 
@@ -3682,7 +3695,9 @@ fn compile_expression(
                 if let Some(&func_id) = ctx.functions.get(actual_func_name) {
                     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
 
-                    let mut args = Vec::new();
+                    let closure_data = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let mut args = vec![closure_data];
+
                     for arg in &call.args {
                         let mut val = compile_expression(ctx, builder, arg)?;
                         if matches!(arg, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {

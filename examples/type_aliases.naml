@@ -29,4 +29,8 @@ fn main() {
 
     // Direct function call
     println(apply(2));
+
+    // First-class function: pass function as value
+    println("Testing first-class function:");
+    println(invoke_handler(apply, 2));
 }
