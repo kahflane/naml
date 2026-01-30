@@ -360,8 +360,8 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("upper", vec![("s", Type::String)], Type::String),
                 StdModuleFn::new("lower", vec![("s", Type::String)], Type::String),
                 StdModuleFn::new("split", vec![("s", Type::String), ("delim", Type::String)], Type::Array(Box::new(Type::String))),
-                StdModuleFn::new("str_join", vec![("arr", Type::Array(Box::new(Type::String))), ("delim", Type::String)], Type::String),
-                StdModuleFn::new("str_contains", vec![("s", Type::String), ("substr", Type::String)], Type::Bool),
+                StdModuleFn::new("concat", vec![("arr", Type::Array(Box::new(Type::String))), ("delim", Type::String)], Type::String),
+                StdModuleFn::new("has", vec![("s", Type::String), ("substr", Type::String)], Type::Bool),
                 StdModuleFn::new("starts_with", vec![("s", Type::String), ("prefix", Type::String)], Type::Bool),
                 StdModuleFn::new("ends_with", vec![("s", Type::String), ("suffix", Type::String)], Type::Bool),
                 StdModuleFn::new("replace", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
@@ -383,7 +383,36 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("slice", vec![("arr", Type::Array(Box::new(Type::Int))), ("start", Type::Int), ("end", Type::Int)], Type::Array(Box::new(Type::Int))),
                 // Search
                 StdModuleFn::new("index_of", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("arr_contains", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Bool),
+                StdModuleFn::new("contains", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Bool),
+                // Lambda-based functions (predicate: fn(int) -> bool)
+                StdModuleFn::new("any", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Bool),
+                StdModuleFn::new("all", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Bool),
+                StdModuleFn::new("count", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Int),
+                StdModuleFn::new("apply", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("mapper", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("where", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("find", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("find_index", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Option(Box::new(Type::Int))),
             ]),
             _ => None,
         }

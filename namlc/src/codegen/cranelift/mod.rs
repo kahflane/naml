@@ -188,6 +188,13 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_array_slice", crate::runtime::naml_array_slice as *const u8);
         builder.symbol("naml_array_index_of", crate::runtime::naml_array_index_of as *const u8);
         builder.symbol("naml_array_contains", crate::runtime::naml_array_contains as *const u8);
+        builder.symbol("naml_array_any", crate::runtime::naml_array_any as *const u8);
+        builder.symbol("naml_array_all", crate::runtime::naml_array_all as *const u8);
+        builder.symbol("naml_array_count", crate::runtime::naml_array_count as *const u8);
+        builder.symbol("naml_array_map", crate::runtime::naml_array_map as *const u8);
+        builder.symbol("naml_array_filter", crate::runtime::naml_array_filter as *const u8);
+        builder.symbol("naml_array_find", crate::runtime::naml_array_find as *const u8);
+        builder.symbol("naml_array_find_index", crate::runtime::naml_array_find_index as *const u8);
         builder.symbol("naml_array_print", crate::runtime::naml_array_print as *const u8);
         builder.symbol("naml_array_incref", crate::runtime::naml_array_incref as *const u8);
         builder.symbol("naml_array_decref", crate::runtime::naml_array_decref as *const u8);
@@ -456,6 +463,13 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_slice", &[ptr, i64t, i64t], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_index_of", &[ptr, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_contains", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_any", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_all", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_count", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_map", &[ptr, i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_filter", &[ptr, i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_find", &[ptr, i64t, i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_find_index", &[ptr, i64t, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref", &[ptr], &[])?;
@@ -1700,9 +1714,17 @@ impl<'a> JitCompiler<'a> {
         let body = unsafe { &*info.body_ptr };
         let result = compile_expression(&mut ctx, &mut builder, body)?;
 
-        // Return the result
+        // Return the result (ensure it's I64 for FFI compatibility)
         if !ctx.block_terminated {
-            builder.ins().return_(&[result]);
+            let result_type = builder.func.dfg.value_type(result);
+            let result_i64 = if result_type == cranelift::prelude::types::I8 {
+                builder.ins().uextend(cranelift::prelude::types::I64, result)
+            } else if result_type != cranelift::prelude::types::I64 && result_type != cranelift::prelude::types::F64 {
+                builder.ins().uextend(cranelift::prelude::types::I64, result)
+            } else {
+                result
+            };
+            builder.ins().return_(&[result_i64]);
         }
 
         builder.finalize();
@@ -2362,6 +2384,14 @@ fn compile_statement(
 
                 // Cleanup all local heap variables except the returned one
                 emit_cleanup_all_vars(ctx, builder, exclude_var)?;
+
+                // Ensure return value matches function signature (i64 for lambdas)
+                let val_type = builder.func.dfg.value_type(val);
+                let val = if val_type == cranelift::prelude::types::I8 {
+                    builder.ins().uextend(cranelift::prelude::types::I64, val)
+                } else {
+                    val
+                };
                 builder.ins().return_(&[val]);
             } else {
                 // Void return - cleanup all heap variables
@@ -3338,7 +3368,7 @@ fn compile_expression(
                         let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
                         return call_two_arg_ptr_runtime(ctx, builder, "naml_string_split", s, delim);
                     }
-                    "str_contains" => {
+                    "has" => {
                         let s = compile_expression(ctx, builder, &call.args[0])?;
                         let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
                         let substr = compile_expression(ctx, builder, &call.args[1])?;
@@ -3377,7 +3407,7 @@ fn compile_expression(
                         let new = ensure_naml_string(ctx, builder, new, &call.args[2])?;
                         return call_three_arg_ptr_runtime(ctx, builder, "naml_string_replace_all", s, old, new);
                     }
-                    "str_join" => {
+                    "concat" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
                         let delim = compile_expression(ctx, builder, &call.args[1])?;
                         let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
@@ -3429,10 +3459,46 @@ fn compile_expression(
                         let val = compile_expression(ctx, builder, &call.args[1])?;
                         return compile_option_from_index_of(ctx, builder, arr, val);
                     }
-                    "arr_contains" => {
+                    "contains" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
                         let val = compile_expression(ctx, builder, &call.args[1])?;
                         return call_array_contains_bool(ctx, builder, arr, val);
+                    }
+                    // Lambda-based collection functions
+                    "any" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_bool_collection(ctx, builder, arr, closure, "naml_array_any");
+                    }
+                    "all" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_bool_collection(ctx, builder, arr, closure, "naml_array_all");
+                    }
+                    "count" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_int_collection(ctx, builder, arr, closure, "naml_array_count");
+                    }
+                    "apply" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_array_collection(ctx, builder, arr, closure, "naml_array_map");
+                    }
+                    "where" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_array_collection(ctx, builder, arr, closure, "naml_array_filter");
+                    }
+                    "find" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_find(ctx, builder, arr, closure);
+                    }
+                    "find_index" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_find_index(ctx, builder, arr, closure);
                     }
                     _ => {}
                 }
@@ -6185,6 +6251,152 @@ fn call_array_contains_bool(
     let call = builder.ins().call(func_ref, &[arr, val]);
     let result = builder.inst_results(call)[0];
     Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+}
+
+fn compile_lambda_bool_collection(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    closure: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[arr, func_ptr, data_ptr]);
+    let result = builder.inst_results(call)[0];
+    Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+}
+
+fn compile_lambda_int_collection(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    closure: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[arr, func_ptr, data_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn compile_lambda_array_collection(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    closure: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[arr, func_ptr, data_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn compile_lambda_find(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    closure: Value,
+) -> Result<Value, CodegenError> {
+    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        16,
+        0,
+    ));
+    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let found_slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        8,
+        0,
+    ));
+    let found_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, found_slot, 0);
+
+    let func_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_find")?;
+    let call = builder.ins().call(func_ref, &[arr, func_ptr, data_ptr, found_ptr]);
+    let value = builder.inst_results(call)[0];
+
+    let found_flag = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), found_ptr, 0);
+
+    let found_block = builder.create_block();
+    let not_found_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let not_found = builder.ins().icmp(IntCC::Equal, found_flag, zero);
+    builder.ins().brif(not_found, not_found_block, &[], found_block, &[]);
+
+    builder.switch_to_block(not_found_block);
+    builder.seal_block(not_found_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(found_block);
+    builder.seal_block(found_block);
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
+}
+
+fn compile_lambda_find_index(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    closure: Value,
+) -> Result<Value, CodegenError> {
+    let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        16,
+        0,
+    ));
+    let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let func_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_find_index")?;
+    let call = builder.ins().call(func_ref, &[arr, func_ptr, data_ptr]);
+    let index = builder.inst_results(call)[0];
+
+    let found_block = builder.create_block();
+    let not_found_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let neg_one = builder.ins().iconst(cranelift::prelude::types::I64, -1i64 as i64);
+    let not_found = builder.ins().icmp(IntCC::Equal, index, neg_one);
+    builder.ins().brif(not_found, not_found_block, &[], found_block, &[]);
+
+    builder.switch_to_block(not_found_block);
+    builder.seal_block(not_found_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(found_block);
+    builder.seal_block(found_block);
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), index, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
 }
 
 /// Ensure a value is a NamlString* (convert string literals if needed)

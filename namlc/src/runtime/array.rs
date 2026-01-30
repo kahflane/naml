@@ -618,6 +618,162 @@ pub unsafe extern "C" fn naml_array_index_of(arr: *const NamlArray, value: i64) 
     }
 }
 
+type PredicateFn = unsafe extern "C" fn(data_ptr: i64, element: i64) -> i64;
+type MapperFn = unsafe extern "C" fn(data_ptr: i64, element: i64) -> i64;
+
+/// Check if any element satisfies the predicate
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_any(
+    arr: *const NamlArray,
+    func_ptr: i64,
+    data_ptr: i64,
+) -> i64 {
+    if arr.is_null() || func_ptr == 0 {
+        return 0;
+    }
+    let predicate: PredicateFn = std::mem::transmute(func_ptr as usize);
+    for i in 0..(*arr).len {
+        let elem = *(*arr).data.add(i);
+        if predicate(data_ptr, elem) != 0 {
+            return 1;
+        }
+    }
+    0
+}
+
+/// Check if all elements satisfy the predicate
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_all(
+    arr: *const NamlArray,
+    func_ptr: i64,
+    data_ptr: i64,
+) -> i64 {
+    if arr.is_null() || func_ptr == 0 {
+        return 1;
+    }
+    let predicate: PredicateFn = std::mem::transmute(func_ptr as usize);
+    for i in 0..(*arr).len {
+        let elem = *(*arr).data.add(i);
+        if predicate(data_ptr, elem) == 0 {
+            return 0;
+        }
+    }
+    1
+}
+
+/// Count elements satisfying the predicate
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_count(
+    arr: *const NamlArray,
+    func_ptr: i64,
+    data_ptr: i64,
+) -> i64 {
+    if arr.is_null() || func_ptr == 0 {
+        return 0;
+    }
+    let predicate: PredicateFn = std::mem::transmute(func_ptr as usize);
+    let mut count = 0i64;
+    for i in 0..(*arr).len {
+        let elem = *(*arr).data.add(i);
+        if predicate(data_ptr, elem) != 0 {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Map each element through a function, returning a new array
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_map(
+    arr: *const NamlArray,
+    func_ptr: i64,
+    data_ptr: i64,
+) -> *mut NamlArray {
+    if arr.is_null() || func_ptr == 0 {
+        return naml_array_new(0);
+    }
+    let mapper: MapperFn = std::mem::transmute(func_ptr as usize);
+    let len = (*arr).len;
+    let new_arr = naml_array_new(len);
+    for i in 0..len {
+        let elem = *(*arr).data.add(i);
+        let result = mapper(data_ptr, elem);
+        naml_array_push(new_arr, result);
+    }
+    new_arr
+}
+
+/// Filter elements by predicate, returning a new array
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_filter(
+    arr: *const NamlArray,
+    func_ptr: i64,
+    data_ptr: i64,
+) -> *mut NamlArray {
+    if arr.is_null() || func_ptr == 0 {
+        return naml_array_new(0);
+    }
+    let predicate: PredicateFn = std::mem::transmute(func_ptr as usize);
+    let new_arr = naml_array_new(0);
+    for i in 0..(*arr).len {
+        let elem = *(*arr).data.add(i);
+        if predicate(data_ptr, elem) != 0 {
+            naml_array_push(new_arr, elem);
+        }
+    }
+    new_arr
+}
+
+/// Find first element satisfying predicate (returns the element, -1 sentinel if not found)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_find(
+    arr: *const NamlArray,
+    func_ptr: i64,
+    data_ptr: i64,
+    found_flag: *mut i64,
+) -> i64 {
+    if arr.is_null() || func_ptr == 0 {
+        if !found_flag.is_null() {
+            *found_flag = 0;
+        }
+        return 0;
+    }
+    let predicate: PredicateFn = std::mem::transmute(func_ptr as usize);
+    for i in 0..(*arr).len {
+        let elem = *(*arr).data.add(i);
+        if predicate(data_ptr, elem) != 0 {
+            if !found_flag.is_null() {
+                *found_flag = 1;
+            }
+            return elem;
+        }
+    }
+    if !found_flag.is_null() {
+        *found_flag = 0;
+    }
+    0
+}
+
+/// Find index of first element satisfying predicate (returns -1 if not found)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_find_index(
+    arr: *const NamlArray,
+    func_ptr: i64,
+    data_ptr: i64,
+) -> i64 {
+    if arr.is_null() || func_ptr == 0 {
+        return -1;
+    }
+    let predicate: PredicateFn = std::mem::transmute(func_ptr as usize);
+    for i in 0..(*arr).len {
+        let elem = *(*arr).data.add(i);
+        if predicate(data_ptr, elem) != 0 {
+            return i as i64;
+        }
+    }
+    -1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
