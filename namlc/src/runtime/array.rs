@@ -360,7 +360,7 @@ pub unsafe extern "C" fn naml_array_clear(arr: *mut NamlArray) {
     }
 }
 
-/// Print array contents (for debugging)
+/// Print array contents (for int arrays)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_array_print(arr: *const NamlArray) {
     if arr.is_null() {
@@ -375,6 +375,31 @@ pub unsafe extern "C" fn naml_array_print(arr: *const NamlArray) {
                 print!(", ");
             }
             print!("{}", *(*arr).data.add(i));
+        }
+        print!("]");
+    }
+}
+
+/// Print array contents (for string arrays)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_array_print_strings(arr: *const NamlArray) {
+    if arr.is_null() {
+        print!("[]");
+        return;
+    }
+
+    unsafe {
+        print!("[");
+        for i in 0..(*arr).len {
+            if i > 0 {
+                print!(", ");
+            }
+            let str_ptr = *(*arr).data.add(i) as *const naml_std_core::NamlString;
+            if !str_ptr.is_null() {
+                print!("\"{}\"", (*str_ptr).as_str());
+            } else {
+                print!("null");
+            }
         }
         print!("]");
     }

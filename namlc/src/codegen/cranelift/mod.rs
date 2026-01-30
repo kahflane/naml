@@ -196,6 +196,7 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_array_find", crate::runtime::naml_array_find as *const u8);
         builder.symbol("naml_array_find_index", crate::runtime::naml_array_find_index as *const u8);
         builder.symbol("naml_array_print", crate::runtime::naml_array_print as *const u8);
+        builder.symbol("naml_array_print_strings", crate::runtime::naml_array_print_strings as *const u8);
         builder.symbol("naml_array_incref", crate::runtime::naml_array_incref as *const u8);
         builder.symbol("naml_array_decref", crate::runtime::naml_array_decref as *const u8);
         builder.symbol("naml_array_decref_strings", crate::runtime::naml_array_decref_strings as *const u8);
@@ -471,6 +472,7 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_find", &[ptr, i64t, i64t, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_find_index", &[ptr, i64t, i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print_strings", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_decref_strings", &[ptr], &[])?;
@@ -4642,8 +4644,13 @@ fn print_arg(
                 Some(Type::Bool) => {
                     call_print_bool(ctx, builder, val)?;
                 }
-                Some(Type::Array(_)) => {
-                    let func_ref = rt_func_ref(ctx, builder, "naml_array_print")?;
+                Some(Type::Array(elem_type)) => {
+                    let print_fn = if matches!(elem_type.as_ref(), Type::String) {
+                        "naml_array_print_strings"
+                    } else {
+                        "naml_array_print"
+                    };
+                    let func_ref = rt_func_ref(ctx, builder, print_fn)?;
                     builder.ins().call(func_ref, &[val]);
                 }
                 _ => {
@@ -5138,17 +5145,17 @@ fn compile_array_literal(
     builder: &mut FunctionBuilder<'_>,
     elements: &[Expression<'_>],
 ) -> Result<Value, CodegenError> {
-    // First, compile all elements and store on stack
     let mut element_values = Vec::new();
     for elem in elements {
-        element_values.push(compile_expression(ctx, builder, elem)?);
+        let mut val = compile_expression(ctx, builder, elem)?;
+        if matches!(elem, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+            val = call_string_from_cstr(ctx, builder, val)?;
+        }
+        element_values.push(val);
     }
-
-    // Create array with capacity
     let capacity = builder.ins().iconst(cranelift::prelude::types::I64, elements.len() as i64);
     let arr_ptr = call_array_new(ctx, builder, capacity)?;
 
-    // Push each element
     for val in element_values {
         call_array_push(ctx, builder, arr_ptr, val)?;
     }
