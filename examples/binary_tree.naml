@@ -24,19 +24,19 @@ fn insert(vals: [int], lefts: [int], rights: [int], root: int, val: int) -> int 
     var cur: int = root;
     var placed: bool = false;
     while (not placed) {
-        if (val < vals[cur]) {
-            if (lefts[cur] == -1) {
+        if (val < vals[cur]!) {
+            if (lefts[cur]! == -1) {
                 lefts[cur] = idx;
                 placed = true;
             } else {
-                cur = lefts[cur];
+                cur = lefts[cur]!;
             }
         } else {
-            if (rights[cur] == -1) {
+            if (rights[cur]! == -1) {
                 rights[cur] = idx;
                 placed = true;
             } else {
-                cur = rights[cur];
+                cur = rights[cur]!;
             }
         }
     }
@@ -46,13 +46,13 @@ fn insert(vals: [int], lefts: [int], rights: [int], root: int, val: int) -> int 
 fn search(vals: [int], lefts: [int], rights: [int], root: int, val: int) -> bool {
     var cur: int = root;
     while (cur != -1) {
-        if (val == vals[cur]) {
+        if (val == vals[cur]!) {
             return true;
         }
-        if (val < vals[cur]) {
-            cur = lefts[cur];
+        if (val < vals[cur]!) {
+            cur = lefts[cur]!;
         } else {
-            cur = rights[cur];
+            cur = rights[cur]!;
         }
     }
     return false;
@@ -63,10 +63,10 @@ fn find_min(vals: [int], lefts: [int], root: int) -> int {
         return -1;
     }
     var cur: int = root;
-    while (lefts[cur] != -1) {
-        cur = lefts[cur];
+    while (lefts[cur]! != -1) {
+        cur = lefts[cur]!;
     }
-    return vals[cur];
+    return vals[cur]!;
 }
 
 fn find_max(vals: [int], rights: [int], root: int) -> int {
@@ -74,26 +74,26 @@ fn find_max(vals: [int], rights: [int], root: int) -> int {
         return -1;
     }
     var cur: int = root;
-    while (rights[cur] != -1) {
-        cur = rights[cur];
+    while (rights[cur]! != -1) {
+        cur = rights[cur]!;
     }
-    return vals[cur];
+    return vals[cur]!;
 }
 
 fn tree_size(lefts: [int], rights: [int], node: int) -> int {
     if (node == -1) {
         return 0;
     }
-    return 1 + tree_size(lefts, rights, lefts[node])
-             + tree_size(lefts, rights, rights[node]);
+    return 1 + tree_size(lefts, rights, lefts[node]!)
+             + tree_size(lefts, rights, rights[node]!);
 }
 
 fn tree_height(lefts: [int], rights: [int], node: int) -> int {
     if (node == -1) {
         return 0;
     }
-    var lh: int = tree_height(lefts, rights, lefts[node]);
-    var rh: int = tree_height(lefts, rights, rights[node]);
+    var lh: int = tree_height(lefts, rights, lefts[node]!);
+    var rh: int = tree_height(lefts, rights, rights[node]!);
     if (lh > rh) {
         return 1 + lh;
     }
@@ -104,27 +104,27 @@ fn inorder(vals: [int], lefts: [int], rights: [int], node: int) {
     if (node == -1) {
         return;
     }
-    inorder(vals, lefts, rights, lefts[node]);
-    print("{} ", vals[node]);
-    inorder(vals, lefts, rights, rights[node]);
+    inorder(vals, lefts, rights, lefts[node]!);
+    print("{} ", vals[node]!);
+    inorder(vals, lefts, rights, rights[node]!);
 }
 
 fn preorder(vals: [int], lefts: [int], rights: [int], node: int) {
     if (node == -1) {
         return;
     }
-    print("{} ", vals[node]);
-    preorder(vals, lefts, rights, lefts[node]);
-    preorder(vals, lefts, rights, rights[node]);
+    print("{} ", vals[node]!);
+    preorder(vals, lefts, rights, lefts[node]!);
+    preorder(vals, lefts, rights, rights[node]!);
 }
 
 fn postorder(vals: [int], lefts: [int], rights: [int], node: int) {
     if (node == -1) {
         return;
     }
-    postorder(vals, lefts, rights, lefts[node]);
-    postorder(vals, lefts, rights, rights[node]);
-    print("{} ", vals[node]);
+    postorder(vals, lefts, rights, lefts[node]!);
+    postorder(vals, lefts, rights, rights[node]!);
+    print("{} ", vals[node]!);
 }
 
 fn main() {

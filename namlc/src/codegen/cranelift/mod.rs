@@ -3566,10 +3566,15 @@ fn compile_expression(
                         let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
                         return call_one_arg_ptr_runtime(ctx, builder, "naml_string_chars", s);
                     }
-                    // std::collections basic functions (Go-style)
                     "count" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
-                        return call_one_arg_int_runtime(ctx, builder, "naml_array_len", arr);
+                        let len = builder.ins().load(
+                            cranelift::prelude::types::I64,
+                            MemFlags::trusted(),
+                            arr,
+                            ARRAY_LEN_OFFSET,
+                        );
+                        return Ok(len);
                     }
                     "push" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
@@ -4255,9 +4260,51 @@ fn compile_expression(
         }
 
         Expression::Try(try_expr) => {
-            // For now, try just evaluates the expression
-            // Full exception unwinding will be implemented later
-            compile_expression(ctx, builder, try_expr.expr)
+            // try converts a throwing expression to option<T>
+            // Returns some(result) on success, none on exception
+            let result = compile_expression(ctx, builder, try_expr.expr)?;
+
+            // Check if an exception occurred
+            let has_exception = call_exception_check(ctx, builder)?;
+
+            // Allocate option struct on stack (16 bytes: tag i32 at 0, value i64 at 8)
+            let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                16,
+                0,
+            ));
+            let option_ptr = builder.ins().stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+            // Create blocks for branching
+            let exception_block = builder.create_block();
+            let no_exception_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            // Branch based on exception check
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            let has_ex = builder.ins().icmp(IntCC::NotEqual, has_exception, zero);
+            builder.ins().brif(has_ex, exception_block, &[], no_exception_block, &[]);
+
+            // Exception block: clear exception and create none
+            builder.switch_to_block(exception_block);
+            builder.seal_block(exception_block);
+            call_exception_clear(ctx, builder)?;
+            let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+            builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+            builder.ins().jump(merge_block, &[]);
+
+            // No exception block: create some(result)
+            builder.switch_to_block(no_exception_block);
+            builder.seal_block(no_exception_block);
+            let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+            builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+            builder.ins().store(MemFlags::new(), result, option_ptr, 8);
+            builder.ins().jump(merge_block, &[]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            Ok(option_ptr)
         }
 
         Expression::Catch(catch_expr) => {
@@ -4598,6 +4645,25 @@ fn compile_expression(
             // Force unwrap: expr!
             // If option is some, return the inner value
             // If option is none, panic
+
+            // OPTIMIZATION: Detect arr[index]! pattern and generate optimized code
+            // This avoids creating an intermediate option struct
+            if let Expression::Index(index_expr) = unwrap_expr.expr {
+                let base = compile_expression(ctx, builder, index_expr.base)?;
+
+                // Check if this is a map access (string key) or array access (integer index)
+                if let Expression::Literal(LiteralExpr { value: Literal::String(_), .. }) = index_expr.index {
+                    let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
+                    let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
+                    return compile_direct_map_get_or_panic(ctx, builder, base, naml_str);
+                } else {
+                    // Array access: arr[index]!
+                    let index = compile_expression(ctx, builder, index_expr.index)?;
+                    return compile_direct_array_get_or_panic(ctx, builder, base, index);
+                }
+            }
+
+            // General case: compile the option expression and unwrap
             let option_ptr = compile_expression(ctx, builder, unwrap_expr.expr)?;
 
             // Load the tag from offset 0 (0 = none, 1 = some)
@@ -6256,10 +6322,8 @@ fn compile_option_from_array_get(
     let invalid_block = builder.create_block();
     let merge_block = builder.create_block();
 
-    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-    let in_bounds_low = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, index, zero);
-    let in_bounds_high = builder.ins().icmp(IntCC::SignedLessThan, index, len);
-    let in_bounds = builder.ins().band(in_bounds_low, in_bounds_high);
+    // Unsigned comparison: catches both negative and >= len in one check
+    let in_bounds = builder.ins().icmp(IntCC::UnsignedLessThan, index, len);
     builder.ins().brif(in_bounds, valid_block, &[], invalid_block, &[]);
 
     builder.switch_to_block(invalid_block);
@@ -6329,6 +6393,114 @@ fn compile_option_from_map_get(
     builder.seal_block(merge_block);
 
     Ok(option_ptr)
+}
+
+/// Optimized array access for arr[index]! pattern
+/// Directly returns value or panics - no intermediate option struct
+/// Fully inlined: no function call overhead
+fn compile_direct_array_get_or_panic(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    index: Value,
+) -> Result<Value, CodegenError> {
+    let len = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
+
+    let valid_block = builder.create_block();
+    let panic_block = builder.create_block();
+    let merge_block = builder.create_block();
+    builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+    // Bounds check using unsigned comparison: (unsigned)index < (unsigned)len
+    // This catches both negative indices (which become huge unsigned values)
+    // and indices >= len in a single comparison
+    let in_bounds = builder.ins().icmp(IntCC::UnsignedLessThan, index, len);
+    builder.ins().brif(in_bounds, valid_block, &[], panic_block, &[]);
+
+    // Panic block: out of bounds
+    builder.switch_to_block(panic_block);
+    builder.seal_block(panic_block);
+    let panic_func = rt_func_ref(ctx, builder, "naml_panic_unwrap")?;
+    builder.ins().call(panic_func, &[]);
+    let zero_val = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().jump(merge_block, &[zero_val]);
+
+    // Valid block: inline array access (no function call)
+    builder.switch_to_block(valid_block);
+    builder.seal_block(valid_block);
+    // Load data pointer from array struct
+    let data_ptr = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::trusted(),
+        arr,
+        ARRAY_DATA_OFFSET,
+    );
+    // Compute element address: data_ptr + index * 8
+    let eight = builder.ins().iconst(cranelift::prelude::types::I64, 8);
+    let offset = builder.ins().imul(index, eight);
+    let elem_addr = builder.ins().iadd(data_ptr, offset);
+    // Load value from element address
+    let value = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::new(),
+        elem_addr,
+        0,
+    );
+    builder.ins().jump(merge_block, &[value]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(builder.block_params(merge_block)[0])
+}
+
+/// Optimized map access for map[key]! pattern
+/// Directly returns value or panics - no intermediate option struct
+fn compile_direct_map_get_or_panic(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    key: Value,
+) -> Result<Value, CodegenError> {
+    let found_block = builder.create_block();
+    let panic_block = builder.create_block();
+    let merge_block = builder.create_block();
+    builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+    // Check if key exists
+    let contains_ref = rt_func_ref(ctx, builder, "naml_map_contains")?;
+    let contains_call = builder.ins().call(contains_ref, &[map, key]);
+    let contains = builder.inst_results(contains_call)[0];
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let key_exists = builder.ins().icmp(IntCC::NotEqual, contains, zero);
+    builder.ins().brif(key_exists, found_block, &[], panic_block, &[]);
+
+    // Panic block: key not found
+    builder.switch_to_block(panic_block);
+    builder.seal_block(panic_block);
+    let panic_func = rt_func_ref(ctx, builder, "naml_panic_unwrap")?;
+    builder.ins().call(panic_func, &[]);
+    let zero_val = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().jump(merge_block, &[zero_val]);
+
+    // Found block: get value directly
+    builder.switch_to_block(found_block);
+    builder.seal_block(found_block);
+    let get_ref = rt_func_ref(ctx, builder, "naml_map_get")?;
+    let get_call = builder.ins().call(get_ref, &[map, key]);
+    let value = builder.inst_results(get_call)[0];
+    builder.ins().jump(merge_block, &[value]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(builder.block_params(merge_block)[0])
 }
 
 fn compile_option_from_index_of(
