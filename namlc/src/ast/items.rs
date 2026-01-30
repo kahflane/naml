@@ -32,6 +32,7 @@ pub enum Item<'ast> {
     Exception(ExceptionItem),
     Use(UseItem),
     Extern(ExternItem),
+    TypeAlias(TypeAliasItem),
     TopLevelStmt(TopLevelStmtItem<'ast>),
 }
 
@@ -45,6 +46,7 @@ impl<'ast> Spanned for Item<'ast> {
             Item::Exception(i) => i.span,
             Item::Use(i) => i.span,
             Item::Extern(i) => i.span,
+            Item::TypeAlias(i) => i.span,
             Item::TopLevelStmt(i) => i.span,
         }
     }
@@ -211,6 +213,15 @@ pub struct ExternItem {
     pub return_ty: Option<NamlType>,
     pub throws: Vec<NamlType>,
     pub link_name: Option<Ident>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeAliasItem {
+    pub name: Ident,
+    pub generics: Vec<GenericParam>,
+    pub aliased_type: NamlType,
+    pub is_public: bool,
     pub span: Span,
 }
 

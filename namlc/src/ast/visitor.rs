@@ -153,6 +153,16 @@ pub fn walk_item<'ast, V: Visitor<'ast>>(v: &mut V, item: &Item<'ast>) {
                 v.visit_type(ret);
             }
         }
+        Item::TypeAlias(a) => {
+            v.visit_ident(&a.name);
+            for generic in &a.generics {
+                v.visit_ident(&generic.name);
+                for bound in &generic.bounds {
+                    v.visit_type(bound);
+                }
+            }
+            v.visit_type(&a.aliased_type);
+        }
         Item::TopLevelStmt(s) => {
             v.visit_stmt(&s.stmt);
         }

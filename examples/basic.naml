@@ -41,9 +41,12 @@ fn sum_array(arr: [int]) -> int {
     return total;
 }
 
-fn greet(name: string) {
-    println("Hello!");
-    println(name);
+fn greet(name: string) -> string {
+    return fmt("Hello {}", name);
+}
+
+fn applyx(x: int) -> int {
+    return x * 2;
 }
 
 fn main() {
@@ -89,9 +92,7 @@ fn main() {
         println(i);
         i = i + 1;
     }
-
-    // String greeting
-    greet("World");
-
-    println("Done!");
+    
+    println(greet("World"));
+    println(applyx(2));
 }

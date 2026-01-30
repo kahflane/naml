@@ -1,0 +1,32 @@
+// Type Aliases Example
+// Demonstrates type alias definitions and usage
+
+// Simple type alias for a handler function
+type handler = fn(int) -> int;
+
+// Middleware pattern using type aliases
+type middleware = fn(handler) -> handler;
+
+// Generic type alias
+type result<T> = option<T>;
+
+// Type alias for map
+type string_map<V> = map<string, V>;
+
+// Function that matches the handler type alias signature
+fn apply(x: int) -> int {
+    return x * 2;
+}
+
+// Function using the type alias in parameter
+fn invoke_handler(h: handler, x: int) -> int {
+    return h(x);
+}
+
+fn main() {
+    // Type aliases are resolved at type-check time
+    println("Type aliases defined successfully!");
+
+    // Direct function call
+    println(apply(2));
+}

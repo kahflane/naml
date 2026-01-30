@@ -44,6 +44,7 @@ pub fn parse_item<'a, 'ast>(
         Some(TokenKind::Keyword(Keyword::Exception)) => parse_exception_item(input, is_public),
         Some(TokenKind::Keyword(Keyword::Use)) => parse_use_item(input),
         Some(TokenKind::Keyword(Keyword::Extern)) => parse_extern_item(input),
+        Some(TokenKind::Keyword(Keyword::Type)) => parse_type_alias_item(input, is_public),
         _ => parse_top_level_stmt(arena, input),
     }
 }
@@ -702,6 +703,35 @@ fn parse_extern_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>
             return_ty,
             throws,
             link_name,
+            span: start.span.merge(end.span),
+        }),
+    ))
+}
+
+fn parse_type_alias_item<'a, 'ast>(
+    input: TokenStream<'a>,
+    is_public: bool,
+) -> PResult<'a, Item<'ast>> {
+    let (input, start) = keyword(Keyword::Type)(input)?;
+    let (input, name) = ident(input)?;
+
+    let (input, generics) = if check(TokenKind::Lt)(input) {
+        parse_generic_params(input)?
+    } else {
+        (input, Vec::new())
+    };
+
+    let (input, _) = token(TokenKind::Eq)(input)?;
+    let (input, aliased_type) = parse_type(input)?;
+    let (input, end) = token(TokenKind::Semicolon)(input)?;
+
+    Ok((
+        input,
+        Item::TypeAlias(TypeAliasItem {
+            name,
+            generics,
+            aliased_type,
+            is_public,
             span: start.span.merge(end.span),
         }),
     ))

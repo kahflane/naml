@@ -3266,6 +3266,15 @@ fn compile_expression(
             if let Expression::Identifier(ident) = call.callee {
                 let func_name = ctx.interner.resolve(&ident.ident.symbol);
 
+                let actual_func_name = if let Some(mangled_name) = ctx.annotations.get_call_instantiation(call.span) {
+                    mangled_name.as_str()
+                } else {
+                    func_name
+                };
+
+                let is_user_defined = ctx.functions.contains_key(actual_func_name);
+
+                if !is_user_defined {
                 match func_name {
                     "print" | "println" => {
                         return compile_print_call(ctx, builder, &call.args, func_name == "println");
@@ -3667,14 +3676,7 @@ fn compile_expression(
                     }
                     _ => {}
                 }
-
-                // Check if this is a call to a generic function (monomorphized)
-                // First, check if the call span has a monomorphization recorded
-                let actual_func_name = if let Some(mangled_name) = ctx.annotations.get_call_instantiation(call.span) {
-                    mangled_name.as_str()
-                } else {
-                    func_name
-                };
+                } // end if !is_user_defined
 
                 // Check for normal (naml) function
                 if let Some(&func_id) = ctx.functions.get(actual_func_name) {
@@ -3962,27 +3964,20 @@ fn compile_expression(
         }
 
         Expression::Block(block) => {
-            // Compile all statements in the block
             for stmt in &block.statements {
                 compile_statement(ctx, builder, stmt)?;
                 if ctx.block_terminated {
-                    // Block already terminated (e.g., return statement)
-                    // The block already has a terminator - create an unreachable block for any remaining code
                     let unreachable_block = builder.create_block();
                     builder.switch_to_block(unreachable_block);
                     builder.seal_block(unreachable_block);
-                    // Create a dummy value FIRST (before the trap)
                     let dummy = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-                    // Then terminate with trap (using unwrap_user trap code for unreachable)
                     builder.ins().trap(cranelift::prelude::TrapCode::unwrap_user(1));
                     return Ok(dummy);
                 }
             }
-            // If there's a tail expression, compile and return it
             if let Some(tail) = &block.tail {
                 compile_expression(ctx, builder, tail)
             } else {
-                // Return unit/0 for blocks with no tail expression
                 Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
             }
         }

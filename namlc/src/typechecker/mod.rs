@@ -47,7 +47,7 @@ use env::TypeEnv;
 use infer::TypeInferrer;
 use symbols::{
     EnumDef, ExceptionDef, FunctionSig, InterfaceDef, InterfaceMethodDef, MethodSig, StructDef,
-    TypeDef,
+    TypeAliasDef, TypeDef,
 };
 use types::TypeParam;
 
@@ -215,6 +215,7 @@ impl<'a> TypeChecker<'a> {
                 Item::Exception(e) => self.collect_exception(e),
                 Item::Extern(e) => self.collect_extern(e),
                 Item::Use(u) => self.resolve_use_item(u),
+                Item::TypeAlias(a) => self.collect_type_alias(a),
                 Item::TopLevelStmt(_) => {}
             }
         }
@@ -862,6 +863,30 @@ impl<'a> TypeChecker<'a> {
         );
     }
 
+    fn collect_type_alias(&mut self, alias: &ast::TypeAliasItem) {
+        let type_params: Vec<TypeParam> = alias
+            .generics
+            .iter()
+            .map(|g| TypeParam {
+                name: g.name.symbol,
+                bounds: g.bounds.iter().map(|b| self.convert_type(b)).collect(),
+            })
+            .collect();
+
+        let aliased_type = self.convert_type(&alias.aliased_type);
+
+        self.symbols.define_type(
+            alias.name.symbol,
+            TypeDef::TypeAlias(TypeAliasDef {
+                name: alias.name.symbol,
+                type_params,
+                aliased_type,
+                is_public: alias.is_public,
+                span: alias.span,
+            }),
+        );
+    }
+
     fn check_items(&mut self, file: &SourceFile) {
         for item in &file.items {
             match item {
@@ -986,13 +1011,23 @@ impl<'a> TypeChecker<'a> {
                             Type::Interface(self.symbols.to_interface_type(i))
                         }
                         TypeDef::Exception(e) => Type::Exception(e.name),
+                        TypeDef::TypeAlias(a) => a.aliased_type.clone(),
                     }
                 } else {
                     Type::Generic(ident.symbol, Vec::new())
                 }
             }
             ast::NamlType::Generic(ident, args) => {
-                let converted_args = args.iter().map(|a| self.convert_type(a)).collect();
+                let converted_args: Vec<Type> = args.iter().map(|a| self.convert_type(a)).collect();
+
+                // Check if this is a type alias with type params
+                if let Some(TypeDef::TypeAlias(alias)) = self.symbols.get_type(ident.symbol) {
+                    if alias.type_params.len() == converted_args.len() {
+                        // Substitute type params with provided args
+                        return self.substitute_type_args(&alias.aliased_type, &alias.type_params, &converted_args);
+                    }
+                }
+
                 Type::Generic(ident.symbol, converted_args)
             }
             ast::NamlType::Function { params, returns } => {
@@ -1005,6 +1040,56 @@ impl<'a> TypeChecker<'a> {
                 })
             }
             ast::NamlType::Inferred => unify::fresh_type_var(&mut 0),
+        }
+    }
+
+    fn substitute_type_args(&self, ty: &Type, type_params: &[TypeParam], type_args: &[Type]) -> Type {
+        match ty {
+            Type::Generic(name, args) => {
+                // Check if this is one of the type parameters to substitute
+                for (i, param) in type_params.iter().enumerate() {
+                    if *name == param.name && args.is_empty() {
+                        return type_args[i].clone();
+                    }
+                }
+                // Otherwise, recursively substitute in the args
+                let new_args = args.iter()
+                    .map(|a| self.substitute_type_args(a, type_params, type_args))
+                    .collect();
+                Type::Generic(*name, new_args)
+            }
+            Type::Array(inner) => {
+                Type::Array(Box::new(self.substitute_type_args(inner, type_params, type_args)))
+            }
+            Type::FixedArray(inner, n) => {
+                Type::FixedArray(Box::new(self.substitute_type_args(inner, type_params, type_args)), *n)
+            }
+            Type::Option(inner) => {
+                Type::Option(Box::new(self.substitute_type_args(inner, type_params, type_args)))
+            }
+            Type::Map(k, v) => {
+                Type::Map(
+                    Box::new(self.substitute_type_args(k, type_params, type_args)),
+                    Box::new(self.substitute_type_args(v, type_params, type_args)),
+                )
+            }
+            Type::Channel(inner) => {
+                Type::Channel(Box::new(self.substitute_type_args(inner, type_params, type_args)))
+            }
+            Type::Function(ft) => {
+                Type::Function(types::FunctionType {
+                    params: ft.params.iter()
+                        .map(|p| self.substitute_type_args(p, type_params, type_args))
+                        .collect(),
+                    returns: Box::new(self.substitute_type_args(&ft.returns, type_params, type_args)),
+                    throws: ft.throws.iter()
+                        .map(|t| self.substitute_type_args(t, type_params, type_args))
+                        .collect(),
+                    is_variadic: ft.is_variadic,
+                })
+            }
+            // Primitive types and others don't need substitution
+            _ => ty.clone(),
         }
     }
 }

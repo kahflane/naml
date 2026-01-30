@@ -51,6 +51,7 @@ pub enum TypeDef {
     Enum(EnumDef),
     Interface(InterfaceDef),
     Exception(ExceptionDef),
+    TypeAlias(TypeAliasDef),
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +96,15 @@ pub struct InterfaceMethodDef {
 pub struct ExceptionDef {
     pub name: Spur,
     pub fields: Vec<(Spur, Type)>,
+    pub is_public: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeAliasDef {
+    pub name: Spur,
+    pub type_params: Vec<TypeParam>,
+    pub aliased_type: Type,
     pub is_public: bool,
     pub span: Span,
 }

@@ -24,7 +24,7 @@ use super::env::TypeEnv;
 use super::error::TypeError;
 use super::symbols::{SymbolTable, TypeDef};
 use super::typed_ast::{ExprTypeInfo, TypeAnnotations};
-use super::types::{FunctionType, Type};
+use super::types::{FunctionType, Type, TypeParam};
 use super::unify::{fresh_type_var, unify};
 
 pub struct TypeInferrer<'a> {
@@ -1910,6 +1910,7 @@ impl<'a> TypeInferrer<'a> {
                         TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
                         TypeDef::Interface(i) => Type::Interface(self.symbols.to_interface_type(i)),
                         TypeDef::Exception(e) => Type::Exception(e.name),
+                        TypeDef::TypeAlias(a) => a.aliased_type.clone(),
                     }
                 } else {
                     // Fall back to generic type (for type parameters)
@@ -1917,7 +1918,18 @@ impl<'a> TypeInferrer<'a> {
                 }
             }
             ast::NamlType::Generic(ident, args) => {
-                let converted_args = args.iter().map(|a| self.convert_ast_type(a)).collect();
+                let converted_args: Vec<Type> = args.iter().map(|a| self.convert_ast_type(a)).collect();
+
+                // Check if this is a type alias with type params
+                if let Some(def) = self.symbols.get_type(ident.symbol) {
+                    use super::symbols::TypeDef;
+                    if let TypeDef::TypeAlias(alias) = def {
+                        if alias.type_params.len() == converted_args.len() {
+                            return self.substitute_type_args(&alias.aliased_type, &alias.type_params, &converted_args);
+                        }
+                    }
+                }
+
                 Type::Generic(ident.symbol, converted_args)
             }
             ast::NamlType::Function { params, returns } => {
@@ -1961,6 +1973,56 @@ impl<'a> TypeInferrer<'a> {
             // int_literal op uint -> uint
             (Type::Int, Type::Uint) if is_left_int_literal => Some(Type::Uint),
             _ => None,
+        }
+    }
+
+    fn substitute_type_args(&self, ty: &Type, type_params: &[TypeParam], type_args: &[Type]) -> Type {
+        match ty {
+            Type::Generic(name, args) => {
+                // Check if this is one of the type parameters to substitute
+                for (i, param) in type_params.iter().enumerate() {
+                    if *name == param.name && args.is_empty() {
+                        return type_args[i].clone();
+                    }
+                }
+                // Otherwise, recursively substitute in the args
+                let new_args = args.iter()
+                    .map(|a| self.substitute_type_args(a, type_params, type_args))
+                    .collect();
+                Type::Generic(*name, new_args)
+            }
+            Type::Array(inner) => {
+                Type::Array(Box::new(self.substitute_type_args(inner, type_params, type_args)))
+            }
+            Type::FixedArray(inner, n) => {
+                Type::FixedArray(Box::new(self.substitute_type_args(inner, type_params, type_args)), *n)
+            }
+            Type::Option(inner) => {
+                Type::Option(Box::new(self.substitute_type_args(inner, type_params, type_args)))
+            }
+            Type::Map(k, v) => {
+                Type::Map(
+                    Box::new(self.substitute_type_args(k, type_params, type_args)),
+                    Box::new(self.substitute_type_args(v, type_params, type_args)),
+                )
+            }
+            Type::Channel(inner) => {
+                Type::Channel(Box::new(self.substitute_type_args(inner, type_params, type_args)))
+            }
+            Type::Function(ft) => {
+                Type::Function(FunctionType {
+                    params: ft.params.iter()
+                        .map(|p| self.substitute_type_args(p, type_params, type_args))
+                        .collect(),
+                    returns: Box::new(self.substitute_type_args(&ft.returns, type_params, type_args)),
+                    throws: ft.throws.iter()
+                        .map(|t| self.substitute_type_args(t, type_params, type_args))
+                        .collect(),
+                    is_variadic: ft.is_variadic,
+                })
+            }
+            // Primitive types and others don't need substitution
+            _ => ty.clone(),
         }
     }
 }

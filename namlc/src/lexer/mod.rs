@@ -411,6 +411,7 @@ pub enum Keyword {
     Native,
     Server,
     Browser,
+    Type,
 }
 
 pub fn tokenize(source: &str) -> (Vec<Token>, Rodeo) {
@@ -885,6 +886,7 @@ impl<'a> Lexer<'a> {
             0x656E6F6E => TokenKind::Keyword(Keyword::None),   // "none"
             0x65757274 => TokenKind::Keyword(Keyword::True),   // "true"
             0x746E6975 => TokenKind::Keyword(Keyword::Uint),   // "uint"
+            0x65707974 => TokenKind::Keyword(Keyword::Type),   // "type"
             _ => TokenKind::Ident,
         }
     }
