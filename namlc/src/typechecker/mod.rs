@@ -366,6 +366,14 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("ends_with", vec![("s", Type::String), ("suffix", Type::String)], Type::Bool),
                 StdModuleFn::new("replace", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
                 StdModuleFn::new("replace_all", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
+                StdModuleFn::new("ltrim", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("rtrim", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("substr", vec![("s", Type::String), ("start", Type::Int), ("end", Type::Int)], Type::String),
+                StdModuleFn::new("lpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
+                StdModuleFn::new("rpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
+                StdModuleFn::new("repeat", vec![("s", Type::String), ("n", Type::Int)], Type::String),
+                StdModuleFn::new("lines", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
+                StdModuleFn::new("chars", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
             ]),
             "collections" => Some(vec![
                 // Access functions
@@ -413,6 +421,17 @@ impl<'a> TypeChecker<'a> {
                     ("arr", Type::Array(Box::new(Type::Int))),
                     ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
                 ], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("fold", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("initial", Type::Int),
+                    ("reducer", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
+                ], Type::Int),
+                StdModuleFn::new("flatten", vec![("arr", Type::Array(Box::new(Type::Array(Box::new(Type::Int)))))], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("sort", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("sort_by", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("comparator", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
             ]),
             _ => None,
         }

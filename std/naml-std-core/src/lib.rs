@@ -5,6 +5,7 @@
 //!
 //! - `HeapHeader` and `HeapTag` for reference-counted heap objects
 //! - `NamlString` for heap-allocated strings with UTF-8 support
+//! - `NamlArray` for heap-allocated dynamic arrays
 //! - `NamlStruct` for heap-allocated struct instances
 //! - Exception handling primitives for try/catch support
 //!
@@ -13,7 +14,9 @@
 //!
 
 pub mod value;
+pub mod array;
 pub mod exception;
 
 pub use value::*;
+pub use array::*;
 pub use exception::*;

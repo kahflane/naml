@@ -1,0 +1,29 @@
+##
+## naml-std-strings - String manipulation functions
+##
+## Provides string helper functions for naml programs:
+## - upper, lower - Case conversion
+## - split, concat - Split and join operations
+## - has, starts_with, ends_with - Search functions
+## - replace, replace_all - Replacement functions
+## - ltrim, rtrim - Whitespace trimming
+## - substr - Substring extraction
+## - lpad, rpad - Padding functions
+## - repeat - String repetition
+## - lines, chars - String splitting
+##
+
+[package]
+name = "naml-std-strings"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "String manipulation functions for the naml programming language"
+
+[lib]
+name = "naml_std_strings"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true

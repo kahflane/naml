@@ -5,16 +5,16 @@
 //! Cranelift JIT. It re-exports functions from the separate standard library
 //! crates and includes additional runtime components:
 //!
-//! - Value representation (from naml-std-core)
+//! - Core types and arrays (from naml-std-core)
 //! - Random number generation (from naml-std-random)
 //! - I/O operations (from naml-std-io)
 //! - Threading and channels (from naml-std-threads)
-//! - Array operations (local)
+//! - String operations (from naml-std-strings)
+//! - Collection operations (from naml-std-collections)
 //! - Map operations (local)
 //! - Bytes operations (local)
 //!
 
-pub mod array;
 pub mod map;
 pub mod bytes;
 
@@ -24,8 +24,9 @@ pub use naml_std_io::*;
 pub use naml_std_threads::*;
 pub use naml_std_datetime::*;
 pub use naml_std_metrics::*;
+pub use naml_std_strings::*;
+pub use naml_std_collections::*;
 
-pub use array::*;
 pub use map::*;
 pub use bytes::*;
 

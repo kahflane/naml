@@ -15,6 +15,8 @@ members = [
     "std/naml-std-threads",
     "std/naml-std-datetime",
     "std/naml-std-metrics",
+    "std/naml-std-strings",
+    "std/naml-std-collections",
 ]
 
 [workspace.package]
@@ -128,6 +130,8 @@ naml-std-io = { path = "std/naml-std-io" }
 naml-std-threads = { path = "std/naml-std-threads" }
 naml-std-datetime = { path = "std/naml-std-datetime" }
 naml-std-metrics = { path = "std/naml-std-metrics" }
+naml-std-strings = { path = "std/naml-std-strings" }
+naml-std-collections = { path = "std/naml-std-collections" }
 
 [profile.release]
 lto = true

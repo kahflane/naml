@@ -1,0 +1,96 @@
+use std::collections::*;
+
+fn main() {
+    println("=== std::collections Demo ===\n");
+
+    var nums: [int] = [3, 1, 4, 1, 5, 9, 2, 6];
+    println("Input array:");
+    println(nums);
+
+    // Access functions
+    println("\nAccess Functions:");
+    var f: option<int> = first(nums);
+    var l: option<int> = last(nums);
+    print("first: ");
+    println(f!);
+    print("last: ");
+    println(l!);
+
+    // Aggregation
+    println("\nAggregation:");
+    print("sum: ");
+    println(sum(nums));
+    print("min: ");
+    println(min(nums)!);
+    print("max: ");
+    println(max(nums)!);
+
+    // Transformation
+    println("\nTransformation:");
+    print("reversed: ");
+    println(reversed(nums));
+    print("take(3): ");
+    println(take(nums, 3));
+    print("drop(3): ");
+    println(drop(nums, 3));
+    print("slice(2, 5): ");
+    println(slice(nums, 2, 5));
+
+    // Search
+    println("\nSearch:");
+    print("index_of(5): ");
+    println(index_of(nums, 5)!);
+    print("contains(5): ");
+    println(contains(nums, 5));
+    print("contains(99): ");
+    println(contains(nums, 99));
+
+    // Lambda-based functions
+    println("\nLambda-based:");
+    print("any > 7: ");
+    println(any(nums, fn(x: int) -> bool { return x > 7; }));
+    print("all > 0: ");
+    println(all(nums, fn(x: int) -> bool { return x > 0; }));
+    print("count > 3: ");
+    println(count(nums, fn(x: int) -> bool { return x > 3; }));
+
+    // apply (map)
+    print("doubled: ");
+    println(apply(nums, fn(x: int) -> int { return x * 2; }));
+
+    // where (filter)
+    print("evens: ");
+    println(where(nums, fn(x: int) -> bool { return x % 2 == 0; }));
+
+    // find
+    print("find > 5: ");
+    println(find(nums, fn(x: int) -> bool { return x > 5; })!);
+
+    // find_index
+    print("find_index > 5: ");
+    println(find_index(nums, fn(x: int) -> bool { return x > 5; })!);
+
+    // fold (reduce)
+    println("\nFold:");
+    print("product: ");
+    println(fold(nums, 1, fn(acc: int, x: int) -> int { return acc * x; }));
+
+    // flatten
+    println("\nFlatten:");
+    var nested: [[int]] = [[1, 2], [3, 4], [5, 6]];
+    print("flatten: ");
+    println(flatten(nested));
+
+    // sort
+    println("\nSort:");
+    var unsorted: [int] = [5, 2, 8, 1, 9];
+    print("sorted: ");
+    println(sort(unsorted));
+
+    // sort_by (descending)
+    var unsorted2: [int] = [5, 2, 8, 1, 9];
+    print("sorted desc: ");
+    println(sort_by(unsorted2, fn(a: int, b: int) -> int { return b - a; }));
+
+    println("\nDone!");
+}

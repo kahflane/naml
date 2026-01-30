@@ -195,6 +195,10 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_array_filter", crate::runtime::naml_array_filter as *const u8);
         builder.symbol("naml_array_find", crate::runtime::naml_array_find as *const u8);
         builder.symbol("naml_array_find_index", crate::runtime::naml_array_find_index as *const u8);
+        builder.symbol("naml_array_fold", crate::runtime::naml_array_fold as *const u8);
+        builder.symbol("naml_array_flatten", crate::runtime::naml_array_flatten as *const u8);
+        builder.symbol("naml_array_sort", crate::runtime::naml_array_sort as *const u8);
+        builder.symbol("naml_array_sort_by", crate::runtime::naml_array_sort_by as *const u8);
         builder.symbol("naml_array_print", crate::runtime::naml_array_print as *const u8);
         builder.symbol("naml_array_print_strings", crate::runtime::naml_array_print_strings as *const u8);
         builder.symbol("naml_array_incref", crate::runtime::naml_array_incref as *const u8);
@@ -307,6 +311,14 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_string_replace_all", crate::runtime::naml_string_replace_all as *const u8);
         builder.symbol("naml_string_split", crate::runtime::naml_string_split as *const u8);
         builder.symbol("naml_string_join", crate::runtime::naml_string_join as *const u8);
+        builder.symbol("naml_string_ltrim", crate::runtime::naml_string_ltrim as *const u8);
+        builder.symbol("naml_string_rtrim", crate::runtime::naml_string_rtrim as *const u8);
+        builder.symbol("naml_string_substr", crate::runtime::naml_string_substr as *const u8);
+        builder.symbol("naml_string_lpad", crate::runtime::naml_string_lpad as *const u8);
+        builder.symbol("naml_string_rpad", crate::runtime::naml_string_rpad as *const u8);
+        builder.symbol("naml_string_repeat", crate::runtime::naml_string_repeat as *const u8);
+        builder.symbol("naml_string_lines", crate::runtime::naml_string_lines as *const u8);
+        builder.symbol("naml_string_chars", crate::runtime::naml_string_chars as *const u8);
 
         // Type conversion operations
         builder.symbol("naml_int_to_string", crate::runtime::naml_int_to_string as *const u8);
@@ -417,6 +429,14 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_replace_all", &[ptr, ptr, ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_split", &[ptr, ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_join", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_ltrim", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_rtrim", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_substr", &[ptr, i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_lpad", &[ptr, i64t, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_rpad", &[ptr, i64t, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_repeat", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_lines", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_string_chars", &[ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_incref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_decref", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_string_to_bytes", &[ptr], &[ptr])?;
@@ -471,6 +491,10 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_filter", &[ptr, i64t, i64t], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_find", &[ptr, i64t, i64t, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_find_index", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_fold", &[ptr, i64t, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_flatten", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_sort", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_array_sort_by", &[ptr, i64t, i64t], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_print_strings", &[ptr], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_array_incref", &[ptr], &[])?;
@@ -3415,6 +3439,55 @@ fn compile_expression(
                         let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
                         return call_two_arg_ptr_runtime(ctx, builder, "naml_string_join", arr, delim);
                     }
+                    "ltrim" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_string_ltrim", s);
+                    }
+                    "rtrim" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_string_rtrim", s);
+                    }
+                    "substr" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let start = compile_expression(ctx, builder, &call.args[1])?;
+                        let end = compile_expression(ctx, builder, &call.args[2])?;
+                        return call_three_arg_ptr_runtime(ctx, builder, "naml_string_substr", s, start, end);
+                    }
+                    "lpad" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let len = compile_expression(ctx, builder, &call.args[1])?;
+                        let pad_char = compile_expression(ctx, builder, &call.args[2])?;
+                        let pad_char = ensure_naml_string(ctx, builder, pad_char, &call.args[2])?;
+                        return call_three_arg_ptr_runtime(ctx, builder, "naml_string_lpad", s, len, pad_char);
+                    }
+                    "rpad" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let len = compile_expression(ctx, builder, &call.args[1])?;
+                        let pad_char = compile_expression(ctx, builder, &call.args[2])?;
+                        let pad_char = ensure_naml_string(ctx, builder, pad_char, &call.args[2])?;
+                        return call_three_arg_ptr_runtime(ctx, builder, "naml_string_rpad", s, len, pad_char);
+                    }
+                    "repeat" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        let n = compile_expression(ctx, builder, &call.args[1])?;
+                        return call_two_arg_ptr_runtime(ctx, builder, "naml_string_repeat", s, n);
+                    }
+                    "lines" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_string_lines", s);
+                    }
+                    "chars" => {
+                        let s = compile_expression(ctx, builder, &call.args[0])?;
+                        let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_string_chars", s);
+                    }
                     // std::collections functions
                     "first" => {
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
@@ -3501,6 +3574,25 @@ fn compile_expression(
                         let arr = compile_expression(ctx, builder, &call.args[0])?;
                         let closure = compile_expression(ctx, builder, &call.args[1])?;
                         return compile_lambda_find_index(ctx, builder, arr, closure);
+                    }
+                    "fold" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let initial = compile_expression(ctx, builder, &call.args[1])?;
+                        let closure = compile_expression(ctx, builder, &call.args[2])?;
+                        return compile_lambda_fold(ctx, builder, arr, initial, closure);
+                    }
+                    "flatten" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_array_flatten", arr);
+                    }
+                    "sort" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        return call_one_arg_ptr_runtime(ctx, builder, "naml_array_sort", arr);
+                    }
+                    "sort_by" => {
+                        let arr = compile_expression(ctx, builder, &call.args[0])?;
+                        let closure = compile_expression(ctx, builder, &call.args[1])?;
+                        return compile_lambda_sort_by(ctx, builder, arr, closure);
                     }
                     _ => {}
                 }
@@ -6404,6 +6496,35 @@ fn compile_lambda_find_index(
     builder.seal_block(merge_block);
 
     Ok(option_ptr)
+}
+
+fn compile_lambda_fold(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    initial: Value,
+    closure: Value,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_fold")?;
+    let call = builder.ins().call(func_ref, &[arr, initial, func_ptr, data_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+fn compile_lambda_sort_by(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arr: Value,
+    closure: Value,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_array_sort_by")?;
+    let call = builder.ins().call(func_ref, &[arr, func_ptr, data_ptr]);
+    Ok(builder.inst_results(call)[0])
 }
 
 /// Ensure a value is a NamlString* (convert string literals if needed)

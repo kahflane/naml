@@ -1,0 +1,27 @@
+##
+## naml-std-collections - Collection helper functions
+##
+## Provides array helper functions for naml programs:
+## - first, last - Access functions
+## - sum, min, max - Aggregation
+## - reversed, take, drop, slice - Transformation
+## - index_of, contains - Search
+## - any, all, count - Predicates
+## - apply, where, find, find_index - Lambda-based
+## - fold, flatten, sort, sort_by - Advanced
+##
+
+[package]
+name = "naml-std-collections"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Collection helper functions for the naml programming language"
+
+[lib]
+name = "naml_std_collections"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true

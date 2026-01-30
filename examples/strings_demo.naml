@@ -1,0 +1,59 @@
+use std::strings::*;
+
+fn main() {
+    println("=== std::strings Demo ===\n");
+
+    // Case conversion
+    println("Case Conversion:");
+    println(upper("hello world"));
+    println(lower("HELLO WORLD"));
+
+    // Search functions
+    println("\nSearch Functions:");
+    var s: string = "Hello, naml world!";
+    println(fmt("has 'naml': {}", has(s, "naml")));
+    println(fmt("starts_with 'Hello': {}", starts_with(s, "Hello")));
+    println(fmt("ends_with '!': {}", ends_with(s, "!")));
+
+    // Replacement
+    println("\nReplacement:");
+    println(replace("foo bar foo", "foo", "baz"));
+    println(replace_all("foo bar foo", "foo", "baz"));
+
+    // Trimming
+    println("\nTrimming:");
+    println(fmt("ltrim: '{}'", ltrim("   hello")));
+    println(fmt("rtrim: '{}'", rtrim("hello   ")));
+
+    // Substring
+    println("\nSubstring:");
+    println(substr("Hello World", 0, 5));
+    println(substr("Hello World", 6, 11));
+
+    // Padding
+    println("\nPadding:");
+    println(lpad("42", 5, "0"));
+    println(rpad("hi", 5, "."));
+
+    // Repeat
+    println("\nRepeat:");
+    println(repeat("ab", 5));
+
+    // Split and join
+    println("\nSplit and Join:");
+    var parts: [string] = split("a,b,c,d", ",");
+    println(parts);
+    println(concat(parts, "-"));
+
+    // Lines and chars
+    println("\nLines:");
+    var text: string = "line1\nline2\nline3";
+    var lns: [string] = lines(text);
+    println(lns);
+
+    println("\nChars:");
+    var chrs: [string] = chars("abc");
+    println(chrs);
+
+    println("\nDone!");
+}
