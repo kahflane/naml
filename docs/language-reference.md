@@ -94,13 +94,15 @@ Fixed-size arrays:
 var fixed: [int; 5] = [1, 2, 3, 4, 5];
 ```
 
-Array operations:
+Array operations (using `std::collections`):
 
 ```naml
-var first: int = numbers[0];      // Indexing
-var len: int = numbers.len();     // Length
-numbers.push(6);                   // Append
-var last: option<int> = numbers.pop();  // Remove last, returns option<T>
+use std::collections::*;
+
+var first: int = numbers[0];           // Indexing
+var len: int = count(numbers);         // Length
+push(numbers, 6);                      // Append
+var last: option<int> = pop(numbers);  // Remove last, returns option<T>
 ```
 
 ### Maps
@@ -126,9 +128,11 @@ var other: int = nothing ?? -1;   // -1
 // Force unwrap - panics if none
 var unwrapped: int = maybe!;      // 42
 
-// Check if option has value
-var has_value: bool = maybe.is_some();   // true
-var is_empty: bool = nothing.is_none();  // true
+// Handle with else block
+var safe: int = maybe else {
+    println("Value was none!");
+    return;
+} ?? 0;
 ```
 
 ### Channels
@@ -380,11 +384,13 @@ var parsed: int = user_input as? int ?? 0;
 **Force unwrap** with `!` extracts the value from an option, panicking if none:
 
 ```naml
+use std::collections::pop;
+
 var opt: option<int> = some(42);
 var value: int = opt!;           // 42
 
 var arr: [int] = [1, 2, 3];
-var last: int = arr.pop()!;      // 3 (panics if array was empty)
+var last: int = pop(arr)!;       // 3 (panics if array was empty)
 ```
 
 ### Null Coalescing
@@ -869,12 +875,14 @@ fn swap<A, B>(pair: Pair<A, B>) -> Pair<B, A> {
 ### Generic Structs
 
 ```naml
+use std::collections::push;
+
 pub struct Container<T> {
     pub items: [T]
 }
 
 pub fn (self: Container<T>) add<T>(item: T) {
-    self.items.push(item);
+    push(self.items, item);
 }
 ```
 
