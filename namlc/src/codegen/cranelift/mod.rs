@@ -2277,8 +2277,26 @@ fn compile_statement(
                     emit_incref(ctx, builder, val, heap_type)?;
                 }
             } else {
-                let zero = builder.ins().iconst(ty, 0);
-                builder.def_var(var, zero);
+                // No initializer - create default values for collection types
+                let val = match var_stmt.ty.as_ref() {
+                    Some(crate::ast::NamlType::Map(_, _)) => {
+                        // Create empty map with default capacity
+                        let capacity = builder.ins().iconst(cranelift::prelude::types::I64, 16);
+                        let func_ref = rt_func_ref(ctx, builder, "naml_map_new")?;
+                        let call = builder.ins().call(func_ref, &[capacity]);
+                        builder.inst_results(call)[0]
+                    }
+                    Some(crate::ast::NamlType::Array(_)) => {
+                        // Create empty array with default capacity
+                        let capacity = builder.ins().iconst(cranelift::prelude::types::I64, 8);
+                        call_array_new(ctx, builder, capacity)?
+                    }
+                    _ => {
+                        // Default to zero for other types
+                        builder.ins().iconst(ty, 0)
+                    }
+                };
+                builder.def_var(var, val);
             }
 
             ctx.variables.insert(var_name, var);
