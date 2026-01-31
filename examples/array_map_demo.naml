@@ -1,0 +1,128 @@
+use std::collections::*;
+
+fn main() {
+    println("=== Arrays and Maps Module Demo ===");
+    println("Using qualified function calls: arrays::* and maps::*\n");
+
+    // ============================================
+    // Array Operations with arrays:: prefix
+    // ============================================
+    println("--- Array Operations ---");
+
+    var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    println("Numbers:", numbers);
+    println("arrays::count:", arrays::count(numbers));
+
+    // Filtering with qualified names
+    var evens: [int] = arrays::where(numbers, fn(n: int) -> bool { return n % 2 == 0; });
+    println("arrays::where (evens):", evens);
+
+    var odds: [int] = arrays::reject(numbers, fn(n: int) -> bool { return n % 2 == 0; });
+    println("arrays::reject (odds):", odds);
+
+    // Predicates
+    var has_big: bool = arrays::any(numbers, fn(n: int) -> bool { return n > 8; });
+    print("arrays::any > 8: ");
+    println(has_big);
+
+    var all_pos: bool = arrays::all(numbers, fn(n: int) -> bool { return n > 0; });
+    print("arrays::all positive: ");
+    println(all_pos);
+
+    var big_count: int = arrays::count_if(numbers, fn(n: int) -> bool { return n > 5; });
+    print("arrays::count_if > 5: ");
+    println(big_count);
+
+    // Fold/reduce
+    var total: int = arrays::fold(numbers, 0, fn(acc: int, n: int) -> int { return acc + n; });
+    print("arrays::fold (sum): ");
+    println(total);
+
+    // Set operations
+    var set1: [int] = [1, 2, 3, 4, 5];
+    var set2: [int] = [4, 5, 6, 7, 8];
+    println("\nSet 1:", set1);
+    println("Set 2:", set2);
+    println("arrays::intersect:", arrays::intersect(set1, set2));
+    println("arrays::diff:", arrays::diff(set1, set2));
+
+    // ============================================
+    // Map Operations with maps:: prefix
+    // ============================================
+    println("\n--- Map Operations ---");
+
+    var scores: map<string, int> = {
+        "alice": 95,
+        "bob": 87,
+        "charlie": 92,
+        "diana": 78,
+        "eve": 88
+    };
+    println("Scores:", scores);
+    println("maps::count:", maps::count(scores));
+
+    // Key checking
+    print("maps::contains_key 'alice': ");
+    println(maps::contains_key(scores, "alice"));
+    print("maps::contains_key 'frank': ");
+    println(maps::contains_key(scores, "frank"));
+
+    // Extraction
+    println("maps::keys:", maps::keys(scores));
+    println("maps::values:", maps::values(scores));
+
+    // Filtering maps
+    var high_scores: map<string, int> = maps::where(scores, fn(k: string, v: int) -> bool { return v >= 90; });
+    println("maps::where >= 90:", high_scores);
+
+    var low_scores: map<string, int> = maps::reject(scores, fn(k: string, v: int) -> bool { return v >= 90; });
+    println("maps::reject >= 90:", low_scores);
+
+    // Transform values
+    var curved: map<string, int> = maps::transform(scores, fn(v: int) -> int { return v + 5; });
+    println("maps::transform (+5):", curved);
+
+    // Predicates on maps
+    var any_perfect: bool = maps::any(scores, fn(k: string, v: int) -> bool { return v == 100; });
+    print("maps::any perfect: ");
+    println(any_perfect);
+
+    var all_passing: bool = maps::all(scores, fn(k: string, v: int) -> bool { return v >= 60; });
+    print("maps::all passing: ");
+    println(all_passing);
+
+    var count_high: int = maps::count_if(scores, fn(k: string, v: int) -> bool { return v >= 90; });
+    print("maps::count_if >= 90: ");
+    println(count_high);
+
+    // Fold on maps
+    var sum_scores: int = maps::fold(scores, 0, fn(acc: int, k: string, v: int) -> int { return acc + v; });
+    print("maps::fold (sum): ");
+    println(sum_scores);
+
+    // ============================================
+    // Combining Maps
+    // ============================================
+    println("\n--- Map Combining ---");
+
+    var bonus: map<string, int> = { "alice": 100, "frank": 75 };
+    println("Bonus map:", bonus);
+
+    var merged: map<string, int> = maps::merge(scores, bonus);
+    println("maps::merge (bonus overwrites):", merged);
+
+    var with_defaults: map<string, int> = maps::defaults(scores, bonus);
+    println("maps::defaults (scores wins):", with_defaults);
+
+    // ============================================
+    // Converting Between Arrays and Maps
+    // ============================================
+    println("\n--- Conversions ---");
+
+    var names: [string] = ["x", "y", "z"];
+    var vals: [int] = [10, 20, 30];
+    var from_arrs: map<string, int> = maps::from_arrays(names, vals);
+    println("maps::from_arrays:", from_arrs);
+
+    println("\n=== Done ===");
+}

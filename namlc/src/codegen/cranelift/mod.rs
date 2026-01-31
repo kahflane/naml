@@ -685,6 +685,31 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_map_decref_structs as *const u8,
         );
 
+        // Map collection operations (from naml-std-collections)
+        builder.symbol("naml_map_count", crate::runtime::naml_map_count as *const u8);
+        builder.symbol("naml_map_contains_key", crate::runtime::naml_map_contains_key as *const u8);
+        builder.symbol("naml_map_remove", crate::runtime::naml_map_remove as *const u8);
+        builder.symbol("naml_map_clear", crate::runtime::naml_map_clear as *const u8);
+        builder.symbol("naml_map_keys", crate::runtime::naml_map_keys as *const u8);
+        builder.symbol("naml_map_values", crate::runtime::naml_map_values as *const u8);
+        builder.symbol("naml_map_entries", crate::runtime::naml_map_entries as *const u8);
+        builder.symbol("naml_map_first_key", crate::runtime::naml_map_first_key as *const u8);
+        builder.symbol("naml_map_first_value", crate::runtime::naml_map_first_value as *const u8);
+        builder.symbol("naml_map_any", crate::runtime::naml_map_any as *const u8);
+        builder.symbol("naml_map_all", crate::runtime::naml_map_all as *const u8);
+        builder.symbol("naml_map_count_if", crate::runtime::naml_map_count_if as *const u8);
+        builder.symbol("naml_map_fold", crate::runtime::naml_map_fold as *const u8);
+        builder.symbol("naml_map_transform", crate::runtime::naml_map_transform as *const u8);
+        builder.symbol("naml_map_where", crate::runtime::naml_map_where as *const u8);
+        builder.symbol("naml_map_reject", crate::runtime::naml_map_reject as *const u8);
+        builder.symbol("naml_map_merge", crate::runtime::naml_map_merge as *const u8);
+        builder.symbol("naml_map_defaults", crate::runtime::naml_map_defaults as *const u8);
+        builder.symbol("naml_map_intersect", crate::runtime::naml_map_intersect as *const u8);
+        builder.symbol("naml_map_diff", crate::runtime::naml_map_diff as *const u8);
+        builder.symbol("naml_map_invert", crate::runtime::naml_map_invert as *const u8);
+        builder.symbol("naml_map_from_arrays", crate::runtime::naml_map_from_arrays as *const u8);
+        builder.symbol("naml_map_from_entries", crate::runtime::naml_map_from_entries as *const u8);
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -1880,6 +1905,169 @@ impl<'a> JitCompiler<'a> {
             &[],
         )?;
 
+        // Map collection functions (from naml-std-collections)
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_count",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_contains_key",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_remove",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_clear",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_keys",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_values",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_entries",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_first_key",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_first_value",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_any",
+            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_all",
+            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_count_if",
+            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_fold",
+            &[ptr, i64t, ptr, ptr],  // map, initial, func_ptr, data_ptr
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_transform",
+            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_where",
+            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_reject",
+            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_merge",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_defaults",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_intersect",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_diff",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_invert",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_from_arrays",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_map_from_entries",
+            &[ptr],
+            &[ptr],
+        )?;
+
         // Struct functions
         declare(
             &mut self.module,
@@ -2435,7 +2623,7 @@ impl<'a> JitCompiler<'a> {
     }
 
     pub fn compile_module_source(&mut self, source: &str) -> Result<(), CodegenError> {
-        let (tokens, module_interner) = crate::lexer::tokenize(source);
+        let (tokens, mut module_interner) = crate::lexer::tokenize(source);
         let arena = crate::ast::AstArena::new();
         let parse_result = crate::parser::parse(&tokens, source, &arena);
         if !parse_result.errors.is_empty() {
@@ -2445,7 +2633,7 @@ impl<'a> JitCompiler<'a> {
         }
 
         let type_result =
-            crate::typechecker::check_with_types(&parse_result.ast, &module_interner, None);
+            crate::typechecker::check_with_types(&parse_result.ast, &mut module_interner, None);
 
         let saved_interner = self.interner;
         let saved_annotations = self.annotations;

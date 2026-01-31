@@ -59,7 +59,7 @@ pub struct ImportedModule {
 pub struct TypeChecker<'a> {
     symbols: SymbolTable,
     env: TypeEnv,
-    interner: &'a Rodeo,
+    interner: &'a mut Rodeo,
     errors: Vec<TypeError>,
     annotations: TypeAnnotations,
     next_var_id: u32,
@@ -90,7 +90,7 @@ pub(crate) fn get_std_module_functions(module: &str) -> Option<Vec<StdModuleFn>>
 }
 
 impl<'a> TypeChecker<'a> {
-    pub fn new(interner: &'a Rodeo, source_dir: Option<PathBuf>) -> Self {
+    pub fn new(interner: &'a mut Rodeo, source_dir: Option<PathBuf>) -> Self {
         let mut checker = Self {
             symbols: SymbolTable::new(),
             env: TypeEnv::new(),
@@ -238,13 +238,34 @@ impl<'a> TypeChecker<'a> {
                 });
                 return;
             }
-            self.resolve_std_module(&path_strs[1], &use_item.items, use_item.span);
+            let module_path = path_strs[1..].join("::");
+            // Pass the Spurs from the path for module alias registration
+            let path_spurs: Vec<_> = use_item.path.iter().map(|i| i.symbol).collect();
+            self.resolve_std_module(&module_path, &path_spurs[1..], &use_item.items, use_item.span);
         } else {
             self.resolve_local_module(&path_strs, &use_item.items, use_item.span);
         }
     }
 
-    fn resolve_std_module(&mut self, module: &str, items: &UseItems, span: crate::source::Span) {
+    fn resolve_std_module(&mut self, module: &str, path_spurs: &[lasso::Spur], items: &UseItems, span: crate::source::Span) {
+        // Check if this is a parent module with sub-modules
+        // If so and using wildcard import, recursively resolve each sub-module
+        if let Some(sub_modules) = Self::get_std_submodules(module) {
+            if matches!(items, UseItems::All) {
+                for sub_module in sub_modules {
+                    // Build the full sub-module path
+                    let full_path = format!("{}::{}", module, sub_module);
+                    // Get the sub-module Spur
+                    let sub_spur = self.interner.get_or_intern(sub_module);
+                    // Create path_spurs for the sub-module (append sub-module spur)
+                    let mut sub_path_spurs = path_spurs.to_vec();
+                    sub_path_spurs.push(sub_spur);
+                    self.resolve_std_module(&full_path, &sub_path_spurs, items, span);
+                }
+                return;
+            }
+        }
+
         let module_fns = match get_std_module_functions(module) {
             Some(fns) => fns,
             None => {
@@ -256,9 +277,14 @@ impl<'a> TypeChecker<'a> {
             }
         };
 
-        let module_spur = match self.interner.get(module) {
-            Some(s) => s,
-            None => return,
+        let module_spur = self.interner.get_or_intern(module);
+
+        // Get the last segment's Spur as a short alias for qualified calls
+        // e.g., for "use std::collections::arrays::*", allow "arrays::count(...)"
+        let short_alias_spur = if path_spurs.len() > 1 {
+            Some(path_spurs[path_spurs.len() - 1])
+        } else {
+            None
         };
 
         match items {
@@ -267,6 +293,10 @@ impl<'a> TypeChecker<'a> {
                     let sig = self.create_std_fn_sig(module_fn);
                     if let Some(ref sig) = sig {
                         self.symbols.register_module(module_spur).add_function(sig.clone());
+                        // Also register under the short alias for qualified calls
+                        if let Some(alias_spur) = short_alias_spur {
+                            self.symbols.register_module(alias_spur).add_function(sig.clone());
+                        }
                         self.symbols.define_function(sig.clone());
                     }
                 }
@@ -280,6 +310,10 @@ impl<'a> TypeChecker<'a> {
                             let sig = self.create_std_fn_sig(module_fn);
                             if let Some(ref sig) = sig {
                                 self.symbols.register_module(module_spur).add_function(sig.clone());
+                                // Also register under the short alias
+                                if let Some(alias_spur) = short_alias_spur {
+                                    self.symbols.register_module(alias_spur).add_function(sig.clone());
+                                }
                                 self.symbols.define_function(sig.clone());
                             }
                         }
@@ -296,12 +330,12 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn create_std_fn_sig(&self, module_fn: &StdModuleFn) -> Option<FunctionSig> {
-        let spur = self.interner.get(module_fn.name)?;
+    fn create_std_fn_sig(&mut self, module_fn: &StdModuleFn) -> Option<FunctionSig> {
+        let spur = self.interner.get_or_intern(module_fn.name);
 
         let type_params: Vec<_> = module_fn.type_params.iter()
             .map(|tp_name| {
-                let tp_spur = self.interner.get(tp_name).unwrap_or(spur);
+                let tp_spur = self.interner.get_or_intern(tp_name);
                 TypeParam { name: tp_spur, bounds: vec![] }
             })
             .collect();
@@ -311,7 +345,7 @@ impl<'a> TypeChecker<'a> {
 
         let params: Vec<_> = module_fn.params.iter()
             .map(|(pname, pty)| {
-                let pspur = self.interner.get(pname).unwrap_or(spur);
+                let pspur = self.interner.get_or_intern(pname);
                 let mut param_ty = pty.clone();
                 Self::fix_default_generic_spur(&mut param_ty, &type_params);
                 (pspur, param_ty)
@@ -351,79 +385,8 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_std_module_functions_impl(module: &str) -> Option<Vec<StdModuleFn>> {
-        match module {
-            "random" => Some(vec![
-                StdModuleFn::new("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int),
-                StdModuleFn::new("random_float", vec![], Type::Float),
-            ]),
-            "io" => Some(vec![
-                StdModuleFn::new("read_key", vec![], Type::Int),
-                StdModuleFn::new("clear_screen", vec![], Type::Unit),
-                StdModuleFn::new("set_cursor", vec![("x", Type::Int), ("y", Type::Int)], Type::Unit),
-                StdModuleFn::new("hide_cursor", vec![], Type::Unit),
-                StdModuleFn::new("show_cursor", vec![], Type::Unit),
-                StdModuleFn::new("terminal_width", vec![], Type::Int),
-                StdModuleFn::new("terminal_height", vec![], Type::Int),
-            ]),
-            "threads" => Some(vec![
-                StdModuleFn::new("join", vec![], Type::Unit),
-                StdModuleFn::generic("open_channel", vec!["T"], vec![("capacity", Type::Int)],
-                    Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
-                // Channel functions (Go-style)
-                StdModuleFn::generic("send", vec!["T"], vec![
-                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
-                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
-                ], Type::Int),
-                StdModuleFn::generic("receive", vec!["T"], vec![
-                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
-                ], Type::Option(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
-                StdModuleFn::generic("close", vec!["T"], vec![
-                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
-                ], Type::Unit),
-            ]),
-            "datetime" => Some(vec![
-                StdModuleFn::new("now_ms", vec![], Type::Int),
-                StdModuleFn::new("now_s", vec![], Type::Int),
-                StdModuleFn::new("year", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("month", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("day", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("hour", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("minute", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("second", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("day_of_week", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("format_date", vec![("timestamp_ms", Type::Int), ("fmt", Type::String)], Type::String),
-            ]),
-            "metrics" => Some(vec![
-                StdModuleFn::new("perf_now", vec![], Type::Int),
-                StdModuleFn::new("elapsed_ms", vec![("start_ns", Type::Int)], Type::Int),
-                StdModuleFn::new("elapsed_us", vec![("start_ns", Type::Int)], Type::Int),
-                StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int),
-            ]),
-            "strings" => Some(vec![
-                // Basic functions (Go-style)
-                StdModuleFn::new("len", vec![("s", Type::String)], Type::Int),
-                StdModuleFn::new("char_at", vec![("s", Type::String), ("index", Type::Int)], Type::Int),
-                // Case conversion
-                StdModuleFn::new("upper", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("lower", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("split", vec![("s", Type::String), ("delim", Type::String)], Type::Array(Box::new(Type::String))),
-                StdModuleFn::new("concat", vec![("arr", Type::Array(Box::new(Type::String))), ("delim", Type::String)], Type::String),
-                StdModuleFn::new("has", vec![("s", Type::String), ("substr", Type::String)], Type::Bool),
-                StdModuleFn::new("starts_with", vec![("s", Type::String), ("prefix", Type::String)], Type::Bool),
-                StdModuleFn::new("ends_with", vec![("s", Type::String), ("suffix", Type::String)], Type::Bool),
-                StdModuleFn::new("replace", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
-                StdModuleFn::new("replace_all", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
-                StdModuleFn::new("ltrim", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("rtrim", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("substr", vec![("s", Type::String), ("start", Type::Int), ("end", Type::Int)], Type::String),
-                StdModuleFn::new("lpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
-                StdModuleFn::new("rpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
-                StdModuleFn::new("repeat", vec![("s", Type::String), ("n", Type::Int)], Type::String),
-                StdModuleFn::new("lines", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
-                StdModuleFn::new("chars", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
-            ]),
-            "collections" => Some(vec![
+    fn get_collections_array_functions() -> Vec<StdModuleFn> {
+        vec![
                 // Basic functions (Go-style)
                 StdModuleFn::new("count", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Int),
                 StdModuleFn::new("push", vec![("arr", Type::Array(Box::new(Type::Int))), ("value", Type::Int)], Type::Unit),
@@ -542,11 +505,172 @@ impl<'a> TypeChecker<'a> {
                     ("initial", Type::Int),
                     ("reducer", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
                 ], Type::Array(Box::new(Type::Int))),
-                // Random
-                StdModuleFn::new("shuffle", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("sample", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("sample_n", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
+            // Random
+            StdModuleFn::new("shuffle", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+            StdModuleFn::new("sample", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+            StdModuleFn::new("sample_n", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
+        ]
+    }
+
+    fn get_collections_map_functions() -> Vec<StdModuleFn> {
+        vec![
+            // Basic operations
+            StdModuleFn::new("count", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Int),
+            StdModuleFn::new("contains_key", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))), ("key", Type::String)], Type::Bool),
+            StdModuleFn::new("remove", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))), ("key", Type::String)], Type::Option(Box::new(Type::Int))),
+            StdModuleFn::new("clear", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Unit),
+            // Extraction
+            StdModuleFn::new("keys", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Array(Box::new(Type::String))),
+            StdModuleFn::new("values", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+            StdModuleFn::new("entries", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
+            // Lookup
+            StdModuleFn::new("first_key", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Option(Box::new(Type::String))),
+            StdModuleFn::new("first_value", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+            // Lambda-based functions
+            StdModuleFn::new("any", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+            ], Type::Bool),
+            StdModuleFn::new("all", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+            ], Type::Bool),
+            StdModuleFn::new("count_if", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+            ], Type::Int),
+            StdModuleFn::new("fold", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("initial", Type::Int),
+                ("reducer", Type::Function(types::FunctionType { params: vec![Type::Int, Type::String, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
+            ], Type::Int),
+            // Transformation
+            StdModuleFn::new("transform", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("mapper", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            // Filtering
+            StdModuleFn::new("where", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new("reject", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            // Combining
+            StdModuleFn::new("merge", vec![
+                ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new("defaults", vec![
+                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("defs", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new("intersect", vec![
+                ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new("diff", vec![
+                ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            // Conversion
+            StdModuleFn::new("invert", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Map(Box::new(Type::Int), Box::new(Type::String))),
+            StdModuleFn::new("from_arrays", vec![
+                ("keys", Type::Array(Box::new(Type::String))),
+                ("values", Type::Array(Box::new(Type::Int))),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new("from_entries", vec![
+                ("pairs", Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
+            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+        ]
+    }
+
+    fn get_std_submodules(module: &str) -> Option<Vec<&'static str>> {
+        match module {
+            "collections" => Some(vec!["arrays", "maps"]),
+            _ => None,
+        }
+    }
+
+    fn get_std_module_functions_impl(module: &str) -> Option<Vec<StdModuleFn>> {
+        match module {
+            "random" => Some(vec![
+                StdModuleFn::new("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int),
+                StdModuleFn::new("random_float", vec![], Type::Float),
             ]),
+            "io" => Some(vec![
+                StdModuleFn::new("read_key", vec![], Type::Int),
+                StdModuleFn::new("clear_screen", vec![], Type::Unit),
+                StdModuleFn::new("set_cursor", vec![("x", Type::Int), ("y", Type::Int)], Type::Unit),
+                StdModuleFn::new("hide_cursor", vec![], Type::Unit),
+                StdModuleFn::new("show_cursor", vec![], Type::Unit),
+                StdModuleFn::new("terminal_width", vec![], Type::Int),
+                StdModuleFn::new("terminal_height", vec![], Type::Int),
+            ]),
+            "threads" => Some(vec![
+                StdModuleFn::new("join", vec![], Type::Unit),
+                StdModuleFn::generic("open_channel", vec!["T"], vec![("capacity", Type::Int)],
+                    Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
+                StdModuleFn::generic("send", vec!["T"], vec![
+                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
+                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
+                ], Type::Int),
+                StdModuleFn::generic("receive", vec!["T"], vec![
+                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
+                ], Type::Option(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
+                StdModuleFn::generic("close", vec!["T"], vec![
+                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
+                ], Type::Unit),
+            ]),
+            "datetime" => Some(vec![
+                StdModuleFn::new("now_ms", vec![], Type::Int),
+                StdModuleFn::new("now_s", vec![], Type::Int),
+                StdModuleFn::new("year", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("month", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("day", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("hour", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("minute", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("second", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("day_of_week", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("format_date", vec![("timestamp_ms", Type::Int), ("fmt", Type::String)], Type::String),
+            ]),
+            "metrics" => Some(vec![
+                StdModuleFn::new("perf_now", vec![], Type::Int),
+                StdModuleFn::new("elapsed_ms", vec![("start_ns", Type::Int)], Type::Int),
+                StdModuleFn::new("elapsed_us", vec![("start_ns", Type::Int)], Type::Int),
+                StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int),
+            ]),
+            "strings" => Some(vec![
+                StdModuleFn::new("len", vec![("s", Type::String)], Type::Int),
+                StdModuleFn::new("char_at", vec![("s", Type::String), ("index", Type::Int)], Type::Int),
+                StdModuleFn::new("upper", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("lower", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("split", vec![("s", Type::String), ("delim", Type::String)], Type::Array(Box::new(Type::String))),
+                StdModuleFn::new("concat", vec![("arr", Type::Array(Box::new(Type::String))), ("delim", Type::String)], Type::String),
+                StdModuleFn::new("has", vec![("s", Type::String), ("substr", Type::String)], Type::Bool),
+                StdModuleFn::new("starts_with", vec![("s", Type::String), ("prefix", Type::String)], Type::Bool),
+                StdModuleFn::new("ends_with", vec![("s", Type::String), ("suffix", Type::String)], Type::Bool),
+                StdModuleFn::new("replace", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
+                StdModuleFn::new("replace_all", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
+                StdModuleFn::new("ltrim", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("rtrim", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("substr", vec![("s", Type::String), ("start", Type::Int), ("end", Type::Int)], Type::String),
+                StdModuleFn::new("lpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
+                StdModuleFn::new("rpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
+                StdModuleFn::new("repeat", vec![("s", Type::String), ("n", Type::Int)], Type::String),
+                StdModuleFn::new("lines", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
+                StdModuleFn::new("chars", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
+            ]),
+            // Collections module and submodules
+            "collections" => {
+                let mut fns = Self::get_collections_array_functions();
+                fns.extend(Self::get_collections_map_functions());
+                Some(fns)
+            }
+            "collections::arrays" => Some(Self::get_collections_array_functions()),
+            "collections::maps" => Some(Self::get_collections_map_functions()),
             _ => None,
         }
     }
@@ -1181,11 +1305,11 @@ impl<'a> TypeChecker<'a> {
     }
 }
 
-pub fn check(file: &SourceFile, interner: &Rodeo) -> Vec<TypeError> {
+pub fn check(file: &SourceFile, interner: &mut Rodeo) -> Vec<TypeError> {
     check_with_types(file, interner, None).errors
 }
 
-pub fn check_with_types(file: &SourceFile, interner: &Rodeo, source_dir: Option<PathBuf>) -> TypeCheckResult {
+pub fn check_with_types(file: &SourceFile, interner: &mut Rodeo, source_dir: Option<PathBuf>) -> TypeCheckResult {
     let mut checker = TypeChecker::new(interner, source_dir);
     checker.collect_definitions(file);
     checker.validate_interface_implementations();
@@ -1207,11 +1331,11 @@ mod tests {
     use crate::parser::parse;
 
     fn check_source(source: &str) -> Vec<TypeError> {
-        let (tokens, interner) = tokenize(source);
+        let (tokens, mut interner) = tokenize(source);
         let arena = AstArena::new();
         let result = parse(&tokens, source, &arena);
         assert!(result.errors.is_empty(), "Parse errors: {:?}", result.errors);
-        check(&result.ast, &interner)
+        check(&result.ast, &mut interner)
     }
 
     #[test]

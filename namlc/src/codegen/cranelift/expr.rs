@@ -355,6 +355,16 @@ pub fn compile_expression(
                     .resolve(&path_expr.segments.last().unwrap().symbol)
                     .to_string();
 
+                // Build qualified name for builtin lookup (e.g., "array::count", "map::count")
+                // Skip "std" and "collections" prefixes for cleaner lookup names
+                let qualified_name: String = {
+                    let segments: Vec<&str> = path_expr.segments.iter()
+                        .map(|s| ctx.interner.resolve(&s.symbol))
+                        .filter(|&s| s != "std" && s != "collections")
+                        .collect();
+                    segments.join("::")
+                };
+
                 // 1. Check if this function exists in ctx.functions (user-defined or imported)
                 if let Some(&func_id) = ctx.functions.get(&func_name) {
                     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
@@ -388,8 +398,9 @@ pub fn compile_expression(
                     };
                 }
 
-                // 2. Check builtin registry (works for any path length)
-                if let Some(builtin) = super::builtins::lookup_builtin(&func_name) {
+                // 2. Check builtin registry - try qualified name first, then simple name
+                if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name)
+                    .or_else(|| super::builtins::lookup_builtin(&func_name)) {
                     return super::builtins::compile_builtin_call(ctx, builder, builtin, &call.args);
                 }
 

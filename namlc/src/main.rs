@@ -78,7 +78,7 @@ fn run_file(file: &PathBuf, cached: bool) {
 
     let file_name = file.display().to_string();
     let source_file = SourceFile::new(file_name.clone(), source_text.clone());
-    let (tokens, interner) = tokenize(&source_text);
+    let (tokens, mut interner) = tokenize(&source_text);
 
     let arena = AstArena::new();
     let parse_result = parse(&tokens, &source_text, &arena);
@@ -90,7 +90,7 @@ fn run_file(file: &PathBuf, cached: bool) {
     }
 
     let source_dir = std::path::Path::new(&file_name).parent().map(|p| p.to_path_buf());
-    let type_result = check_with_types(&parse_result.ast, &interner, source_dir);
+    let type_result = check_with_types(&parse_result.ast, &mut interner, source_dir);
 
     if !type_result.errors.is_empty() {
         let reporter = DiagnosticReporter::new(&source_file);
@@ -145,7 +145,7 @@ fn check_file(path: &std::path::Path) {
 
     let file_name = path.display().to_string();
     let source_file = SourceFile::new(file_name.clone(), source_text.clone());
-    let (tokens, interner) = tokenize(&source_text);
+    let (tokens, mut interner) = tokenize(&source_text);
 
     let arena = AstArena::new();
     let parse_result = parse(&tokens, &source_text, &arena);
@@ -159,7 +159,7 @@ fn check_file(path: &std::path::Path) {
 
     if !has_errors {
         let source_dir = path.parent().map(|p| p.to_path_buf());
-        let type_errors = check_with_types(&parse_result.ast, &interner, source_dir).errors;
+        let type_errors = check_with_types(&parse_result.ast, &mut interner, source_dir).errors;
 
         if !type_errors.is_empty() {
             let reporter = DiagnosticReporter::new(&source_file);
@@ -196,7 +196,7 @@ fn check_directory(path: &std::path::Path) {
 
             let file_name = file_path.display().to_string();
             let source_file = SourceFile::new(file_name.clone(), source_text.clone());
-            let (tokens, interner) = tokenize(&source_text);
+            let (tokens, mut interner) = tokenize(&source_text);
 
             let arena = AstArena::new();
             let parse_result = parse(&tokens, &source_text, &arena);
@@ -209,7 +209,7 @@ fn check_directory(path: &std::path::Path) {
             }
 
             if !file_has_errors {
-                let type_errors = check(&parse_result.ast, &interner);
+                let type_errors = check(&parse_result.ast, &mut interner);
                 if !type_errors.is_empty() {
                     let reporter = DiagnosticReporter::new(&source_file);
                     reporter.report_type_errors(&type_errors);

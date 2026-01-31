@@ -439,3 +439,79 @@ pub fn compile_sample(
 
     Ok(option_ptr)
 }
+
+pub fn compile_map_lambda_bool(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    closure: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[map, func_ptr, data_ptr]);
+    let result = builder.inst_results(call)[0];
+    Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+}
+
+pub fn compile_map_lambda_int(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    closure: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[map, func_ptr, data_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+pub fn compile_map_lambda_fold(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    initial: Value,
+    closure: Value,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_map_fold")?;
+    let call = builder
+        .ins()
+        .call(func_ref, &[map, initial, func_ptr, data_ptr]);
+    Ok(builder.inst_results(call)[0])
+}
+
+pub fn compile_map_lambda_map(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    closure: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let func_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 0);
+    let data_ptr = builder
+        .ins()
+        .load(cranelift::prelude::types::I64, MemFlags::new(), closure, 8);
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[map, func_ptr, data_ptr]);
+    Ok(builder.inst_results(call)[0])
+}

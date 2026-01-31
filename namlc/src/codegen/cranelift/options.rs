@@ -337,3 +337,127 @@ pub fn compile_option_from_remove_at(
 
     Ok(option_ptr)
 }
+
+pub fn compile_option_from_map_remove(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    key: Value,
+) -> Result<Value, CodegenError> {
+    let option_slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
+    let option_ptr = builder
+        .ins()
+        .stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let found_slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 0));
+    let found_ptr = builder
+        .ins()
+        .stack_addr(cranelift::prelude::types::I64, found_slot, 0);
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_map_remove")?;
+    let call = builder.ins().call(func_ref, &[map, key, found_ptr]);
+    let value = builder.inst_results(call)[0];
+
+    let found_flag = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::new(),
+        found_ptr,
+        0,
+    );
+
+    let found_block = builder.create_block();
+    let not_found_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let was_found = builder.ins().icmp(IntCC::NotEqual, found_flag, zero);
+    builder
+        .ins()
+        .brif(was_found, found_block, &[], not_found_block, &[]);
+
+    builder.switch_to_block(not_found_block);
+    builder.seal_block(not_found_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder
+        .ins()
+        .store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(found_block);
+    builder.seal_block(found_block);
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder
+        .ins()
+        .store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
+}
+
+pub fn compile_option_from_map_first(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    map: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let option_slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
+    let option_ptr = builder
+        .ins()
+        .stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let found_slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 0));
+    let found_ptr = builder
+        .ins()
+        .stack_addr(cranelift::prelude::types::I64, found_slot, 0);
+
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[map, found_ptr]);
+    let value = builder.inst_results(call)[0];
+
+    let found_flag = builder.ins().load(
+        cranelift::prelude::types::I64,
+        MemFlags::new(),
+        found_ptr,
+        0,
+    );
+
+    let found_block = builder.create_block();
+    let not_found_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let was_found = builder.ins().icmp(IntCC::NotEqual, found_flag, zero);
+    builder
+        .ins()
+        .brif(was_found, found_block, &[], not_found_block, &[]);
+
+    builder.switch_to_block(not_found_block);
+    builder.seal_block(not_found_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder
+        .ins()
+        .store(MemFlags::new(), none_tag, option_ptr, 0);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(found_block);
+    builder.seal_block(found_block);
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder
+        .ins()
+        .store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
+}

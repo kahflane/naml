@@ -29,6 +29,7 @@ use super::misc::{
 use super::options::{
     compile_option_from_array_access, compile_option_from_array_get, compile_option_from_index_of,
     compile_option_from_last_index_of, compile_option_from_minmax, compile_option_from_remove_at,
+    compile_option_from_map_remove, compile_option_from_map_first,
 };
 use super::{CompileContext, ARRAY_LEN_OFFSET};
 use crate::ast::Expression;
@@ -153,6 +154,40 @@ pub enum BuiltinStrategy {
     Sample,
 
     // ========================================
+    // Map collection strategies
+    // ========================================
+    /// Get map length (count)
+    MapLength,
+    /// (map, key) -> bool (contains_key)
+    MapContainsKey,
+    /// (map, key) -> option<V> (remove)
+    MapRemove,
+    /// (map) -> unit (clear)
+    MapClear,
+    /// (map) -> array (keys, values)
+    MapExtract(&'static str),
+    /// (map) -> array of pairs (entries)
+    MapEntries,
+    /// (map) -> option<K> or option<V> (first_key, first_value)
+    MapFirstOption(&'static str),
+    /// (map, closure) -> bool (any, all)
+    MapLambdaBool(&'static str),
+    /// (map, closure) -> int (count_if)
+    MapLambdaInt(&'static str),
+    /// (map, initial, closure) -> T (fold)
+    MapLambdaFold,
+    /// (map, closure) -> map (transform, where, reject)
+    MapLambdaMap(&'static str),
+    /// (map, map) -> map (merge, defaults, intersect, diff)
+    MapCombine(&'static str),
+    /// (map) -> map (invert)
+    MapInvert,
+    /// (keys_array, values_array) -> map (from_arrays)
+    MapFromArrays,
+    /// (pairs_array) -> map (from_entries)
+    MapFromEntries,
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -241,6 +276,51 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "fold", strategy: BuiltinStrategy::LambdaFold },
         BuiltinFunction { name: "scan", strategy: BuiltinStrategy::LambdaScan },
         BuiltinFunction { name: "sort_by", strategy: BuiltinStrategy::LambdaSortBy },
+        // Array functions with array:: prefix (for disambiguation with map::*)
+        BuiltinFunction { name: "arrays::count", strategy: BuiltinStrategy::ArrayLength },
+        BuiltinFunction { name: "arrays::clear", strategy: BuiltinStrategy::ArrayClear },
+        BuiltinFunction { name: "arrays::any", strategy: BuiltinStrategy::LambdaBool("naml_array_any") },
+        BuiltinFunction { name: "arrays::all", strategy: BuiltinStrategy::LambdaBool("naml_array_all") },
+        BuiltinFunction { name: "arrays::count_if", strategy: BuiltinStrategy::LambdaInt("naml_array_count_if") },
+        BuiltinFunction { name: "arrays::where", strategy: BuiltinStrategy::LambdaArray("naml_array_filter") },
+        BuiltinFunction { name: "arrays::reject", strategy: BuiltinStrategy::LambdaArray("naml_array_reject") },
+        BuiltinFunction { name: "arrays::fold", strategy: BuiltinStrategy::LambdaFold },
+        BuiltinFunction { name: "arrays::intersect", strategy: BuiltinStrategy::TwoArgPtr("naml_array_intersect") },
+        BuiltinFunction { name: "arrays::diff", strategy: BuiltinStrategy::TwoArgPtr("naml_array_diff") },
+
+        // ========================================
+        // Collections module - map operations
+        // ========================================
+        // Basic operations
+        BuiltinFunction { name: "maps::count", strategy: BuiltinStrategy::MapLength },
+        BuiltinFunction { name: "maps::contains_key", strategy: BuiltinStrategy::MapContainsKey },
+        BuiltinFunction { name: "maps::remove", strategy: BuiltinStrategy::MapRemove },
+        BuiltinFunction { name: "maps::clear", strategy: BuiltinStrategy::MapClear },
+        // Extraction
+        BuiltinFunction { name: "maps::keys", strategy: BuiltinStrategy::MapExtract("naml_map_keys") },
+        BuiltinFunction { name: "maps::values", strategy: BuiltinStrategy::MapExtract("naml_map_values") },
+        BuiltinFunction { name: "maps::entries", strategy: BuiltinStrategy::MapEntries },
+        // Lookup
+        BuiltinFunction { name: "maps::first_key", strategy: BuiltinStrategy::MapFirstOption("naml_map_first_key") },
+        BuiltinFunction { name: "maps::first_value", strategy: BuiltinStrategy::MapFirstOption("naml_map_first_value") },
+        // Lambda-based functions
+        BuiltinFunction { name: "maps::any", strategy: BuiltinStrategy::MapLambdaBool("naml_map_any") },
+        BuiltinFunction { name: "maps::all", strategy: BuiltinStrategy::MapLambdaBool("naml_map_all") },
+        BuiltinFunction { name: "maps::count_if", strategy: BuiltinStrategy::MapLambdaInt("naml_map_count_if") },
+        BuiltinFunction { name: "maps::fold", strategy: BuiltinStrategy::MapLambdaFold },
+        // Transformation
+        BuiltinFunction { name: "maps::transform", strategy: BuiltinStrategy::MapLambdaMap("naml_map_transform") },
+        BuiltinFunction { name: "maps::where", strategy: BuiltinStrategy::MapLambdaMap("naml_map_where") },
+        BuiltinFunction { name: "maps::reject", strategy: BuiltinStrategy::MapLambdaMap("naml_map_reject") },
+        // Combining
+        BuiltinFunction { name: "maps::merge", strategy: BuiltinStrategy::MapCombine("naml_map_merge") },
+        BuiltinFunction { name: "maps::defaults", strategy: BuiltinStrategy::MapCombine("naml_map_defaults") },
+        BuiltinFunction { name: "maps::intersect", strategy: BuiltinStrategy::MapCombine("naml_map_intersect") },
+        BuiltinFunction { name: "maps::diff", strategy: BuiltinStrategy::MapCombine("naml_map_diff") },
+        // Conversion
+        BuiltinFunction { name: "maps::invert", strategy: BuiltinStrategy::MapInvert },
+        BuiltinFunction { name: "maps::from_arrays", strategy: BuiltinStrategy::MapFromArrays },
+        BuiltinFunction { name: "maps::from_entries", strategy: BuiltinStrategy::MapFromEntries },
 
         // ========================================
         // IO module - core I/O operations
@@ -352,6 +432,8 @@ pub fn compile_builtin_call(
         compile_lambda_array_collection, compile_lambda_find, compile_lambda_find_index,
         compile_lambda_find_last, compile_lambda_find_last_index, compile_lambda_fold,
         compile_lambda_scan, compile_lambda_sort_by, compile_sample,
+        compile_map_lambda_bool, compile_map_lambda_int, compile_map_lambda_fold,
+        compile_map_lambda_map,
     };
     use super::print::compile_print_call;
     use super::io::{call_read_line, compile_fmt_call, compile_stderr_call};
@@ -720,6 +802,97 @@ pub fn compile_builtin_call(
 
         BuiltinStrategy::ReadLine => {
             call_read_line(ctx, builder)
+        }
+
+        // ========================================
+        // Map collection strategies
+        // ========================================
+        BuiltinStrategy::MapLength => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_map_count", map)
+        }
+
+        BuiltinStrategy::MapContainsKey => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            let key = compile_expression(ctx, builder, &args[1])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[1])?;
+            call_two_arg_bool_runtime(ctx, builder, "naml_map_contains_key", map, key)
+        }
+
+        BuiltinStrategy::MapRemove => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            let key = compile_expression(ctx, builder, &args[1])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[1])?;
+            compile_option_from_map_remove(ctx, builder, map, key)
+        }
+
+        BuiltinStrategy::MapClear => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_map_clear")?;
+            builder.ins().call(func_ref, &[map]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::MapExtract(runtime_fn) => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, map)
+        }
+
+        BuiltinStrategy::MapEntries => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_map_entries", map)
+        }
+
+        BuiltinStrategy::MapFirstOption(runtime_fn) => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            compile_option_from_map_first(ctx, builder, map, runtime_fn)
+        }
+
+        BuiltinStrategy::MapLambdaBool(runtime_fn) => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_map_lambda_bool(ctx, builder, map, closure, runtime_fn)
+        }
+
+        BuiltinStrategy::MapLambdaInt(runtime_fn) => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_map_lambda_int(ctx, builder, map, closure, runtime_fn)
+        }
+
+        BuiltinStrategy::MapLambdaFold => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            let initial = compile_expression(ctx, builder, &args[1])?;
+            let closure = compile_expression(ctx, builder, &args[2])?;
+            compile_map_lambda_fold(ctx, builder, map, initial, closure)
+        }
+
+        BuiltinStrategy::MapLambdaMap(runtime_fn) => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_map_lambda_map(ctx, builder, map, closure, runtime_fn)
+        }
+
+        BuiltinStrategy::MapCombine(runtime_fn) => {
+            let map_a = compile_expression(ctx, builder, &args[0])?;
+            let map_b = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, runtime_fn, map_a, map_b)
+        }
+
+        BuiltinStrategy::MapInvert => {
+            let map = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_map_invert", map)
+        }
+
+        BuiltinStrategy::MapFromArrays => {
+            let keys = compile_expression(ctx, builder, &args[0])?;
+            let values = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, "naml_map_from_arrays", keys, values)
+        }
+
+        BuiltinStrategy::MapFromEntries => {
+            let pairs = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_map_from_entries", pairs)
         }
     }
 }
