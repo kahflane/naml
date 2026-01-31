@@ -1,0 +1,12 @@
+use std;
+
+fn main() {
+  var nums: [int] = [1, 2, 3, 4, 5];
+  println("\nAccess Functions:");
+  var f: option<int> = collections::first(nums);
+  var l: option<int> = collections::last(nums);
+  print("first: ");
+  println(f!);
+  print("last: ");
+  println(l!);
+}

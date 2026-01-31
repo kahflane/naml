@@ -4,6 +4,14 @@
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/namlc/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/namlc/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-collections/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-datetime/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-io/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-metrics/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-random/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-strings/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/std/naml-std-threads/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

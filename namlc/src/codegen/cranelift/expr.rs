@@ -1,0 +1,2052 @@
+use crate::ast::{BinaryOp, Expression, Literal, LiteralExpr, NamlType};
+use crate::codegen::cranelift::array::{call_array_clear_runtime, call_array_contains_bool, call_array_fill_runtime, call_array_push, compile_array_literal, compile_direct_array_get_or_panic};
+use crate::codegen::cranelift::literal::compile_literal;
+use crate::codegen::cranelift::map::{compile_direct_map_get_or_panic, compile_map_literal};
+use crate::codegen::cranelift::method::compile_method_call;
+use crate::codegen::cranelift::misc::{call_datetime_format, call_int_runtime, call_one_arg_int_runtime, call_one_arg_ptr_runtime, call_random, call_random_float, call_sleep, call_three_arg_ptr_runtime, call_two_arg_bool_runtime, call_two_arg_int_runtime, call_two_arg_ptr_runtime, call_two_arg_runtime, call_void_runtime, call_wait_all};
+use crate::codegen::cranelift::print::compile_print_call;
+use crate::codegen::cranelift::stmt::compile_statement;
+use crate::codegen::cranelift::{CompileContext, ARRAY_LEN_OFFSET};
+use crate::codegen::CodegenError;
+use crate::source::Spanned;
+use crate::typechecker::Type;
+use cranelift::prelude::*;
+use cranelift_module::Module;
+use crate::codegen::cranelift::binop::{compile_binary_op, compile_unary_op};
+use crate::codegen::cranelift::channels::{call_channel_close, call_channel_new, call_channel_receive, call_channel_send};
+use crate::codegen::cranelift::exceptions::{call_exception_check, call_exception_clear, call_exception_get};
+use crate::codegen::cranelift::externs::compile_extern_call;
+use crate::codegen::cranelift::io::{call_read_key, call_read_line, compile_fmt_call, compile_stderr_call};
+use crate::codegen::cranelift::lambda::{compile_lambda_array_collection, compile_lambda_bool_collection, compile_lambda_find, compile_lambda_find_index, compile_lambda_fold, compile_lambda_int_collection, compile_lambda_sort_by};
+use crate::codegen::cranelift::options::{compile_option_from_array_access, compile_option_from_array_get, compile_option_from_index_of, compile_option_from_map_get, compile_option_from_minmax};
+use crate::codegen::cranelift::runtime::{call_alloc_closure_data, rt_func_ref};
+use crate::codegen::cranelift::spawns::call_spawn_closure;
+use crate::codegen::cranelift::strings::{call_bytes_to_string, call_float_to_string, call_int_to_string, call_string_equals, call_string_from_cstr, call_string_to_bytes, call_string_to_float, call_string_to_int, ensure_naml_string};
+use crate::codegen::cranelift::structs::{call_struct_get_field, call_struct_new, call_struct_set_field};
+
+pub fn compile_expression(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    expr: &Expression<'_>,
+) -> Result<Value, CodegenError> {
+    match expr {
+        Expression::Literal(lit_expr) => compile_literal(ctx, builder, &lit_expr.value),
+
+        Expression::Identifier(ident) => {
+            let name = ctx.interner.resolve(&ident.ident.symbol).to_string();
+            if let Some(&var) = ctx.variables.get(&name) {
+                Ok(builder.use_var(var))
+            } else if let Some(&func_id) = ctx.functions.get(&name) {
+                let ptr_type = cranelift::prelude::types::I64;
+                let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+                let func_addr = builder.ins().func_addr(ptr_type, func_ref);
+
+                let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    24,
+                    0,
+                ));
+                let slot_addr = builder.ins().stack_addr(ptr_type, slot, 0);
+
+                builder
+                    .ins()
+                    .store(MemFlags::new(), func_addr, slot_addr, 0);
+
+                let null_ptr = builder.ins().iconst(ptr_type, 0);
+                builder.ins().store(MemFlags::new(), null_ptr, slot_addr, 8);
+
+                builder
+                    .ins()
+                    .store(MemFlags::new(), null_ptr, slot_addr, 16);
+
+                Ok(slot_addr)
+            } else {
+                Err(CodegenError::JitCompile(format!(
+                    "Undefined variable: {}",
+                    name
+                )))
+            }
+        }
+
+        Expression::Path(path_expr) => {
+            // Handle enum variant access: EnumType::Variant
+            if path_expr.segments.len() == 2 {
+                let enum_name = ctx
+                    .interner
+                    .resolve(&path_expr.segments[0].symbol)
+                    .to_string();
+                let variant_name = ctx
+                    .interner
+                    .resolve(&path_expr.segments[1].symbol)
+                    .to_string();
+
+                if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
+                    && let Some(variant) = enum_def.variants.iter().find(|v| v.name == variant_name)
+                {
+                    // Allocate stack slot and set tag
+                    let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        enum_def.size as u32,
+                        3,
+                    ));
+                    let slot_addr =
+                        builder
+                            .ins()
+                            .stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+                    let tag_val = builder
+                        .ins()
+                        .iconst(cranelift::prelude::types::I64, variant.tag as i64);
+                    builder.ins().store(MemFlags::new(), tag_val, slot_addr, 0);
+
+                    return Ok(slot_addr);
+                }
+            }
+
+            Err(CodegenError::Unsupported(format!(
+                "Path expression not supported: {:?}",
+                path_expr
+                    .segments
+                    .iter()
+                    .map(|s| ctx.interner.resolve(&s.symbol))
+                    .collect::<Vec<_>>()
+            )))
+        }
+
+        Expression::Binary(bin) => {
+            if bin.op == BinaryOp::NullCoalesce {
+                let lhs = compile_expression(ctx, builder, bin.left)?;
+
+                // Create blocks for branching
+                let some_block = builder.create_block();
+                let none_block = builder.create_block();
+                let merge_block = builder.create_block();
+
+                // Add block parameter for the result
+                builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+                // Load the tag from offset 0 of the option struct
+                let tag =
+                    builder
+                        .ins()
+                        .load(cranelift::prelude::types::I32, MemFlags::new(), lhs, 0);
+                let zero_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+                let is_none = builder.ins().icmp(IntCC::Equal, tag, zero_tag);
+                builder
+                    .ins()
+                    .brif(is_none, none_block, &[], some_block, &[]);
+
+                // Some block: extract the value from offset 8
+                builder.switch_to_block(some_block);
+                builder.seal_block(some_block);
+                let inner_value =
+                    builder
+                        .ins()
+                        .load(cranelift::prelude::types::I64, MemFlags::new(), lhs, 8);
+                builder.ins().jump(merge_block, &[inner_value]);
+
+                // None block: evaluate and use rhs
+                builder.switch_to_block(none_block);
+                builder.seal_block(none_block);
+                let rhs = compile_expression(ctx, builder, bin.right)?;
+                builder.ins().jump(merge_block, &[rhs]);
+
+                // Merge block: result is block parameter
+                builder.switch_to_block(merge_block);
+                builder.seal_block(merge_block);
+                let result = builder.block_params(merge_block)[0];
+                return Ok(result);
+            }
+
+            // Check if this is a string comparison (Eq/NotEq)
+            let lhs_type = ctx.annotations.get_type(bin.left.span());
+            if matches!(lhs_type, Some(Type::String))
+                && matches!(bin.op, BinaryOp::Eq | BinaryOp::NotEq)
+            {
+                let lhs = compile_expression(ctx, builder, bin.left)?;
+                let rhs = compile_expression(ctx, builder, bin.right)?;
+                // Convert lhs to NamlString if it's a string literal
+                let lhs_str = if matches!(
+                    bin.left,
+                    Expression::Literal(LiteralExpr {
+                        value: Literal::String(_),
+                        ..
+                    })
+                ) {
+                    call_string_from_cstr(ctx, builder, lhs)?
+                } else {
+                    lhs
+                };
+                // Convert rhs to NamlString if it's a string literal
+                let rhs_str = if matches!(
+                    bin.right,
+                    Expression::Literal(LiteralExpr {
+                        value: Literal::String(_),
+                        ..
+                    })
+                ) {
+                    call_string_from_cstr(ctx, builder, rhs)?
+                } else {
+                    rhs
+                };
+                let result = call_string_equals(ctx, builder, lhs_str, rhs_str)?;
+                if bin.op == BinaryOp::NotEq {
+                    // Negate the result
+                    let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                    return Ok(builder.ins().bxor(result, one));
+                }
+                return Ok(result);
+            }
+            let lhs = compile_expression(ctx, builder, bin.left)?;
+            let rhs = compile_expression(ctx, builder, bin.right)?;
+            compile_binary_op(builder, &bin.op, lhs, rhs)
+        }
+
+        Expression::Unary(unary) => {
+            let operand = compile_expression(ctx, builder, unary.operand)?;
+            compile_unary_op(builder, &unary.op, operand)
+        }
+
+        Expression::Call(call) => {
+            if let Expression::Identifier(ident) = call.callee {
+                let func_name = ctx.interner.resolve(&ident.ident.symbol);
+
+                let actual_func_name =
+                    if let Some(mangled_name) = ctx.annotations.get_call_instantiation(call.span) {
+                        mangled_name.as_str()
+                    } else {
+                        func_name
+                    };
+
+                let is_user_defined = ctx.functions.contains_key(actual_func_name);
+
+                if !is_user_defined {
+                    match func_name {
+                        "print" | "println" => {
+                            return compile_print_call(
+                                ctx,
+                                builder,
+                                &call.args,
+                                func_name == "println",
+                            );
+                        }
+                        "sleep" => {
+                            if call.args.is_empty() {
+                                return Err(CodegenError::JitCompile(
+                                    "sleep requires milliseconds argument".to_string(),
+                                ));
+                            }
+                            let ms = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_sleep(ctx, builder, ms);
+                        }
+                        "random" => {
+                            if call.args.len() != 2 {
+                                return Err(CodegenError::JitCompile(
+                                    "random requires min and max arguments".to_string(),
+                                ));
+                            }
+                            let min_val = compile_expression(ctx, builder, &call.args[0])?;
+                            let max_val = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_random(ctx, builder, min_val, max_val);
+                        }
+                        "random_float" => {
+                            return call_random_float(ctx, builder);
+                        }
+                        "join" => {
+                            return call_wait_all(ctx, builder);
+                        }
+                        "open_channel" => {
+                            let capacity = if call.args.is_empty() {
+                                builder.ins().iconst(cranelift::prelude::types::I64, 1)
+                            } else {
+                                compile_expression(ctx, builder, &call.args[0])?
+                            };
+                            return call_channel_new(ctx, builder, capacity);
+                        }
+                        // std::threads channel functions (Go-style)
+                        "send" => {
+                            let ch = compile_expression(ctx, builder, &call.args[0])?;
+                            let val = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_channel_send(ctx, builder, ch, val);
+                        }
+                        "receive" => {
+                            let ch = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_channel_receive(ctx, builder, ch);
+                        }
+                        "close" => {
+                            let ch = compile_expression(ctx, builder, &call.args[0])?;
+                            let _ = call_channel_close(ctx, builder, ch)?;
+                            return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
+                        }
+                        "warn" | "error" | "panic" => {
+                            return compile_stderr_call(ctx, builder, &call.args, func_name);
+                        }
+                        "fmt" => {
+                            return compile_fmt_call(ctx, builder, &call.args);
+                        }
+                        "read_line" => {
+                            return call_read_line(ctx, builder);
+                        }
+                        "read_key" => {
+                            return call_read_key(ctx, builder);
+                        }
+                        "clear_screen" => {
+                            return call_void_runtime(ctx, builder, "naml_clear_screen");
+                        }
+                        "set_cursor" => {
+                            let x = compile_expression(ctx, builder, &call.args[0])?;
+                            let y = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_two_arg_runtime(ctx, builder, "naml_set_cursor", x, y);
+                        }
+                        "hide_cursor" => {
+                            return call_void_runtime(ctx, builder, "naml_hide_cursor");
+                        }
+                        "show_cursor" => {
+                            return call_void_runtime(ctx, builder, "naml_show_cursor");
+                        }
+                        "terminal_width" => {
+                            return call_int_runtime(ctx, builder, "naml_terminal_width");
+                        }
+                        "terminal_height" => {
+                            return call_int_runtime(ctx, builder, "naml_terminal_height");
+                        }
+                        // Datetime functions
+                        "now_ms" => {
+                            return call_int_runtime(ctx, builder, "naml_datetime_now_ms");
+                        }
+                        "now_s" => {
+                            return call_int_runtime(ctx, builder, "naml_datetime_now_s");
+                        }
+                        "year" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_datetime_year",
+                                ts,
+                            );
+                        }
+                        "month" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_datetime_month",
+                                ts,
+                            );
+                        }
+                        "day" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(ctx, builder, "naml_datetime_day", ts);
+                        }
+                        "hour" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_datetime_hour",
+                                ts,
+                            );
+                        }
+                        "minute" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_datetime_minute",
+                                ts,
+                            );
+                        }
+                        "second" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_datetime_second",
+                                ts,
+                            );
+                        }
+                        "day_of_week" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_datetime_day_of_week",
+                                ts,
+                            );
+                        }
+                        "format_date" => {
+                            let ts = compile_expression(ctx, builder, &call.args[0])?;
+                            let fmt = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_datetime_format(ctx, builder, ts, fmt);
+                        }
+                        // Metrics functions
+                        "perf_now" => {
+                            return call_int_runtime(ctx, builder, "naml_metrics_perf_now");
+                        }
+                        "elapsed_ms" => {
+                            let start = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_metrics_elapsed_ms",
+                                start,
+                            );
+                        }
+                        "elapsed_us" => {
+                            let start = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_metrics_elapsed_us",
+                                start,
+                            );
+                        }
+                        "elapsed_ns" => {
+                            let start = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_metrics_elapsed_ns",
+                                start,
+                            );
+                        }
+                        "len" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            return call_one_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_char_len",
+                                s,
+                            );
+                        }
+                        "char_at" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let index = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_two_arg_int_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_char_at",
+                                s,
+                                index,
+                            );
+                        }
+                        // std::strings case functions
+                        "upper" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(ctx, builder, "naml_string_upper", s);
+                        }
+                        "lower" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(ctx, builder, "naml_string_lower", s);
+                        }
+                        "split" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let delim = compile_expression(ctx, builder, &call.args[1])?;
+                            let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
+                            return call_two_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_split",
+                                s,
+                                delim,
+                            );
+                        }
+                        "has" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let substr = compile_expression(ctx, builder, &call.args[1])?;
+                            let substr = ensure_naml_string(ctx, builder, substr, &call.args[1])?;
+                            return call_two_arg_bool_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_contains",
+                                s,
+                                substr,
+                            );
+                        }
+                        "starts_with" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let prefix = compile_expression(ctx, builder, &call.args[1])?;
+                            let prefix = ensure_naml_string(ctx, builder, prefix, &call.args[1])?;
+                            return call_two_arg_bool_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_starts_with",
+                                s,
+                                prefix,
+                            );
+                        }
+                        "ends_with" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let suffix = compile_expression(ctx, builder, &call.args[1])?;
+                            let suffix = ensure_naml_string(ctx, builder, suffix, &call.args[1])?;
+                            return call_two_arg_bool_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_ends_with",
+                                s,
+                                suffix,
+                            );
+                        }
+                        "replace" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let old = compile_expression(ctx, builder, &call.args[1])?;
+                            let old = ensure_naml_string(ctx, builder, old, &call.args[1])?;
+                            let new = compile_expression(ctx, builder, &call.args[2])?;
+                            let new = ensure_naml_string(ctx, builder, new, &call.args[2])?;
+                            return call_three_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_replace",
+                                s,
+                                old,
+                                new,
+                            );
+                        }
+                        "replace_all" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let old = compile_expression(ctx, builder, &call.args[1])?;
+                            let old = ensure_naml_string(ctx, builder, old, &call.args[1])?;
+                            let new = compile_expression(ctx, builder, &call.args[2])?;
+                            let new = ensure_naml_string(ctx, builder, new, &call.args[2])?;
+                            return call_three_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_replace_all",
+                                s,
+                                old,
+                                new,
+                            );
+                        }
+                        "concat" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let delim = compile_expression(ctx, builder, &call.args[1])?;
+                            let delim = ensure_naml_string(ctx, builder, delim, &call.args[1])?;
+                            return call_two_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_join",
+                                arr,
+                                delim,
+                            );
+                        }
+                        "ltrim" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(ctx, builder, "naml_string_ltrim", s);
+                        }
+                        "rtrim" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(ctx, builder, "naml_string_rtrim", s);
+                        }
+                        "substr" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let start = compile_expression(ctx, builder, &call.args[1])?;
+                            let end = compile_expression(ctx, builder, &call.args[2])?;
+                            return call_three_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_substr",
+                                s,
+                                start,
+                                end,
+                            );
+                        }
+                        "lpad" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let len = compile_expression(ctx, builder, &call.args[1])?;
+                            let pad_char = compile_expression(ctx, builder, &call.args[2])?;
+                            let pad_char =
+                                ensure_naml_string(ctx, builder, pad_char, &call.args[2])?;
+                            return call_three_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_lpad",
+                                s,
+                                len,
+                                pad_char,
+                            );
+                        }
+                        "rpad" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let len = compile_expression(ctx, builder, &call.args[1])?;
+                            let pad_char = compile_expression(ctx, builder, &call.args[2])?;
+                            let pad_char =
+                                ensure_naml_string(ctx, builder, pad_char, &call.args[2])?;
+                            return call_three_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_rpad",
+                                s,
+                                len,
+                                pad_char,
+                            );
+                        }
+                        "repeat" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            let n = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_two_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_string_repeat",
+                                s,
+                                n,
+                            );
+                        }
+                        "lines" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(ctx, builder, "naml_string_lines", s);
+                        }
+                        "chars" => {
+                            let s = compile_expression(ctx, builder, &call.args[0])?;
+                            let s = ensure_naml_string(ctx, builder, s, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(ctx, builder, "naml_string_chars", s);
+                        }
+                        "count" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let len = builder.ins().load(
+                                cranelift::prelude::types::I64,
+                                MemFlags::trusted(),
+                                arr,
+                                ARRAY_LEN_OFFSET,
+                            );
+                            return Ok(len);
+                        }
+                        "push" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let val = compile_expression(ctx, builder, &call.args[1])?;
+                            call_array_push(ctx, builder, arr, val)?;
+                            return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
+                        }
+                        "pop" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return compile_option_from_array_access(
+                                ctx,
+                                builder,
+                                arr,
+                                "naml_array_pop",
+                            );
+                        }
+                        "shift" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return compile_option_from_array_access(
+                                ctx,
+                                builder,
+                                arr,
+                                "naml_array_shift",
+                            );
+                        }
+                        "fill" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let val = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_array_fill_runtime(ctx, builder, arr, val);
+                        }
+                        "clear" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_array_clear_runtime(ctx, builder, arr);
+                        }
+                        "get" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let index = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_option_from_array_get(ctx, builder, arr, index);
+                        }
+                        // std::collections access functions
+                        "first" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return compile_option_from_array_access(
+                                ctx,
+                                builder,
+                                arr,
+                                "naml_array_first",
+                            );
+                        }
+                        "last" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return compile_option_from_array_access(
+                                ctx,
+                                builder,
+                                arr,
+                                "naml_array_last",
+                            );
+                        }
+                        "sum" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_int_runtime(ctx, builder, "naml_array_sum", arr);
+                        }
+                        "min" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return compile_option_from_minmax(
+                                ctx,
+                                builder,
+                                arr,
+                                "naml_array_min",
+                                true,
+                            );
+                        }
+                        "max" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return compile_option_from_minmax(
+                                ctx,
+                                builder,
+                                arr,
+                                "naml_array_max",
+                                false,
+                            );
+                        }
+                        "reversed" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_array_reversed",
+                                arr,
+                            );
+                        }
+                        "take" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let n = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_two_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_array_take",
+                                arr,
+                                n,
+                            );
+                        }
+                        "drop" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let n = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_two_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_array_drop",
+                                arr,
+                                n,
+                            );
+                        }
+                        "slice" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let start = compile_expression(ctx, builder, &call.args[1])?;
+                            let end = compile_expression(ctx, builder, &call.args[2])?;
+                            return call_three_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_array_slice",
+                                arr,
+                                start,
+                                end,
+                            );
+                        }
+                        "index_of" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let val = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_option_from_index_of(ctx, builder, arr, val);
+                        }
+                        "contains" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let val = compile_expression(ctx, builder, &call.args[1])?;
+                            return call_array_contains_bool(ctx, builder, arr, val);
+                        }
+                        // Lambda-based collection functions
+                        "any" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_bool_collection(
+                                ctx,
+                                builder,
+                                arr,
+                                closure,
+                                "naml_array_any",
+                            );
+                        }
+                        "all" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_bool_collection(
+                                ctx,
+                                builder,
+                                arr,
+                                closure,
+                                "naml_array_all",
+                            );
+                        }
+                        "count_if" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_int_collection(
+                                ctx,
+                                builder,
+                                arr,
+                                closure,
+                                "naml_array_count_if",
+                            );
+                        }
+                        "apply" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_array_collection(
+                                ctx,
+                                builder,
+                                arr,
+                                closure,
+                                "naml_array_map",
+                            );
+                        }
+                        "where" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_array_collection(
+                                ctx,
+                                builder,
+                                arr,
+                                closure,
+                                "naml_array_filter",
+                            );
+                        }
+                        "find" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_find(ctx, builder, arr, closure);
+                        }
+                        "find_index" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_find_index(ctx, builder, arr, closure);
+                        }
+                        "fold" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let initial = compile_expression(ctx, builder, &call.args[1])?;
+                            let closure = compile_expression(ctx, builder, &call.args[2])?;
+                            return compile_lambda_fold(ctx, builder, arr, initial, closure);
+                        }
+                        "flatten" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(
+                                ctx,
+                                builder,
+                                "naml_array_flatten",
+                                arr,
+                            );
+                        }
+                        "sort" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            return call_one_arg_ptr_runtime(ctx, builder, "naml_array_sort", arr);
+                        }
+                        "sort_by" => {
+                            let arr = compile_expression(ctx, builder, &call.args[0])?;
+                            let closure = compile_expression(ctx, builder, &call.args[1])?;
+                            return compile_lambda_sort_by(ctx, builder, arr, closure);
+                        }
+                        _ => {}
+                    }
+                } // end if !is_user_defined
+
+                // Check for normal (naml) function
+                if let Some(&func_id) = ctx.functions.get(actual_func_name) {
+                    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+
+                    let closure_data = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let mut args = vec![closure_data];
+
+                    for arg in &call.args {
+                        let mut val = compile_expression(ctx, builder, arg)?;
+                        if matches!(
+                            arg,
+                            Expression::Literal(LiteralExpr {
+                                value: Literal::String(_),
+                                ..
+                            })
+                        ) {
+                            val = call_string_from_cstr(ctx, builder, val)?;
+                        }
+                        args.push(val);
+                    }
+
+                    let call_inst = builder.ins().call(func_ref, &args);
+                    let results = builder.inst_results(call_inst);
+
+                    if results.is_empty() {
+                        Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+                    } else {
+                        Ok(results[0])
+                    }
+                }
+                // Check for extern function
+                else if let Some(extern_fn) = ctx.extern_fns.get(func_name).cloned() {
+                    compile_extern_call(ctx, builder, &extern_fn, &call.args)
+                }
+                // Check for closure (lambda) variable
+                else if let Some(&var) = ctx.variables.get(func_name) {
+                    // This is a closure call - load the closure struct
+                    let closure_ptr = builder.use_var(var);
+
+                    // Load function pointer from offset 0
+                    let func_ptr = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        closure_ptr,
+                        0,
+                    );
+
+                    // Load data pointer from offset 8
+                    let data_ptr = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        closure_ptr,
+                        8,
+                    );
+
+                    // Build signature for indirect call: (closure_data_ptr, ...args) -> i64
+                    let mut sig = ctx.module.make_signature();
+                    sig.params
+                        .push(AbiParam::new(cranelift::prelude::types::I64)); // closure data
+                    for _ in &call.args {
+                        sig.params
+                            .push(AbiParam::new(cranelift::prelude::types::I64));
+                    }
+                    sig.returns
+                        .push(AbiParam::new(cranelift::prelude::types::I64));
+
+                    let sig_ref = builder.import_signature(sig);
+
+                    // Build arguments: first is data_ptr, then actual args
+                    let mut args = vec![data_ptr];
+                    for arg in &call.args {
+                        args.push(compile_expression(ctx, builder, arg)?);
+                    }
+
+                    // Indirect call through function pointer
+                    let call_inst = builder.ins().call_indirect(sig_ref, func_ptr, &args);
+                    let results = builder.inst_results(call_inst);
+
+                    if results.is_empty() {
+                        Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+                    } else {
+                        Ok(results[0])
+                    }
+                }
+                // Check for exception constructor: ExceptionType("message")
+                else if ctx.struct_defs.contains_key(func_name) {
+                    // Exception constructor - allocate on heap (exceptions outlive stack frames)
+                    let struct_def = ctx.struct_defs.get(func_name).unwrap();
+                    let num_fields = struct_def.fields.len();
+                    // Exception has implicit message field + defined fields
+                    // Total size: 8 bytes for message pointer + 8 bytes per field
+                    let size = 8 + (num_fields * 8);
+
+                    // Allocate on heap since exceptions can escape the current stack frame
+                    let size_val = builder
+                        .ins()
+                        .iconst(cranelift::prelude::types::I64, size as i64);
+                    let exception_ptr = call_alloc_closure_data(ctx, builder, size_val)?;
+
+                    // Store message string at offset 0
+                    if !call.args.is_empty() {
+                        let mut message = compile_expression(ctx, builder, &call.args[0])?;
+                        // Convert string literal to NamlString
+                        if matches!(
+                            &call.args[0],
+                            Expression::Literal(LiteralExpr {
+                                value: Literal::String(_),
+                                ..
+                            })
+                        ) {
+                            message = call_string_from_cstr(ctx, builder, message)?;
+                        }
+                        builder
+                            .ins()
+                            .store(MemFlags::new(), message, exception_ptr, 0);
+                    }
+
+                    Ok(exception_ptr)
+                } else {
+                    Err(CodegenError::JitCompile(format!(
+                        "Unknown function: {}",
+                        func_name
+                    )))
+                }
+            }
+            // Check for std::module::function() paths or enum variant constructor
+            else if let Expression::Path(path_expr) = call.callee {
+                // Handle std::module::function() paths
+                if path_expr.segments.len() >= 3 {
+                    let first = ctx.interner.resolve(&path_expr.segments[0].symbol);
+                    if first == "std" {
+                        let module_name = ctx.interner.resolve(&path_expr.segments[1].symbol);
+                        let func_name = ctx.interner.resolve(&path_expr.segments[2].symbol);
+
+                        match (module_name, func_name) {
+                            ("threads", "join") => {
+                                return call_wait_all(ctx, builder);
+                            }
+                            ("threads", "open_channel") => {
+                                let capacity = if call.args.is_empty() {
+                                    builder.ins().iconst(cranelift::prelude::types::I64, 1)
+                                } else {
+                                    compile_expression(ctx, builder, &call.args[0])?
+                                };
+                                return call_channel_new(ctx, builder, capacity);
+                            }
+                            ("threads", "send") => {
+                                let ch = compile_expression(ctx, builder, &call.args[0])?;
+                                let val = compile_expression(ctx, builder, &call.args[1])?;
+                                return call_channel_send(ctx, builder, ch, val);
+                            }
+                            ("threads", "receive") => {
+                                let ch = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_channel_receive(ctx, builder, ch);
+                            }
+                            ("threads", "close") => {
+                                let ch = compile_expression(ctx, builder, &call.args[0])?;
+                                let _ = call_channel_close(ctx, builder, ch)?;
+                                return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
+                            }
+                            ("random", "random") => {
+                                let min_val = compile_expression(ctx, builder, &call.args[0])?;
+                                let max_val = compile_expression(ctx, builder, &call.args[1])?;
+                                return call_random(ctx, builder, min_val, max_val);
+                            }
+                            ("random", "random_float") => {
+                                return call_random_float(ctx, builder);
+                            }
+                            ("io", "read_key") => {
+                                return call_read_key(ctx, builder);
+                            }
+                            ("io", "clear_screen") => {
+                                return call_void_runtime(ctx, builder, "naml_clear_screen");
+                            }
+                            ("io", "set_cursor") => {
+                                let x = compile_expression(ctx, builder, &call.args[0])?;
+                                let y = compile_expression(ctx, builder, &call.args[1])?;
+                                return call_two_arg_runtime(ctx, builder, "naml_set_cursor", x, y);
+                            }
+                            ("io", "hide_cursor") => {
+                                return call_void_runtime(ctx, builder, "naml_hide_cursor");
+                            }
+                            ("io", "show_cursor") => {
+                                return call_void_runtime(ctx, builder, "naml_show_cursor");
+                            }
+                            ("io", "terminal_width") => {
+                                return call_int_runtime(ctx, builder, "naml_terminal_width");
+                            }
+                            ("io", "terminal_height") => {
+                                return call_int_runtime(ctx, builder, "naml_terminal_height");
+                            }
+                            ("datetime", "now_ms") => {
+                                return call_int_runtime(ctx, builder, "naml_datetime_now_ms");
+                            }
+                            ("datetime", "now_s") => {
+                                return call_int_runtime(ctx, builder, "naml_datetime_now_s");
+                            }
+                            ("datetime", "year") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_datetime_year",
+                                    ts,
+                                );
+                            }
+                            ("datetime", "month") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_datetime_month",
+                                    ts,
+                                );
+                            }
+                            ("datetime", "day") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_datetime_day",
+                                    ts,
+                                );
+                            }
+                            ("datetime", "hour") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_datetime_hour",
+                                    ts,
+                                );
+                            }
+                            ("datetime", "minute") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_datetime_minute",
+                                    ts,
+                                );
+                            }
+                            ("datetime", "second") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_datetime_second",
+                                    ts,
+                                );
+                            }
+                            ("datetime", "day_of_week") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_datetime_day_of_week",
+                                    ts,
+                                );
+                            }
+                            ("datetime", "format_date") => {
+                                let ts = compile_expression(ctx, builder, &call.args[0])?;
+                                let fmt = compile_expression(ctx, builder, &call.args[1])?;
+                                return call_datetime_format(ctx, builder, ts, fmt);
+                            }
+                            ("metrics", "perf_now") => {
+                                return call_int_runtime(ctx, builder, "naml_metrics_perf_now");
+                            }
+                            ("metrics", "elapsed_ms") => {
+                                let start = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_metrics_elapsed_ms",
+                                    start,
+                                );
+                            }
+                            ("metrics", "elapsed_us") => {
+                                let start = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_metrics_elapsed_us",
+                                    start,
+                                );
+                            }
+                            ("metrics", "elapsed_ns") => {
+                                let start = compile_expression(ctx, builder, &call.args[0])?;
+                                return call_one_arg_int_runtime(
+                                    ctx,
+                                    builder,
+                                    "naml_metrics_elapsed_ns",
+                                    start,
+                                );
+                            }
+                            _ => {
+                                return Err(CodegenError::Unsupported(format!(
+                                    "Unknown std function: std::{}::{}. Try importing it with 'use std::{}::{}' first.",
+                                    module_name, func_name, module_name, func_name
+                                )));
+                            }
+                        }
+                    }
+                }
+
+                // Check for enum variant constructor: EnumType::Variant(data)
+                if path_expr.segments.len() == 2 {
+                    let enum_name = ctx
+                        .interner
+                        .resolve(&path_expr.segments[0].symbol)
+                        .to_string();
+                    let variant_name = ctx
+                        .interner
+                        .resolve(&path_expr.segments[1].symbol)
+                        .to_string();
+
+                    if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
+                        && let Some(variant) =
+                        enum_def.variants.iter().find(|v| v.name == variant_name)
+                    {
+                        // Allocate stack slot for enum
+                        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            enum_def.size as u32,
+                            0,
+                        ));
+                        let slot_addr =
+                            builder
+                                .ins()
+                                .stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+                        // Store tag
+                        let tag_val = builder
+                            .ins()
+                            .iconst(cranelift::prelude::types::I64, variant.tag as i64);
+                        builder.ins().store(MemFlags::new(), tag_val, slot_addr, 0);
+
+                        // Store data fields
+                        for (i, arg) in call.args.iter().enumerate() {
+                            let mut arg_val = compile_expression(ctx, builder, arg)?;
+                            // Check if argument is a string type - if so, convert C string to NamlString
+                            if let Some(Type::String) = ctx.annotations.get_type(arg.span()) {
+                                // For string literals, convert to NamlString
+                                if matches!(
+                                    arg,
+                                    Expression::Literal(LiteralExpr {
+                                        value: Literal::String(_),
+                                        ..
+                                    })
+                                ) {
+                                    arg_val = call_string_from_cstr(ctx, builder, arg_val)?;
+                                }
+                            }
+                            let offset = (variant.data_offset + i * 8) as i32;
+                            builder
+                                .ins()
+                                .store(MemFlags::new(), arg_val, slot_addr, offset);
+                        }
+
+                        return Ok(slot_addr);
+                    }
+                }
+
+                Err(CodegenError::Unsupported(format!(
+                    "Unknown path call: {:?}",
+                    path_expr
+                        .segments
+                        .iter()
+                        .map(|s| ctx.interner.resolve(&s.symbol))
+                        .collect::<Vec<_>>()
+                )))
+            } else {
+                Err(CodegenError::Unsupported(
+                    "Indirect function calls not yet supported".to_string(),
+                ))
+            }
+        }
+
+        Expression::Grouped(grouped) => compile_expression(ctx, builder, grouped.inner),
+
+        Expression::Block(block) => {
+            for stmt in &block.statements {
+                compile_statement(ctx, builder, stmt)?;
+                if ctx.block_terminated {
+                    let unreachable_block = builder.create_block();
+                    builder.switch_to_block(unreachable_block);
+                    builder.seal_block(unreachable_block);
+                    let dummy = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    builder
+                        .ins()
+                        .trap(cranelift::prelude::TrapCode::unwrap_user(1));
+                    return Ok(dummy);
+                }
+            }
+            if let Some(tail) = &block.tail {
+                compile_expression(ctx, builder, tail)
+            } else {
+                Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+            }
+        }
+
+        Expression::Array(arr_expr) => compile_array_literal(ctx, builder, &arr_expr.elements),
+
+        Expression::Map(map_expr) => compile_map_literal(ctx, builder, &map_expr.entries),
+
+        Expression::Index(index_expr) => {
+            let base = compile_expression(ctx, builder, index_expr.base)?;
+
+            // Indexing returns option<T> for safety (none if out of bounds / key not found)
+            if let Expression::Literal(LiteralExpr {
+                                           value: Literal::String(_),
+                                           ..
+                                       }) = index_expr.index
+            {
+                let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
+                let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
+                compile_option_from_map_get(ctx, builder, base, naml_str)
+            } else {
+                let index = compile_expression(ctx, builder, index_expr.index)?;
+                compile_option_from_array_get(ctx, builder, base, index)
+            }
+        }
+
+        Expression::MethodCall(method_call) => {
+            let method_name = ctx.interner.resolve(&method_call.method.symbol);
+            compile_method_call(
+                ctx,
+                builder,
+                method_call.receiver,
+                method_name,
+                &method_call.args,
+            )
+        }
+
+        Expression::StructLiteral(struct_lit) => {
+            let struct_name = ctx.interner.resolve(&struct_lit.name.symbol).to_string();
+
+            let struct_def = ctx
+                .struct_defs
+                .get(&struct_name)
+                .ok_or_else(|| {
+                    CodegenError::JitCompile(format!("Unknown struct: {}", struct_name))
+                })?
+                .clone();
+
+            let type_id = builder
+                .ins()
+                .iconst(cranelift::prelude::types::I32, struct_def.type_id as i64);
+            let field_count = builder.ins().iconst(
+                cranelift::prelude::types::I32,
+                struct_def.fields.len() as i64,
+            );
+
+            // Call naml_struct_new(type_id, field_count)
+            let struct_ptr = call_struct_new(ctx, builder, type_id, field_count)?;
+
+            // Set each field value
+            for field in struct_lit.fields.iter() {
+                let field_name = ctx.interner.resolve(&field.name.symbol).to_string();
+                // Find field index in struct definition
+                let field_idx = struct_def
+                    .fields
+                    .iter()
+                    .position(|f| *f == field_name)
+                    .ok_or_else(|| {
+                        CodegenError::JitCompile(format!("Unknown field: {}", field_name))
+                    })?;
+
+                let mut value = compile_expression(ctx, builder, &field.value)?;
+                // Convert string literals to NamlString
+                if let Some(Type::String) = ctx.annotations.get_type(field.value.span())
+                    && matches!(
+                        &field.value,
+                        Expression::Literal(LiteralExpr {
+                            value: Literal::String(_),
+                            ..
+                        })
+                    )
+                {
+                    value = call_string_from_cstr(ctx, builder, value)?;
+                }
+                let idx_val = builder
+                    .ins()
+                    .iconst(cranelift::prelude::types::I32, field_idx as i64);
+                call_struct_set_field(ctx, builder, struct_ptr, idx_val, value)?;
+            }
+
+            Ok(struct_ptr)
+        }
+
+        Expression::Field(field_expr) => {
+            let struct_ptr = compile_expression(ctx, builder, field_expr.base)?;
+            let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
+
+            // Use type annotation to determine correct field offset
+            // Note: use ident.span (IdentExpr span), not ident.ident.span (Ident span)
+            if let Expression::Identifier(ident) = field_expr.base
+                && let Some(type_ann) = ctx.annotations.get_type(ident.span)
+            {
+                if let crate::typechecker::Type::Exception(exc_name) = type_ann {
+                    let exc_name_str = ctx.interner.resolve(exc_name).to_string();
+                    if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
+                        // Exception: message at offset 0, fields at 8, 16, ...
+                        let offset = if field_name == "message" {
+                            0
+                        } else if let Some(idx) =
+                            struct_def.fields.iter().position(|f| f == &field_name)
+                        {
+                            8 + (idx * 8) as i32
+                        } else {
+                            return Err(CodegenError::JitCompile(format!(
+                                "Unknown field: {}",
+                                field_name
+                            )));
+                        };
+                        let value = builder.ins().load(
+                            cranelift::prelude::types::I64,
+                            MemFlags::new(),
+                            struct_ptr,
+                            offset,
+                        );
+                        return Ok(value);
+                    }
+                } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
+                    let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
+                    if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
+                        && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name)
+                    {
+                        let offset = (24 + idx * 8) as i32;
+                        let value = builder.ins().load(
+                            cranelift::prelude::types::I64,
+                            MemFlags::new(),
+                            struct_ptr,
+                            offset,
+                        );
+                        return Ok(value);
+                    }
+                }
+            }
+
+            for (_, struct_def) in ctx.struct_defs.iter() {
+                if let Some(field_idx) = struct_def.fields.iter().position(|f| *f == field_name) {
+                    let idx_val = builder
+                        .ins()
+                        .iconst(cranelift::prelude::types::I32, field_idx as i64);
+                    return call_struct_get_field(ctx, builder, struct_ptr, idx_val);
+                }
+            }
+
+            Err(CodegenError::JitCompile(format!(
+                "Unknown field: {}",
+                field_name
+            )))
+        }
+
+        Expression::Spawn(_spawn_expr) => {
+            // True M:N spawn: schedule the spawn block on the thread pool
+            let spawn_id = ctx.current_spawn_id;
+            ctx.current_spawn_id += 1;
+
+            let info = ctx
+                .spawn_blocks
+                .get(&spawn_id)
+                .ok_or_else(|| {
+                    CodegenError::JitCompile(format!("Spawn block {} not found", spawn_id))
+                })?
+                .clone();
+
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            // Calculate closure data size (8 bytes per captured variable)
+            let data_size = info.captured_vars.len() * 8;
+            let data_size_val = builder
+                .ins()
+                .iconst(cranelift::prelude::types::I64, data_size as i64);
+
+            // Allocate closure data
+            let data_ptr = if data_size > 0 {
+                call_alloc_closure_data(ctx, builder, data_size_val)?
+            } else {
+                builder.ins().iconst(ptr_type, 0)
+            };
+
+            // Store captured variables in closure data
+            for (i, var_name) in info.captured_vars.iter().enumerate() {
+                if let Some(&var) = ctx.variables.get(var_name) {
+                    let val = builder.use_var(var);
+                    let offset = builder.ins().iconst(ptr_type, (i * 8) as i64);
+                    let addr = builder.ins().iadd(data_ptr, offset);
+                    builder.ins().store(MemFlags::new(), val, addr, 0);
+                }
+            }
+
+            // Get trampoline function address
+            let trampoline_id = *ctx.functions.get(&info.func_name).ok_or_else(|| {
+                CodegenError::JitCompile(format!("Trampoline '{}' not found", info.func_name))
+            })?;
+            let trampoline_ref = ctx.module.declare_func_in_func(trampoline_id, builder.func);
+            let trampoline_addr = builder.ins().func_addr(ptr_type, trampoline_ref);
+
+            // Call spawn_closure to schedule the task
+            call_spawn_closure(ctx, builder, trampoline_addr, data_ptr, data_size_val)?;
+
+            // Return unit (0) as spawn expressions don't have a meaningful return value
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        Expression::Some(some_expr) => {
+            let inner_val = compile_expression(ctx, builder, some_expr.value)?;
+
+            // Allocate option on stack
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                16, // option size
+                0,
+            ));
+            let slot_addr = builder
+                .ins()
+                .stack_addr(cranelift::prelude::types::I64, slot, 0);
+
+            // Tag = 1 (some)
+            let tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+            builder.ins().store(MemFlags::new(), tag, slot_addr, 0);
+
+            // Store inner value at offset 8
+            builder
+                .ins()
+                .store(MemFlags::new(), inner_val, slot_addr, 8);
+
+            Ok(slot_addr)
+        }
+
+        Expression::Lambda(_lambda_expr) => {
+            // Get lambda info from the tracked lambdas
+            let lambda_id = ctx.current_lambda_id;
+            ctx.current_lambda_id += 1;
+
+            let info = ctx
+                .lambda_blocks
+                .get(&lambda_id)
+                .ok_or_else(|| CodegenError::JitCompile(format!("Lambda {} not found", lambda_id)))?
+                .clone();
+
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            // Calculate closure data size (8 bytes per captured variable)
+            let data_size = info.captured_vars.len() * 8;
+            let data_size_val = builder
+                .ins()
+                .iconst(cranelift::prelude::types::I64, data_size as i64);
+
+            // Allocate closure data
+            let data_ptr = if data_size > 0 {
+                call_alloc_closure_data(ctx, builder, data_size_val)?
+            } else {
+                builder.ins().iconst(ptr_type, 0)
+            };
+
+            // Store captured variables in closure data (by value)
+            for (i, var_name) in info.captured_vars.iter().enumerate() {
+                if let Some(&var) = ctx.variables.get(var_name) {
+                    let val = builder.use_var(var);
+                    let offset = builder.ins().iconst(ptr_type, (i * 8) as i64);
+                    let addr = builder.ins().iadd(data_ptr, offset);
+                    builder.ins().store(MemFlags::new(), val, addr, 0);
+                }
+            }
+
+            // Get function pointer
+            let lambda_func_id = ctx.functions.get(&info.func_name).ok_or_else(|| {
+                CodegenError::JitCompile(format!("Lambda function '{}' not found", info.func_name))
+            })?;
+            let func_ref = ctx
+                .module
+                .declare_func_in_func(*lambda_func_id, builder.func);
+            let func_addr = builder.ins().func_addr(ptr_type, func_ref);
+
+            // Allocate closure struct on stack: 24 bytes (func_ptr, data_ptr, data_size)
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                24,
+                0,
+            ));
+            let slot_addr = builder.ins().stack_addr(ptr_type, slot, 0);
+
+            // Store function pointer at offset 0
+            builder
+                .ins()
+                .store(MemFlags::new(), func_addr, slot_addr, 0);
+
+            // Store data pointer at offset 8
+            builder.ins().store(MemFlags::new(), data_ptr, slot_addr, 8);
+
+            // Store data size at offset 16
+            builder
+                .ins()
+                .store(MemFlags::new(), data_size_val, slot_addr, 16);
+
+            Ok(slot_addr)
+        }
+
+        Expression::Try(try_expr) => {
+            // try converts a throwing expression to option<T>
+            // Returns some(result) on success, none on exception
+            let result = compile_expression(ctx, builder, try_expr.expr)?;
+
+            // Check if an exception occurred
+            let has_exception = call_exception_check(ctx, builder)?;
+
+            // Allocate option struct on stack (16 bytes: tag i32 at 0, value i64 at 8)
+            let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                16,
+                0,
+            ));
+            let option_ptr =
+                builder
+                    .ins()
+                    .stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+            // Create blocks for branching
+            let exception_block = builder.create_block();
+            let no_exception_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            // Branch based on exception check
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            let has_ex = builder.ins().icmp(IntCC::NotEqual, has_exception, zero);
+            builder
+                .ins()
+                .brif(has_ex, exception_block, &[], no_exception_block, &[]);
+
+            // Exception block: clear exception and create none
+            builder.switch_to_block(exception_block);
+            builder.seal_block(exception_block);
+            call_exception_clear(ctx, builder)?;
+            let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+            builder
+                .ins()
+                .store(MemFlags::new(), none_tag, option_ptr, 0);
+            builder.ins().jump(merge_block, &[]);
+
+            // No exception block: create some(result)
+            builder.switch_to_block(no_exception_block);
+            builder.seal_block(no_exception_block);
+            let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+            builder
+                .ins()
+                .store(MemFlags::new(), some_tag, option_ptr, 0);
+            builder.ins().store(MemFlags::new(), result, option_ptr, 8);
+            builder.ins().jump(merge_block, &[]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            Ok(option_ptr)
+        }
+
+        Expression::Catch(catch_expr) => {
+            // Compile the expression that might throw
+            let result = compile_expression(ctx, builder, catch_expr.expr)?;
+
+            // Check if an exception occurred
+            let has_exception = call_exception_check(ctx, builder)?;
+
+            // Create blocks for branching
+            let exception_block = builder.create_block();
+            let no_exception_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Branch based on exception check
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            let has_ex = builder.ins().icmp(IntCC::NotEqual, has_exception, zero);
+            builder
+                .ins()
+                .brif(has_ex, exception_block, &[], no_exception_block, &[]);
+
+            // Exception block: get exception, bind to variable, run handler
+            builder.switch_to_block(exception_block);
+            builder.seal_block(exception_block);
+
+            // Get the exception pointer and bind to the error variable
+            let exception_ptr = call_exception_get(ctx, builder)?;
+            let error_var_name = ctx
+                .interner
+                .resolve(&catch_expr.error_binding.symbol)
+                .to_string();
+
+            // Check if variable already exists (for multiple catch blocks with same binding name)
+            let error_var = if let Some(&existing_var) = ctx.variables.get(&error_var_name) {
+                existing_var
+            } else {
+                let new_var = Variable::new(ctx.var_counter);
+                ctx.var_counter += 1;
+                ctx.variables.insert(error_var_name, new_var);
+                builder.declare_var(new_var, cranelift::prelude::types::I64);
+                new_var
+            };
+            builder.def_var(error_var, exception_ptr);
+
+            // Clear the exception so it doesn't propagate
+            call_exception_clear(ctx, builder)?;
+
+            // Compile the handler block statements
+            for stmt in &catch_expr.handler.statements {
+                compile_statement(ctx, builder, stmt)?;
+                if ctx.block_terminated {
+                    break;
+                }
+            }
+
+            // If handler didn't return/throw, check for tail expression or use default
+            if !ctx.block_terminated {
+                let handler_value = if let Some(tail) = catch_expr.handler.tail {
+                    compile_expression(ctx, builder, tail)?
+                } else {
+                    // No tail expression - use 0 as default value
+                    builder.ins().iconst(cranelift::prelude::types::I64, 0)
+                };
+                builder.ins().jump(merge_block, &[handler_value]);
+            }
+            ctx.block_terminated = false;
+
+            // No exception block: jump to merge with the result
+            builder.switch_to_block(no_exception_block);
+            builder.seal_block(no_exception_block);
+            builder.ins().jump(merge_block, &[result]);
+
+            // Merge block - returns the value directly (not wrapped in option)
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            let final_result = builder.block_params(merge_block)[0];
+            Ok(final_result)
+        }
+
+        Expression::Cast(cast_expr) => {
+            // Evaluate the expression to cast
+            let value = compile_expression(ctx, builder, cast_expr.expr)?;
+
+            // Get source and target types
+            let source_type = ctx.annotations.get_type(cast_expr.expr.span());
+
+            match &cast_expr.target_ty {
+                NamlType::Int => match source_type {
+                    Some(Type::Float) => Ok(builder
+                        .ins()
+                        .fcvt_to_sint(cranelift::prelude::types::I64, value)),
+                    Some(Type::String) => call_string_to_int(ctx, builder, value),
+                    Some(Type::Uint) | Some(Type::Int) => Ok(value),
+                    _ => Ok(value),
+                },
+                NamlType::Uint => match source_type {
+                    Some(Type::Float) => Ok(builder
+                        .ins()
+                        .fcvt_to_uint(cranelift::prelude::types::I64, value)),
+                    Some(Type::Int) | Some(Type::Uint) => Ok(value),
+                    _ => Ok(value),
+                },
+                NamlType::Float => match source_type {
+                    Some(Type::Int) => Ok(builder
+                        .ins()
+                        .fcvt_from_sint(cranelift::prelude::types::F64, value)),
+                    Some(Type::Uint) => Ok(builder
+                        .ins()
+                        .fcvt_from_uint(cranelift::prelude::types::F64, value)),
+                    Some(Type::String) => call_string_to_float(ctx, builder, value),
+                    Some(Type::Float) => Ok(value),
+                    _ => Ok(value),
+                },
+                NamlType::String => match source_type {
+                    Some(Type::Int) | Some(Type::Uint) => call_int_to_string(ctx, builder, value),
+                    Some(Type::Float) => call_float_to_string(ctx, builder, value),
+                    Some(Type::Bytes) => call_bytes_to_string(ctx, builder, value),
+                    Some(Type::String) => Ok(value),
+                    _ => Ok(value),
+                },
+                NamlType::Bytes => match source_type {
+                    Some(Type::String) => call_string_to_bytes(ctx, builder, value),
+                    Some(Type::Bytes) => Ok(value),
+                    _ => Ok(value),
+                },
+                _ => {
+                    // For other casts, just pass through the value
+                    Ok(value)
+                }
+            }
+        }
+
+        Expression::FallibleCast(cast_expr) => {
+            // Fallible cast: returns option<T> as tagged struct
+            // Options are 16-byte structs: tag (i32) at offset 0, value (i64) at offset 8
+            // Tag: 0 = none, 1 = some
+            let mut value = compile_expression(ctx, builder, cast_expr.expr)?;
+            let source_type = ctx.annotations.get_type(cast_expr.expr.span());
+
+            // If source is a string literal, wrap it as NamlString*
+            // String literals compile to raw C-string pointers, but runtime expects NamlString*
+            if matches!(source_type, Some(Type::String)) {
+                if let Expression::Literal(LiteralExpr {
+                                               value: Literal::String(_),
+                                               ..
+                                           }) = cast_expr.expr
+                {
+                    value = call_string_from_cstr(ctx, builder, value)?;
+                }
+            }
+
+            // Allocate option struct on stack (16 bytes)
+            let option_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                16,
+                0,
+            ));
+            let option_ptr =
+                builder
+                    .ins()
+                    .stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+            match (&cast_expr.target_ty, source_type) {
+                (NamlType::Int, Some(Type::String)) => {
+                    // String to int fallible conversion
+                    let value_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,
+                        0,
+                    ));
+                    let value_ptr =
+                        builder
+                            .ins()
+                            .stack_addr(cranelift::prelude::types::I64, value_slot, 0);
+
+                    let func_ref = rt_func_ref(ctx, builder, "naml_string_try_to_int")?;
+                    let call = builder.ins().call(func_ref, &[value, value_ptr]);
+                    let success = builder.inst_results(call)[0];
+
+                    // Create blocks for conditional handling
+                    let success_block = builder.create_block();
+                    let fail_block = builder.create_block();
+                    let merge_block = builder.create_block();
+
+                    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let is_success = builder.ins().icmp(IntCC::NotEqual, success, zero);
+                    builder
+                        .ins()
+                        .brif(is_success, success_block, &[], fail_block, &[]);
+
+                    // Success: create some(parsed_value)
+                    builder.switch_to_block(success_block);
+                    builder.seal_block(success_block);
+                    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), some_tag, option_ptr, 0);
+                    let parsed_value = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        value_ptr,
+                        0,
+                    );
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), parsed_value, option_ptr, 8);
+                    builder.ins().jump(merge_block, &[]);
+
+                    // Failure: create none
+                    builder.switch_to_block(fail_block);
+                    builder.seal_block(fail_block);
+                    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), none_tag, option_ptr, 0);
+                    builder.ins().jump(merge_block, &[]);
+
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
+                    Ok(option_ptr)
+                }
+                (NamlType::Float, Some(Type::String)) => {
+                    // String to float fallible conversion
+                    let value_slot = builder.create_sized_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        8,
+                        0,
+                    ));
+                    let value_ptr =
+                        builder
+                            .ins()
+                            .stack_addr(cranelift::prelude::types::I64, value_slot, 0);
+
+                    let func_ref = rt_func_ref(ctx, builder, "naml_string_try_to_float")?;
+                    let call = builder.ins().call(func_ref, &[value, value_ptr]);
+                    let success = builder.inst_results(call)[0];
+
+                    // Create blocks for conditional handling
+                    let success_block = builder.create_block();
+                    let fail_block = builder.create_block();
+                    let merge_block = builder.create_block();
+
+                    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let is_success = builder.ins().icmp(IntCC::NotEqual, success, zero);
+                    builder
+                        .ins()
+                        .brif(is_success, success_block, &[], fail_block, &[]);
+
+                    // Success: create some(parsed_value)
+                    builder.switch_to_block(success_block);
+                    builder.seal_block(success_block);
+                    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), some_tag, option_ptr, 0);
+                    let parsed_value = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        value_ptr,
+                        0,
+                    );
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), parsed_value, option_ptr, 8);
+                    builder.ins().jump(merge_block, &[]);
+
+                    // Failure: create none
+                    builder.switch_to_block(fail_block);
+                    builder.seal_block(fail_block);
+                    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), none_tag, option_ptr, 0);
+                    builder.ins().jump(merge_block, &[]);
+
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
+                    Ok(option_ptr)
+                }
+                _ => {
+                    // For other conversions, wrap value in some()
+                    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), some_tag, option_ptr, 0);
+                    builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+                    Ok(option_ptr)
+                }
+            }
+        }
+
+        Expression::Ternary(ternary) => {
+            // Compile: condition ? true_expr : false_expr
+            let cond = compile_expression(ctx, builder, ternary.condition)?;
+
+            // Create blocks for branching
+            let then_block = builder.create_block();
+            let else_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Branch on condition (condition is already a boolean value)
+            builder.ins().brif(cond, then_block, &[], else_block, &[]);
+
+            // Then block: evaluate true expression
+            builder.switch_to_block(then_block);
+            builder.seal_block(then_block);
+            let true_val = compile_expression(ctx, builder, ternary.true_expr)?;
+            builder.ins().jump(merge_block, &[true_val]);
+
+            // Else block: evaluate false expression
+            builder.switch_to_block(else_block);
+            builder.seal_block(else_block);
+            let false_val = compile_expression(ctx, builder, ternary.false_expr)?;
+            builder.ins().jump(merge_block, &[false_val]);
+
+            // Merge block: result is block parameter
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        Expression::Elvis(elvis) => {
+            // Compile: left ?: right
+            // Returns left if truthy, otherwise right
+            let left = compile_expression(ctx, builder, elvis.left)?;
+
+            // Create blocks for branching
+            let then_block = builder.create_block();
+            let else_block = builder.create_block();
+            let merge_block = builder.create_block();
+
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Check if left is falsy (zero/null)
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            let is_falsy = builder.ins().icmp(IntCC::Equal, left, zero);
+            builder
+                .ins()
+                .brif(is_falsy, else_block, &[], then_block, &[]);
+
+            // Then block: left is truthy, use left
+            builder.switch_to_block(then_block);
+            builder.seal_block(then_block);
+            builder.ins().jump(merge_block, &[left]);
+
+            // Else block: left is falsy, evaluate and use right
+            builder.switch_to_block(else_block);
+            builder.seal_block(else_block);
+            let right = compile_expression(ctx, builder, elvis.right)?;
+            builder.ins().jump(merge_block, &[right]);
+
+            // Merge block: result is block parameter
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        Expression::ForceUnwrap(unwrap_expr) => {
+            if let Expression::Index(index_expr) = unwrap_expr.expr {
+                let base = compile_expression(ctx, builder, index_expr.base)?;
+
+                // Check if this is a map access (string key) or array access (integer index)
+                if let Expression::Literal(LiteralExpr {
+                                               value: Literal::String(_),
+                                               ..
+                                           }) = index_expr.index
+                {
+                    let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
+                    let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
+                    return compile_direct_map_get_or_panic(ctx, builder, base, naml_str);
+                } else {
+                    // Array access: arr[index]!
+                    let index = compile_expression(ctx, builder, index_expr.index)?;
+                    return compile_direct_array_get_or_panic(ctx, builder, base, index);
+                }
+            }
+
+            // General case: compile the option expression and unwrap
+            let option_ptr = compile_expression(ctx, builder, unwrap_expr.expr)?;
+
+            // Load the tag from offset 0 (0 = none, 1 = some)
+            let tag = builder.ins().load(
+                cranelift::prelude::types::I32,
+                MemFlags::new(),
+                option_ptr,
+                0,
+            );
+
+            // Create blocks for conditional handling
+            let some_block = builder.create_block();
+            let none_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Check if tag == 0 (none)
+            let is_none = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder
+                .ins()
+                .brif(is_none, none_block, &[], some_block, &[]);
+
+            // None block: panic with error message
+            builder.switch_to_block(none_block);
+            builder.seal_block(none_block);
+            let panic_func = rt_func_ref(ctx, builder, "naml_panic_unwrap")?;
+            builder.ins().call(panic_func, &[]);
+            // Panic doesn't return, but we need to provide a value for the block
+            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+            builder.ins().jump(merge_block, &[zero]);
+
+            // Some block: extract the value from offset 8
+            builder.switch_to_block(some_block);
+            builder.seal_block(some_block);
+            let inner_value = builder.ins().load(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                option_ptr,
+                8,
+            );
+            builder.ins().jump(merge_block, &[inner_value]);
+
+            // Merge block
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+            Ok(builder.block_params(merge_block)[0])
+        }
+
+        _ => Err(CodegenError::Unsupported(format!(
+            "Expression type not yet implemented: {:?}",
+            std::mem::discriminant(expr)
+        ))),
+    }
+}
