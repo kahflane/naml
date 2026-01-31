@@ -17,15 +17,6 @@ pub fn call_sleep(
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
 }
 
-pub fn call_wait_all(
-    ctx: &mut CompileContext<'_>,
-    builder: &mut FunctionBuilder<'_>,
-) -> Result<Value, CodegenError> {
-    let func_ref = rt_func_ref(ctx, builder, "naml_wait_all")?;
-    builder.ins().call(func_ref, &[]);
-    Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
-}
-
 pub fn call_random(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,

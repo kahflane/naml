@@ -151,6 +151,20 @@ pub enum BuiltinStrategy {
     LambdaSortBy,
     /// (arr) -> option<T> (sample - random element)
     Sample,
+
+    // ========================================
+    // Core I/O strategies (varargs/special handling)
+    // ========================================
+    /// Varargs print with newline flag
+    Print(bool),
+    /// Sleep with milliseconds validation
+    Sleep,
+    /// Stderr output (warn, error, panic)
+    Stderr(&'static str),
+    /// Format string with varargs
+    Fmt,
+    /// Read line from stdin
+    ReadLine,
 }
 
 /// Registry entry for a built-in function
@@ -229,6 +243,17 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "sort_by", strategy: BuiltinStrategy::LambdaSortBy },
 
         // ========================================
+        // IO module - core I/O operations
+        // ========================================
+        BuiltinFunction { name: "print", strategy: BuiltinStrategy::Print(false) },
+        BuiltinFunction { name: "println", strategy: BuiltinStrategy::Print(true) },
+        BuiltinFunction { name: "read_line", strategy: BuiltinStrategy::ReadLine },
+        BuiltinFunction { name: "fmt", strategy: BuiltinStrategy::Fmt },
+        BuiltinFunction { name: "warn", strategy: BuiltinStrategy::Stderr("warn") },
+        BuiltinFunction { name: "error", strategy: BuiltinStrategy::Stderr("error") },
+        BuiltinFunction { name: "panic", strategy: BuiltinStrategy::Stderr("panic") },
+
+        // ========================================
         // IO module - terminal operations
         // ========================================
         BuiltinFunction { name: "read_key", strategy: BuiltinStrategy::NoArgInt("naml_read_key") },
@@ -293,6 +318,7 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         // ========================================
         // Threads/Channel module
         // ========================================
+        BuiltinFunction { name: "sleep", strategy: BuiltinStrategy::Sleep },
         BuiltinFunction { name: "join", strategy: BuiltinStrategy::ThreadsJoin },
         BuiltinFunction { name: "open_channel", strategy: BuiltinStrategy::ChannelOpen },
         BuiltinFunction { name: "send", strategy: BuiltinStrategy::ChannelSend },
@@ -315,7 +341,7 @@ pub fn compile_builtin_call(
     args: &[Expression<'_>],
 ) -> Result<Value, CodegenError> {
     use super::expr::compile_expression;
-    use super::misc::{call_random, call_random_float, call_datetime_format};
+    use super::misc::{call_random, call_random_float, call_datetime_format, call_sleep};
     use super::runtime::rt_func_ref;
     use super::channels::{
         call_channel_new, call_channel_send, call_channel_receive, call_channel_close,
@@ -327,6 +353,8 @@ pub fn compile_builtin_call(
         compile_lambda_find_last, compile_lambda_find_last_index, compile_lambda_fold,
         compile_lambda_scan, compile_lambda_sort_by, compile_sample,
     };
+    use super::print::compile_print_call;
+    use super::io::{call_read_line, compile_fmt_call, compile_stderr_call};
 
     match builtin.strategy {
         // ========================================
@@ -570,7 +598,11 @@ pub fn compile_builtin_call(
         }
 
         BuiltinStrategy::ChannelOpen => {
-            let capacity = compile_expression(ctx, builder, &args[0])?;
+            let capacity = if args.is_empty() {
+                builder.ins().iconst(types::I64, 1)
+            } else {
+                compile_expression(ctx, builder, &args[0])?
+            };
             call_channel_new(ctx, builder, capacity)
         }
 
@@ -659,6 +691,35 @@ pub fn compile_builtin_call(
         BuiltinStrategy::Sample => {
             let arr = compile_expression(ctx, builder, &args[0])?;
             compile_sample(ctx, builder, arr)
+        }
+
+        // ========================================
+        // Core I/O strategies
+        // ========================================
+        BuiltinStrategy::Print(newline) => {
+            compile_print_call(ctx, builder, args, newline)
+        }
+
+        BuiltinStrategy::Sleep => {
+            if args.is_empty() {
+                return Err(CodegenError::JitCompile(
+                    "sleep requires milliseconds argument".to_string(),
+                ));
+            }
+            let ms = compile_expression(ctx, builder, &args[0])?;
+            call_sleep(ctx, builder, ms)
+        }
+
+        BuiltinStrategy::Stderr(func_name) => {
+            compile_stderr_call(ctx, builder, args, func_name)
+        }
+
+        BuiltinStrategy::Fmt => {
+            compile_fmt_call(ctx, builder, args)
+        }
+
+        BuiltinStrategy::ReadLine => {
+            call_read_line(ctx, builder)
         }
     }
 }

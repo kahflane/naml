@@ -3,8 +3,6 @@ use crate::codegen::cranelift::array::{compile_array_literal, compile_direct_arr
 use crate::codegen::cranelift::literal::compile_literal;
 use crate::codegen::cranelift::map::{compile_direct_map_get_or_panic, compile_map_literal};
 use crate::codegen::cranelift::method::compile_method_call;
-use crate::codegen::cranelift::misc::call_sleep;
-use crate::codegen::cranelift::print::compile_print_call;
 use crate::codegen::cranelift::stmt::compile_statement;
 use crate::codegen::cranelift::CompileContext;
 use crate::codegen::CodegenError;
@@ -13,10 +11,8 @@ use crate::typechecker::Type;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use crate::codegen::cranelift::binop::{compile_binary_op, compile_unary_op};
-use crate::codegen::cranelift::channels::call_channel_new;
 use crate::codegen::cranelift::exceptions::{call_exception_check, call_exception_clear, call_exception_get};
 use crate::codegen::cranelift::externs::compile_extern_call;
-use crate::codegen::cranelift::io::{call_read_line, compile_fmt_call, compile_stderr_call};
 use crate::codegen::cranelift::options::{compile_option_from_array_get, compile_option_from_map_get};
 use crate::codegen::cranelift::runtime::{call_alloc_closure_data, rt_func_ref};
 use crate::codegen::cranelift::spawns::call_spawn_closure;
@@ -225,47 +221,6 @@ pub fn compile_expression(
                         return super::builtins::compile_builtin_call(ctx, builder, builtin, &call.args);
                     }
                 }
-
-                // Handle special cases that need custom logic (varargs, validation, defaults)
-                if !is_user_defined {
-                    match func_name {
-                        "print" | "println" => {
-                            return compile_print_call(
-                                ctx,
-                                builder,
-                                &call.args,
-                                func_name == "println",
-                            );
-                        }
-                        "sleep" => {
-                            if call.args.is_empty() {
-                                return Err(CodegenError::JitCompile(
-                                    "sleep requires milliseconds argument".to_string(),
-                                ));
-                            }
-                            let ms = compile_expression(ctx, builder, &call.args[0])?;
-                            return call_sleep(ctx, builder, ms);
-                        }
-                        "open_channel" => {
-                            let capacity = if call.args.is_empty() {
-                                builder.ins().iconst(cranelift::prelude::types::I64, 1)
-                            } else {
-                                compile_expression(ctx, builder, &call.args[0])?
-                            };
-                            return call_channel_new(ctx, builder, capacity);
-                        }
-                        "warn" | "error" | "panic" => {
-                            return compile_stderr_call(ctx, builder, &call.args, func_name);
-                        }
-                        "fmt" => {
-                            return compile_fmt_call(ctx, builder, &call.args);
-                        }
-                        "read_line" => {
-                            return call_read_line(ctx, builder);
-                        }
-                        _ => {}
-                    }
-                } // end if !is_user_defined
 
                 // Check for normal (naml) function
                 if let Some(&func_id) = ctx.functions.get(actual_func_name) {

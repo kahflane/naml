@@ -38,12 +38,3 @@ pub fn call_read_line(
     let call = builder.ins().call(func_ref, &[]);
     Ok(builder.inst_results(call)[0])
 }
-
-pub fn call_read_key(
-    ctx: &mut CompileContext<'_>,
-    builder: &mut FunctionBuilder<'_>,
-) -> Result<Value, CodegenError> {
-    let func_ref = rt_func_ref(ctx, builder, "naml_read_key")?;
-    let call = builder.ins().call(func_ref, &[]);
-    Ok(builder.inst_results(call)[0])
-}
