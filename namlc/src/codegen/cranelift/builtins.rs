@@ -23,12 +23,12 @@ use super::array::{
 };
 use super::misc::{
     call_int_runtime, call_one_arg_int_runtime, call_one_arg_ptr_runtime,
-    call_three_arg_ptr_runtime, call_two_arg_bool_runtime, call_two_arg_int_runtime,
-    call_two_arg_ptr_runtime, call_two_arg_runtime, call_void_runtime,
+    call_three_arg_ptr_runtime, call_three_arg_void_runtime, call_two_arg_bool_runtime,
+    call_two_arg_int_runtime, call_two_arg_ptr_runtime, call_two_arg_runtime, call_void_runtime,
 };
 use super::options::{
     compile_option_from_array_access, compile_option_from_array_get, compile_option_from_index_of,
-    compile_option_from_minmax,
+    compile_option_from_last_index_of, compile_option_from_minmax, compile_option_from_remove_at,
 };
 use super::{CompileContext, ARRAY_LEN_OFFSET};
 use crate::ast::Expression;
@@ -63,6 +63,14 @@ pub enum BuiltinStrategy {
     ArrayIndexOf,
     /// Array contains (arr, val) -> bool
     ArrayContains,
+    /// Three args -> void (insert, swap)
+    ThreeArgVoid(&'static str),
+    /// Two args -> option<int> (remove_at with index check)
+    TwoArgOptionInt(&'static str),
+    /// Two args -> bool (remove returning success)
+    TwoArgBool(&'static str),
+    /// Two args -> option<int> using index_of pattern
+    ArrayLastIndexOf,
 
     // === IO Module ===
     /// No args -> int return (read_key, terminal_width, etc.)
@@ -117,6 +125,32 @@ pub enum BuiltinStrategy {
     ChannelReceive,
     /// (channel) -> void
     ChannelClose,
+
+    // ========================================
+    // Lambda-based collection strategies
+    // ========================================
+    /// (arr, closure) -> bool (any, all)
+    LambdaBool(&'static str),
+    /// (arr, closure) -> int (count_if)
+    LambdaInt(&'static str),
+    /// (arr, closure) -> array (apply/map, where/filter, partition, take_while, drop_while, reject, flat_apply)
+    LambdaArray(&'static str),
+    /// (arr, closure) -> option<T> (find)
+    LambdaFind,
+    /// (arr, closure) -> option<int> (find_index)
+    LambdaFindIndex,
+    /// (arr, closure) -> option<T> (find_last)
+    LambdaFindLast,
+    /// (arr, closure) -> option<int> (find_last_index)
+    LambdaFindLastIndex,
+    /// (arr, initial, closure) -> T (fold)
+    LambdaFold,
+    /// (arr, initial, closure) -> array (scan)
+    LambdaScan,
+    /// (arr, closure) -> array (sort_by)
+    LambdaSortBy,
+    /// (arr) -> option<T> (sample - random element)
+    Sample,
 }
 
 /// Registry entry for a built-in function
@@ -152,6 +186,47 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "slice", strategy: BuiltinStrategy::ThreeArgPtr("naml_array_slice") },
         BuiltinFunction { name: "index_of", strategy: BuiltinStrategy::ArrayIndexOf },
         BuiltinFunction { name: "contains", strategy: BuiltinStrategy::ArrayContains },
+        // Mutation operations
+        BuiltinFunction { name: "insert", strategy: BuiltinStrategy::ThreeArgVoid("naml_array_insert") },
+        BuiltinFunction { name: "remove_at", strategy: BuiltinStrategy::TwoArgOptionInt("naml_array_remove_at") },
+        BuiltinFunction { name: "remove", strategy: BuiltinStrategy::TwoArgBool("naml_array_remove") },
+        BuiltinFunction { name: "swap", strategy: BuiltinStrategy::ThreeArgVoid("naml_array_swap") },
+        // Deduplication
+        BuiltinFunction { name: "unique", strategy: BuiltinStrategy::OneArgPtr("naml_array_unique") },
+        BuiltinFunction { name: "compact", strategy: BuiltinStrategy::OneArgPtr("naml_array_compact") },
+        // Backward search
+        BuiltinFunction { name: "last_index_of", strategy: BuiltinStrategy::ArrayLastIndexOf },
+        // Array combination
+        BuiltinFunction { name: "zip", strategy: BuiltinStrategy::TwoArgPtr("naml_array_zip") },
+        BuiltinFunction { name: "unzip", strategy: BuiltinStrategy::OneArgPtr("naml_array_unzip") },
+        // Splitting
+        BuiltinFunction { name: "chunk", strategy: BuiltinStrategy::TwoArgPtr("naml_array_chunk") },
+        // Set operations
+        BuiltinFunction { name: "intersect", strategy: BuiltinStrategy::TwoArgPtr("naml_array_intersect") },
+        BuiltinFunction { name: "diff", strategy: BuiltinStrategy::TwoArgPtr("naml_array_diff") },
+        BuiltinFunction { name: "union", strategy: BuiltinStrategy::TwoArgPtr("naml_array_union") },
+        // Random
+        BuiltinFunction { name: "shuffle", strategy: BuiltinStrategy::OneArgPtr("naml_array_shuffle") },
+        BuiltinFunction { name: "sample_n", strategy: BuiltinStrategy::TwoArgPtr("naml_array_sample_n") },
+        BuiltinFunction { name: "sample", strategy: BuiltinStrategy::Sample },
+        // Lambda-based collection functions
+        BuiltinFunction { name: "any", strategy: BuiltinStrategy::LambdaBool("naml_array_any") },
+        BuiltinFunction { name: "all", strategy: BuiltinStrategy::LambdaBool("naml_array_all") },
+        BuiltinFunction { name: "count_if", strategy: BuiltinStrategy::LambdaInt("naml_array_count_if") },
+        BuiltinFunction { name: "apply", strategy: BuiltinStrategy::LambdaArray("naml_array_map") },
+        BuiltinFunction { name: "where", strategy: BuiltinStrategy::LambdaArray("naml_array_filter") },
+        BuiltinFunction { name: "partition", strategy: BuiltinStrategy::LambdaArray("naml_array_partition") },
+        BuiltinFunction { name: "take_while", strategy: BuiltinStrategy::LambdaArray("naml_array_take_while") },
+        BuiltinFunction { name: "drop_while", strategy: BuiltinStrategy::LambdaArray("naml_array_drop_while") },
+        BuiltinFunction { name: "reject", strategy: BuiltinStrategy::LambdaArray("naml_array_reject") },
+        BuiltinFunction { name: "flat_apply", strategy: BuiltinStrategy::LambdaArray("naml_array_flat_apply") },
+        BuiltinFunction { name: "find", strategy: BuiltinStrategy::LambdaFind },
+        BuiltinFunction { name: "find_index", strategy: BuiltinStrategy::LambdaFindIndex },
+        BuiltinFunction { name: "find_last", strategy: BuiltinStrategy::LambdaFindLast },
+        BuiltinFunction { name: "find_last_index", strategy: BuiltinStrategy::LambdaFindLastIndex },
+        BuiltinFunction { name: "fold", strategy: BuiltinStrategy::LambdaFold },
+        BuiltinFunction { name: "scan", strategy: BuiltinStrategy::LambdaScan },
+        BuiltinFunction { name: "sort_by", strategy: BuiltinStrategy::LambdaSortBy },
 
         // ========================================
         // IO module - terminal operations
@@ -246,6 +321,12 @@ pub fn compile_builtin_call(
         call_channel_new, call_channel_send, call_channel_receive, call_channel_close,
     };
     use super::strings::ensure_naml_string;
+    use super::lambda::{
+        compile_lambda_bool_collection, compile_lambda_int_collection,
+        compile_lambda_array_collection, compile_lambda_find, compile_lambda_find_index,
+        compile_lambda_find_last, compile_lambda_find_last_index, compile_lambda_fold,
+        compile_lambda_scan, compile_lambda_sort_by, compile_sample,
+    };
 
     match builtin.strategy {
         // ========================================
@@ -329,6 +410,31 @@ pub fn compile_builtin_call(
             let arr = compile_expression(ctx, builder, &args[0])?;
             let val = compile_expression(ctx, builder, &args[1])?;
             call_array_contains_bool(ctx, builder, arr, val)
+        }
+
+        BuiltinStrategy::ThreeArgVoid(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            let arg2 = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, runtime_fn, arg0, arg1, arg2)
+        }
+
+        BuiltinStrategy::TwoArgOptionInt(runtime_fn) => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let index = compile_expression(ctx, builder, &args[1])?;
+            compile_option_from_remove_at(ctx, builder, arr, index, runtime_fn)
+        }
+
+        BuiltinStrategy::TwoArgBool(runtime_fn) => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let val = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_bool_runtime(ctx, builder, runtime_fn, arr, val)
+        }
+
+        BuiltinStrategy::ArrayLastIndexOf => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let val = compile_expression(ctx, builder, &args[1])?;
+            compile_option_from_last_index_of(ctx, builder, arr, val)
         }
 
         // ========================================
@@ -483,6 +589,76 @@ pub fn compile_builtin_call(
             let channel = compile_expression(ctx, builder, &args[0])?;
             call_channel_close(ctx, builder, channel)?;
             Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        // ========================================
+        // Lambda-based collection strategies
+        // ========================================
+        BuiltinStrategy::LambdaBool(runtime_fn) => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_bool_collection(ctx, builder, arr, closure, runtime_fn)
+        }
+
+        BuiltinStrategy::LambdaInt(runtime_fn) => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_int_collection(ctx, builder, arr, closure, runtime_fn)
+        }
+
+        BuiltinStrategy::LambdaArray(runtime_fn) => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_array_collection(ctx, builder, arr, closure, runtime_fn)
+        }
+
+        BuiltinStrategy::LambdaFind => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_find(ctx, builder, arr, closure)
+        }
+
+        BuiltinStrategy::LambdaFindIndex => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_find_index(ctx, builder, arr, closure)
+        }
+
+        BuiltinStrategy::LambdaFindLast => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_find_last(ctx, builder, arr, closure)
+        }
+
+        BuiltinStrategy::LambdaFindLastIndex => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_find_last_index(ctx, builder, arr, closure)
+        }
+
+        BuiltinStrategy::LambdaFold => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let initial = compile_expression(ctx, builder, &args[1])?;
+            let closure = compile_expression(ctx, builder, &args[2])?;
+            compile_lambda_fold(ctx, builder, arr, initial, closure)
+        }
+
+        BuiltinStrategy::LambdaScan => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let initial = compile_expression(ctx, builder, &args[1])?;
+            let closure = compile_expression(ctx, builder, &args[2])?;
+            compile_lambda_scan(ctx, builder, arr, initial, closure)
+        }
+
+        BuiltinStrategy::LambdaSortBy => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            let closure = compile_expression(ctx, builder, &args[1])?;
+            compile_lambda_sort_by(ctx, builder, arr, closure)
+        }
+
+        BuiltinStrategy::Sample => {
+            let arr = compile_expression(ctx, builder, &args[0])?;
+            compile_sample(ctx, builder, arr)
         }
     }
 }

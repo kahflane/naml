@@ -151,6 +151,19 @@ pub fn call_three_arg_ptr_runtime(
     Ok(builder.inst_results(call)[0])
 }
 
+pub fn call_three_arg_void_runtime(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    name: &str,
+    a: Value,
+    b: Value,
+    c: Value,
+) -> Result<Value, CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, name)?;
+    builder.ins().call(func_ref, &[a, b, c]);
+    Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+}
+
 pub fn call_datetime_format(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,

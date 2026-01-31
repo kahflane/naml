@@ -109,6 +109,19 @@ fn parse_channel_type(input: TokenStream) -> PResult<NamlType> {
 fn parse_fn_type(input: TokenStream) -> PResult<NamlType> {
     let (input, _) = keyword(Keyword::Fn)(input)?;
     let (input, _) = token(TokenKind::LParen)(input)?;
+
+    // Check for named parameter pattern before parsing
+    if check(TokenKind::Ident)(input) {
+        if let Some(next) = input.tokens.get(1) {
+            if next.kind == TokenKind::Colon {
+                return Err(nom::Err::Failure(PError {
+                    input,
+                    kind: PErrorKind::NamedParamInFnType,
+                }));
+            }
+        }
+    }
+
     let (input, params) = separated_list0(token(TokenKind::Comma), parse_type)(input)?;
     let (input, _) = token(TokenKind::RParen)(input)?;
     let (input, returns) = opt(preceded(token(TokenKind::Arrow), parse_type))(input)?;

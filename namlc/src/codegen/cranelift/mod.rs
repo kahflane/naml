@@ -348,6 +348,114 @@ impl<'a> JitCompiler<'a> {
             "naml_array_decref_structs",
             crate::runtime::naml_array_decref_structs as *const u8,
         );
+        // New array functions - Mutation
+        builder.symbol(
+            "naml_array_insert",
+            crate::runtime::naml_array_insert as *const u8,
+        );
+        builder.symbol(
+            "naml_array_remove_at",
+            crate::runtime::naml_array_remove_at as *const u8,
+        );
+        builder.symbol(
+            "naml_array_remove",
+            crate::runtime::naml_array_remove as *const u8,
+        );
+        builder.symbol(
+            "naml_array_swap",
+            crate::runtime::naml_array_swap as *const u8,
+        );
+        // Deduplication
+        builder.symbol(
+            "naml_array_unique",
+            crate::runtime::naml_array_unique as *const u8,
+        );
+        builder.symbol(
+            "naml_array_compact",
+            crate::runtime::naml_array_compact as *const u8,
+        );
+        // Backward search
+        builder.symbol(
+            "naml_array_last_index_of",
+            crate::runtime::naml_array_last_index_of as *const u8,
+        );
+        builder.symbol(
+            "naml_array_find_last",
+            crate::runtime::naml_array_find_last as *const u8,
+        );
+        builder.symbol(
+            "naml_array_find_last_index",
+            crate::runtime::naml_array_find_last_index as *const u8,
+        );
+        // Array combination
+        builder.symbol(
+            "naml_array_concat",
+            crate::runtime::naml_array_concat as *const u8,
+        );
+        builder.symbol(
+            "naml_array_zip",
+            crate::runtime::naml_array_zip as *const u8,
+        );
+        builder.symbol(
+            "naml_array_unzip",
+            crate::runtime::naml_array_unzip as *const u8,
+        );
+        // Splitting
+        builder.symbol(
+            "naml_array_chunk",
+            crate::runtime::naml_array_chunk as *const u8,
+        );
+        builder.symbol(
+            "naml_array_partition",
+            crate::runtime::naml_array_partition as *const u8,
+        );
+        // Set operations
+        builder.symbol(
+            "naml_array_intersect",
+            crate::runtime::naml_array_intersect as *const u8,
+        );
+        builder.symbol(
+            "naml_array_diff",
+            crate::runtime::naml_array_diff as *const u8,
+        );
+        builder.symbol(
+            "naml_array_union",
+            crate::runtime::naml_array_union as *const u8,
+        );
+        // Advanced iteration
+        builder.symbol(
+            "naml_array_take_while",
+            crate::runtime::naml_array_take_while as *const u8,
+        );
+        builder.symbol(
+            "naml_array_drop_while",
+            crate::runtime::naml_array_drop_while as *const u8,
+        );
+        builder.symbol(
+            "naml_array_reject",
+            crate::runtime::naml_array_reject as *const u8,
+        );
+        builder.symbol(
+            "naml_array_flat_apply",
+            crate::runtime::naml_array_flat_apply as *const u8,
+        );
+        builder.symbol(
+            "naml_array_scan",
+            crate::runtime::naml_array_scan as *const u8,
+        );
+        // Random
+        builder.symbol(
+            "naml_array_shuffle",
+            crate::runtime::naml_array_shuffle as *const u8,
+        );
+        builder.symbol(
+            "naml_array_sample",
+            crate::runtime::naml_array_sample as *const u8,
+        );
+        builder.symbol(
+            "naml_array_sample_n",
+            crate::runtime::naml_array_sample_n as *const u8,
+        );
 
         // Struct operations
         builder.symbol(
@@ -1480,6 +1588,189 @@ impl<'a> JitCompiler<'a> {
             "naml_array_decref_structs",
             &[ptr],
             &[],
+        )?;
+        // New array functions - Mutation
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_insert",
+            &[ptr, i64t, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_remove_at",
+            &[ptr, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_remove",
+            &[ptr, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_swap",
+            &[ptr, i64t, i64t],
+            &[],
+        )?;
+        // Deduplication
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_unique",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_compact",
+            &[ptr],
+            &[ptr],
+        )?;
+        // Backward search
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_last_index_of",
+            &[ptr, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_find_last",
+            &[ptr, i64t, i64t, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_find_last_index",
+            &[ptr, i64t, i64t],
+            &[i64t],
+        )?;
+        // Array combination
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_concat",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_zip",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_unzip",
+            &[ptr],
+            &[ptr],
+        )?;
+        // Splitting
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_chunk",
+            &[ptr, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_partition",
+            &[ptr, i64t, i64t],
+            &[ptr],
+        )?;
+        // Set operations
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_intersect",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_diff",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_union",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        // Advanced iteration
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_take_while",
+            &[ptr, i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_drop_while",
+            &[ptr, i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_reject",
+            &[ptr, i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_flat_apply",
+            &[ptr, i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_scan",
+            &[ptr, i64t, i64t, i64t],
+            &[ptr],
+        )?;
+        // Random
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_shuffle",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_sample",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_array_sample_n",
+            &[ptr, i64t],
+            &[ptr],
         )?;
 
         // Map functions

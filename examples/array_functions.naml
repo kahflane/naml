@@ -1,0 +1,224 @@
+use std::collections::{
+    count, sum, first, last, get, push, pop, shift,
+    apply, where, any, all, fold, find, find_index,
+    unique, compact, last_index_of, index_of, contains,
+    intersect, union, diff, take, drop, slice,
+    take_while, drop_while, reject, reversed, sort, shuffle,
+    chunk, zip
+};
+
+fn main() {
+    println("=== Array Functions Demo ===\n");
+
+    var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+    // Basic operations
+    println("--- Basic Operations ---");
+    print("Array: [1..10], count: ");
+    println(count(numbers));
+    print("Sum: ");
+    println(sum(numbers));
+    print("First: ");
+    println(first(numbers) ?? -1);
+    print("Last: ");
+    println(last(numbers) ?? -1);
+    print("Get index 5: ");
+    println(get(numbers, 5) ?? -1);
+
+    // Transformation with lambdas
+    println("\n--- Transformations ---");
+    var doubled: [int] = apply(numbers, fn(x: int) -> int { return x * 2; });
+    print("Doubled [0..2]: ");
+    print(get(doubled, 0) ?? 0);
+    print(", ");
+    print(get(doubled, 1) ?? 0);
+    print(", ");
+    println(get(doubled, 2) ?? 0);
+
+    var squared: [int] = apply(numbers, fn(x: int) -> int { return x * x; });
+    print("Squared [0..2]: ");
+    print(get(squared, 0) ?? 0);
+    print(", ");
+    print(get(squared, 1) ?? 0);
+    print(", ");
+    println(get(squared, 2) ?? 0);
+
+    // Filtering
+    println("\n--- Filtering ---");
+    var evens: [int] = where(numbers, fn(x: int) -> bool { return x % 2 == 0; });
+    print("Evens count: ");
+    println(count(evens));
+
+    var odds: [int] = reject(numbers, fn(x: int) -> bool { return x % 2 == 0; });
+    print("Odds count: ");
+    println(count(odds));
+
+    var gt5: [int] = where(numbers, fn(x: int) -> bool { return x > 5; });
+    print("Greater than 5: ");
+    println(count(gt5));
+
+    // Predicates
+    println("\n--- Predicates ---");
+    var has_even: bool = any(numbers, fn(x: int) -> bool { return x % 2 == 0; });
+    print("Has even: ");
+    println(has_even);
+
+    var all_positive: bool = all(numbers, fn(x: int) -> bool { return x > 0; });
+    print("All positive: ");
+    println(all_positive);
+
+    var all_lt100: bool = all(numbers, fn(x: int) -> bool { return x < 100; });
+    print("All < 100: ");
+    println(all_lt100);
+
+    // Finding elements
+    println("\n--- Finding Elements ---");
+    var found: option<int> = find(numbers, fn(x: int) -> bool { return x > 7; });
+    print("First > 7: ");
+    println(found ?? -1);
+
+    var idx: option<int> = find_index(numbers, fn(x: int) -> bool { return x == 5; });
+    print("Index of 5: ");
+    println(idx ?? -1);
+
+    print("Contains 7: ");
+    println(contains(numbers, 7));
+
+    print("Index of 3: ");
+    println(index_of(numbers, 3) ?? -1);
+
+    // Folding/Reducing
+    println("\n--- Folding ---");
+    var total: int = fold(numbers, 0, fn(acc: int, x: int) -> int { return acc + x; });
+    print("Fold sum: ");
+    println(total);
+
+    var product: int = fold([1, 2, 3, 4, 5], 1, fn(acc: int, x: int) -> int { return acc * x; });
+    print("Fold product [1..5]: ");
+    println(product);
+
+    var max_val: int = fold(numbers, 0, fn(acc: int, x: int) -> int {
+        if (x > acc) { return x; }
+        return acc;
+    });
+    print("Fold max: ");
+    println(max_val);
+
+    // Deduplication
+    println("\n--- Deduplication ---");
+    var with_dupes: [int] = [1, 2, 2, 3, 3, 3, 4, 4, 4, 4];
+    var uniq: [int] = unique(with_dupes);
+    print("Unique [1,2,2,3,3,3,4,4,4,4]: ");
+    println(count(uniq));
+
+    var last_idx: option<int> = last_index_of(with_dupes, 3);
+    print("Last index of 3: ");
+    println(last_idx ?? -1);
+
+    var with_zeros: [int] = [1, 0, 2, 0, 3, 0];
+    var compacted: [int] = compact(with_zeros);
+    print("Compact [1,0,2,0,3,0]: ");
+    println(count(compacted));
+
+    // Set operations
+    println("\n--- Set Operations ---");
+    var set_a: [int] = [1, 2, 3, 4, 5];
+    var set_b: [int] = [4, 5, 6, 7, 8];
+
+    var inter: [int] = intersect(set_a, set_b);
+    print("Intersect count: ");
+    println(count(inter));
+
+    var uni: [int] = union(set_a, set_b);
+    print("Union count: ");
+    println(count(uni));
+
+    var difference: [int] = diff(set_a, set_b);
+    print("Diff (a - b) count: ");
+    println(count(difference));
+
+    // Slicing
+    println("\n--- Slicing ---");
+    var taken: [int] = take(numbers, 3);
+    print("Take 3: ");
+    println(count(taken));
+
+    var dropped: [int] = drop(numbers, 7);
+    print("Drop 7: ");
+    println(count(dropped));
+
+    var sliced: [int] = slice(numbers, 2, 5);
+    print("Slice [2..5]: ");
+    println(count(sliced));
+
+    // Conditional slicing
+    println("\n--- Conditional Slicing ---");
+    var tw: [int] = take_while(numbers, fn(x: int) -> bool { return x < 6; });
+    print("Take while < 6: ");
+    println(count(tw));
+
+    var dw: [int] = drop_while(numbers, fn(x: int) -> bool { return x < 4; });
+    print("Drop while < 4: ");
+    println(count(dw));
+
+    // Chunking
+    println("\n--- Chunking ---");
+    var chunks: [[int]] = chunk([1, 2, 3, 4, 5, 6], 2);
+    print("Chunks of 2 from [1..6]: ");
+    for (c: [int] in chunks) {
+        print("[");
+        print(first(c) ?? 0);
+        print("] ");
+    }
+    println("");
+
+    // Zipping
+    println("\n--- Zipping ---");
+    var xs: [int] = [1, 2, 3];
+    var ys: [int] = [10, 20, 30];
+    var zipped: [[int]] = zip(xs, ys);
+    print("Zipped pairs: ");
+    for (pair: [int] in zipped) {
+        print("(");
+        print(get(pair, 0) ?? 0);
+        print(",");
+        print(get(pair, 1) ?? 0);
+        print(") ");
+    }
+    println("");
+
+    // Reversing and sorting
+    println("\n--- Reversing & Sorting ---");
+    var rev: [int] = reversed(numbers);
+    print("Reversed first: ");
+    println(first(rev) ?? -1);
+
+    var unsorted: [int] = [5, 2, 8, 1, 9, 3];
+    var sorted: [int] = sort(unsorted);
+    print("Sorted first: ");
+    println(first(sorted) ?? -1);
+
+    // Random
+    println("\n--- Random ---");
+    var to_shuffle: [int] = [1, 2, 3, 4, 5];
+    var shuffled: [int] = shuffle(to_shuffle);
+    print("Shuffled count: ");
+    println(count(shuffled));
+
+    // Stack operations
+    println("\n--- Stack Operations ---");
+    var stack: [int] = [1, 2, 3];
+    push(stack, 4);
+    print("After push(4), count: ");
+    println(count(stack));
+
+    var popped: option<int> = pop(stack);
+    print("Popped: ");
+    println(popped ?? -1);
+
+    var shifted: option<int> = shift(stack);
+    print("Shifted: ");
+    println(shifted ?? -1);
+
+    println("\n=== Demo Complete ===");
+}

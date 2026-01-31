@@ -488,6 +488,64 @@ impl<'a> TypeChecker<'a> {
                     ("arr", Type::Array(Box::new(Type::Int))),
                     ("comparator", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
                 ], Type::Array(Box::new(Type::Int))),
+                // Mutation operations
+                StdModuleFn::new("insert", vec![("arr", Type::Array(Box::new(Type::Int))), ("index", Type::Int), ("value", Type::Int)], Type::Unit),
+                StdModuleFn::new("remove_at", vec![("arr", Type::Array(Box::new(Type::Int))), ("index", Type::Int)], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("remove", vec![("arr", Type::Array(Box::new(Type::Int))), ("value", Type::Int)], Type::Bool),
+                StdModuleFn::new("swap", vec![("arr", Type::Array(Box::new(Type::Int))), ("i", Type::Int), ("j", Type::Int)], Type::Unit),
+                // Deduplication
+                StdModuleFn::new("unique", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("compact", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                // Backward search
+                StdModuleFn::new("last_index_of", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("find_last", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("find_last_index", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Option(Box::new(Type::Int))),
+                // Array combination
+                StdModuleFn::new("concat", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("zip", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
+                StdModuleFn::new("unzip", vec![("arr", Type::Array(Box::new(Type::Array(Box::new(Type::Int)))))], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
+                // Splitting
+                StdModuleFn::new("chunk", vec![("arr", Type::Array(Box::new(Type::Int))), ("size", Type::Int)], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
+                StdModuleFn::new("partition", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
+                // Set operations
+                StdModuleFn::new("intersect", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("diff", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("union", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                // Advanced iteration
+                StdModuleFn::new("take_while", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("drop_while", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("reject", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("flat_apply", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("mapper", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Array(Box::new(Type::Int))), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("scan", vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("initial", Type::Int),
+                    ("reducer", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
+                ], Type::Array(Box::new(Type::Int))),
+                // Random
+                StdModuleFn::new("shuffle", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
+                StdModuleFn::new("sample", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+                StdModuleFn::new("sample_n", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
             ]),
             _ => None,
         }

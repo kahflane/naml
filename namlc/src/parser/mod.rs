@@ -58,6 +58,25 @@ impl ParseError {
     }
 }
 
+fn error_message(kind: &PErrorKind) -> String {
+    match kind {
+        PErrorKind::Expected(tok) => format!("expected {:?}", tok),
+        PErrorKind::ExpectedKeyword(kw) => format!("expected keyword {:?}", kw),
+        PErrorKind::ExpectedIdent => "expected identifier".to_string(),
+        PErrorKind::ExpectedExpr => "expected expression".to_string(),
+        PErrorKind::ExpectedType => "expected type".to_string(),
+        PErrorKind::ExpectedTypeAnnotation => "expected type annotation".to_string(),
+        PErrorKind::ExpectedStatement => "expected statement".to_string(),
+        PErrorKind::ExpectedItem => "expected item".to_string(),
+        PErrorKind::MutNotAllowedOnVar => "`mut` is not allowed on variable declarations".to_string(),
+        PErrorKind::MutNotAllowedOnReceiver => "`mut` is not allowed on receiver".to_string(),
+        PErrorKind::NamedParamInFnType => {
+            "function types don't support named parameters; use `fn(int)` not `fn(x: int)`".to_string()
+        }
+        PErrorKind::Nom(ek) => format!("parse error: {:?}", ek),
+    }
+}
+
 pub fn parse<'ast>(tokens: &[Token], source: &str, arena: &'ast AstArena) -> ParseResult<'ast> {
     reset_pending_gt();
 
@@ -77,7 +96,7 @@ pub fn parse<'ast>(tokens: &[Token], source: &str, arena: &'ast AstArena) -> Par
                 let (err_span, err_msg) = match &e {
                     nom::Err::Error(pe) | nom::Err::Failure(pe) => {
                         let span = pe.input.current_span();
-                        let msg = format!("{:?}", pe.kind);
+                        let msg = error_message(&pe.kind);
                         (span, msg)
                     }
                     nom::Err::Incomplete(_) => (input.current_span(), "Incomplete input".to_string()),
