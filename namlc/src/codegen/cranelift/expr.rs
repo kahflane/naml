@@ -982,184 +982,50 @@ pub fn compile_expression(
                     )))
                 }
             }
-            // Check for std::module::function() paths or enum variant constructor
+            // Check for path-based function calls (module::function, std::module::function, etc.)
             else if let Expression::Path(path_expr) = call.callee {
-                // Handle std::module::function() paths
-                if path_expr.segments.len() >= 3 {
-                    let first = ctx.interner.resolve(&path_expr.segments[0].symbol);
-                    if first == "std" {
-                        let module_name = ctx.interner.resolve(&path_expr.segments[1].symbol);
-                        let func_name = ctx.interner.resolve(&path_expr.segments[2].symbol);
+                // Function name is always the last segment
+                let func_name = ctx
+                    .interner
+                    .resolve(&path_expr.segments.last().unwrap().symbol)
+                    .to_string();
 
-                        match (module_name, func_name) {
-                            ("threads", "join") => {
-                                return call_wait_all(ctx, builder);
-                            }
-                            ("threads", "open_channel") => {
-                                let capacity = if call.args.is_empty() {
-                                    builder.ins().iconst(cranelift::prelude::types::I64, 1)
-                                } else {
-                                    compile_expression(ctx, builder, &call.args[0])?
-                                };
-                                return call_channel_new(ctx, builder, capacity);
-                            }
-                            ("threads", "send") => {
-                                let ch = compile_expression(ctx, builder, &call.args[0])?;
-                                let val = compile_expression(ctx, builder, &call.args[1])?;
-                                return call_channel_send(ctx, builder, ch, val);
-                            }
-                            ("threads", "receive") => {
-                                let ch = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_channel_receive(ctx, builder, ch);
-                            }
-                            ("threads", "close") => {
-                                let ch = compile_expression(ctx, builder, &call.args[0])?;
-                                let _ = call_channel_close(ctx, builder, ch)?;
-                                return Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0));
-                            }
-                            ("random", "random") => {
-                                let min_val = compile_expression(ctx, builder, &call.args[0])?;
-                                let max_val = compile_expression(ctx, builder, &call.args[1])?;
-                                return call_random(ctx, builder, min_val, max_val);
-                            }
-                            ("random", "random_float") => {
-                                return call_random_float(ctx, builder);
-                            }
-                            ("io", "read_key") => {
-                                return call_read_key(ctx, builder);
-                            }
-                            ("io", "clear_screen") => {
-                                return call_void_runtime(ctx, builder, "naml_clear_screen");
-                            }
-                            ("io", "set_cursor") => {
-                                let x = compile_expression(ctx, builder, &call.args[0])?;
-                                let y = compile_expression(ctx, builder, &call.args[1])?;
-                                return call_two_arg_runtime(ctx, builder, "naml_set_cursor", x, y);
-                            }
-                            ("io", "hide_cursor") => {
-                                return call_void_runtime(ctx, builder, "naml_hide_cursor");
-                            }
-                            ("io", "show_cursor") => {
-                                return call_void_runtime(ctx, builder, "naml_show_cursor");
-                            }
-                            ("io", "terminal_width") => {
-                                return call_int_runtime(ctx, builder, "naml_terminal_width");
-                            }
-                            ("io", "terminal_height") => {
-                                return call_int_runtime(ctx, builder, "naml_terminal_height");
-                            }
-                            ("datetime", "now_ms") => {
-                                return call_int_runtime(ctx, builder, "naml_datetime_now_ms");
-                            }
-                            ("datetime", "now_s") => {
-                                return call_int_runtime(ctx, builder, "naml_datetime_now_s");
-                            }
-                            ("datetime", "year") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_datetime_year",
-                                    ts,
-                                );
-                            }
-                            ("datetime", "month") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_datetime_month",
-                                    ts,
-                                );
-                            }
-                            ("datetime", "day") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_datetime_day",
-                                    ts,
-                                );
-                            }
-                            ("datetime", "hour") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_datetime_hour",
-                                    ts,
-                                );
-                            }
-                            ("datetime", "minute") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_datetime_minute",
-                                    ts,
-                                );
-                            }
-                            ("datetime", "second") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_datetime_second",
-                                    ts,
-                                );
-                            }
-                            ("datetime", "day_of_week") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_datetime_day_of_week",
-                                    ts,
-                                );
-                            }
-                            ("datetime", "format_date") => {
-                                let ts = compile_expression(ctx, builder, &call.args[0])?;
-                                let fmt = compile_expression(ctx, builder, &call.args[1])?;
-                                return call_datetime_format(ctx, builder, ts, fmt);
-                            }
-                            ("metrics", "perf_now") => {
-                                return call_int_runtime(ctx, builder, "naml_metrics_perf_now");
-                            }
-                            ("metrics", "elapsed_ms") => {
-                                let start = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_metrics_elapsed_ms",
-                                    start,
-                                );
-                            }
-                            ("metrics", "elapsed_us") => {
-                                let start = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_metrics_elapsed_us",
-                                    start,
-                                );
-                            }
-                            ("metrics", "elapsed_ns") => {
-                                let start = compile_expression(ctx, builder, &call.args[0])?;
-                                return call_one_arg_int_runtime(
-                                    ctx,
-                                    builder,
-                                    "naml_metrics_elapsed_ns",
-                                    start,
-                                );
-                            }
-                            _ => {
-                                return Err(CodegenError::Unsupported(format!(
-                                    "Unknown std function: std::{}::{}. Try importing it with 'use std::{}::{}' first.",
-                                    module_name, func_name, module_name, func_name
-                                )));
-                            }
+                // 1. Check if this function exists in ctx.functions (user-defined or imported)
+                if let Some(&func_id) = ctx.functions.get(&func_name) {
+                    let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
+
+                    // First arg is closure data (0 for regular functions)
+                    let closure_data = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let mut args = vec![closure_data];
+
+                    for arg in &call.args {
+                        let mut val = compile_expression(ctx, builder, arg)?;
+                        // Check if argument is a string literal that needs conversion
+                        if matches!(
+                            arg,
+                            Expression::Literal(LiteralExpr {
+                                value: Literal::String(_),
+                                ..
+                            })
+                        ) {
+                            val = call_string_from_cstr(ctx, builder, val)?;
                         }
+                        args.push(val);
                     }
+
+                    let call_inst = builder.ins().call(func_ref, &args);
+                    let results = builder.inst_results(call_inst);
+
+                    return if results.is_empty() {
+                        Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+                    } else {
+                        Ok(results[0])
+                    };
+                }
+
+                // 2. Check builtin registry (works for any path length)
+                if let Some(builtin) = super::builtins::lookup_builtin(&func_name) {
+                    return super::builtins::compile_builtin_call(ctx, builder, builtin, &call.args);
                 }
 
                 // Check for enum variant constructor: EnumType::Variant(data)

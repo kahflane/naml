@@ -109,11 +109,43 @@ pub struct TypeAliasDef {
     pub span: Span,
 }
 
+#[derive(Debug, Clone)]
+pub struct ModuleNamespace {
+    pub functions: HashMap<Spur, FunctionSig>,
+}
+
+impl ModuleNamespace {
+    pub fn new() -> Self {
+        Self {
+            functions: HashMap::new(),
+        }
+    }
+
+    pub fn add_function(&mut self, sig: FunctionSig) {
+        self.functions.insert(sig.name, sig);
+    }
+
+    pub fn get_function(&self, name: Spur) -> Option<&FunctionSig> {
+        self.functions.get(&name)
+    }
+
+    pub fn all_functions(&self) -> impl Iterator<Item = &FunctionSig> {
+        self.functions.values()
+    }
+}
+
+impl Default for ModuleNamespace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub struct SymbolTable {
     types: HashMap<Spur, TypeDef>,
     functions: HashMap<Spur, FunctionSig>,
     methods: HashMap<Spur, Vec<MethodSig>>,
+    modules: HashMap<Spur, ModuleNamespace>,
 }
 
 impl SymbolTable {
@@ -122,7 +154,24 @@ impl SymbolTable {
             types: HashMap::new(),
             functions: HashMap::new(),
             methods: HashMap::new(),
+            modules: HashMap::new(),
         }
+    }
+
+    pub fn register_module(&mut self, name: Spur) -> &mut ModuleNamespace {
+        self.modules.entry(name).or_default()
+    }
+
+    pub fn get_module(&self, name: Spur) -> Option<&ModuleNamespace> {
+        self.modules.get(&name)
+    }
+
+    pub fn get_module_function(&self, module: Spur, func: Spur) -> Option<&FunctionSig> {
+        self.modules.get(&module)?.get_function(func)
+    }
+
+    pub fn has_module(&self, name: Spur) -> bool {
+        self.modules.contains_key(&name)
     }
 
     pub fn define_type(&mut self, name: Spur, def: TypeDef) {

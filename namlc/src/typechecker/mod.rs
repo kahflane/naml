@@ -249,17 +249,26 @@ impl<'a> TypeChecker<'a> {
             Some(fns) => fns,
             None => {
                 self.errors.push(TypeError::UnknownModule {
-                    path: format!("std.{}", module),
+                    path: format!("std::{}", module),
                     span,
                 });
                 return;
             }
         };
 
+        let module_spur = match self.interner.get(module) {
+            Some(s) => s,
+            None => return,
+        };
+
         match items {
             UseItems::All => {
                 for module_fn in &module_fns {
-                    self.register_std_fn(module_fn);
+                    let sig = self.create_std_fn_sig(module_fn);
+                    if let Some(ref sig) = sig {
+                        self.symbols.register_module(module_spur).add_function(sig.clone());
+                        self.symbols.define_function(sig.clone());
+                    }
                 }
             }
             UseItems::Specific(entries) => {
@@ -268,11 +277,15 @@ impl<'a> TypeChecker<'a> {
                     let found = module_fns.iter().find(|f| f.name == entry_name);
                     match found {
                         Some(module_fn) => {
-                            self.register_std_fn(module_fn);
+                            let sig = self.create_std_fn_sig(module_fn);
+                            if let Some(ref sig) = sig {
+                                self.symbols.register_module(module_spur).add_function(sig.clone());
+                                self.symbols.define_function(sig.clone());
+                            }
                         }
                         None => {
                             self.errors.push(TypeError::UnknownModuleSymbol {
-                                module: format!("std.{}", module),
+                                module: format!("std::{}", module),
                                 symbol: entry_name,
                                 span: entry.span,
                             });
@@ -283,38 +296,38 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn register_std_fn(&mut self, module_fn: &StdModuleFn) {
-        if let Some(spur) = self.interner.get(module_fn.name) {
-            let type_params: Vec<_> = module_fn.type_params.iter()
-                .map(|tp_name| {
-                    let tp_spur = self.interner.get(tp_name).unwrap_or(spur);
-                    TypeParam { name: tp_spur, bounds: vec![] }
-                })
-                .collect();
+    fn create_std_fn_sig(&self, module_fn: &StdModuleFn) -> Option<FunctionSig> {
+        let spur = self.interner.get(module_fn.name)?;
 
-            let mut return_ty = module_fn.return_ty.clone();
-            Self::fix_default_generic_spur(&mut return_ty, &type_params);
+        let type_params: Vec<_> = module_fn.type_params.iter()
+            .map(|tp_name| {
+                let tp_spur = self.interner.get(tp_name).unwrap_or(spur);
+                TypeParam { name: tp_spur, bounds: vec![] }
+            })
+            .collect();
 
-            let params: Vec<_> = module_fn.params.iter()
-                .map(|(pname, pty)| {
-                    let pspur = self.interner.get(pname).unwrap_or(spur);
-                    let mut param_ty = pty.clone();
-                    Self::fix_default_generic_spur(&mut param_ty, &type_params);
-                    (pspur, param_ty)
-                })
-                .collect();
+        let mut return_ty = module_fn.return_ty.clone();
+        Self::fix_default_generic_spur(&mut return_ty, &type_params);
 
-            self.symbols.define_function(FunctionSig {
-                name: spur,
-                type_params,
-                params,
-                return_ty,
-                throws: vec![],
-                is_public: true,
-                is_variadic: module_fn.is_variadic,
-                span: Span::dummy(),
-            });
-        }
+        let params: Vec<_> = module_fn.params.iter()
+            .map(|(pname, pty)| {
+                let pspur = self.interner.get(pname).unwrap_or(spur);
+                let mut param_ty = pty.clone();
+                Self::fix_default_generic_spur(&mut param_ty, &type_params);
+                (pspur, param_ty)
+            })
+            .collect();
+
+        Some(FunctionSig {
+            name: spur,
+            type_params,
+            params,
+            return_ty,
+            throws: vec![],
+            is_public: true,
+            is_variadic: module_fn.is_variadic,
+            span: Span::dummy(),
+        })
     }
 
     /// Recursively fix Type::Generic with default spur to use the first type parameter
@@ -545,6 +558,18 @@ impl<'a> TypeChecker<'a> {
             }
         }
 
+        let module_name = path.last().unwrap();
+        let module_spur = match self.interner.get(module_name.as_str()) {
+            Some(s) => s,
+            None => {
+                self.imported_modules.push(ImportedModule {
+                    source_text,
+                    file_path,
+                });
+                return;
+            }
+        };
+
         match items {
             UseItems::All => {
                 for (name, params, return_ty, is_variadic) in &pub_functions {
@@ -555,7 +580,7 @@ impl<'a> TypeChecker<'a> {
                                 (pspur, pty.clone())
                             })
                             .collect();
-                        self.symbols.define_function(FunctionSig {
+                        let sig = FunctionSig {
                             name: spur,
                             type_params: vec![],
                             params,
@@ -564,7 +589,9 @@ impl<'a> TypeChecker<'a> {
                             is_public: true,
                             is_variadic: *is_variadic,
                             span: crate::source::Span::dummy(),
-                        });
+                        };
+                        self.symbols.register_module(module_spur).add_function(sig.clone());
+                        self.symbols.define_function(sig);
                     }
                 }
             }
@@ -581,7 +608,7 @@ impl<'a> TypeChecker<'a> {
                                     (pspur, pty.clone())
                                 })
                                 .collect();
-                            self.symbols.define_function(FunctionSig {
+                            let sig = FunctionSig {
                                 name: spur,
                                 type_params: vec![],
                                 params,
@@ -590,7 +617,9 @@ impl<'a> TypeChecker<'a> {
                                 is_public: true,
                                 is_variadic: *is_variadic,
                                 span: crate::source::Span::dummy(),
-                            });
+                            };
+                            self.symbols.register_module(module_spur).add_function(sig.clone());
+                            self.symbols.define_function(sig);
                         }
                         None => {
                             self.errors.push(TypeError::PrivateSymbol {

@@ -27,6 +27,25 @@ use super::typed_ast::{ExprTypeInfo, TypeAnnotations};
 use super::types::{FunctionType, Type, TypeParam};
 use super::unify::{fresh_type_var, unify};
 
+/// Replace default generic Spur with actual type parameter Spur
+fn fix_generic_spur(ty: &mut Type, type_param_spur: lasso::Spur) {
+    match ty {
+        Type::Generic(g_spur, _) => {
+            if *g_spur == lasso::Spur::default() {
+                *g_spur = type_param_spur;
+            }
+        }
+        Type::Channel(inner) => fix_generic_spur(inner, type_param_spur),
+        Type::Array(inner) => fix_generic_spur(inner, type_param_spur),
+        Type::Option(inner) => fix_generic_spur(inner, type_param_spur),
+        Type::Map(k, v) => {
+            fix_generic_spur(k, type_param_spur);
+            fix_generic_spur(v, type_param_spur);
+        }
+        _ => {}
+    }
+}
+
 pub struct TypeInferrer<'a> {
     pub env: &'a mut TypeEnv,
     pub symbols: &'a SymbolTable,
@@ -160,6 +179,49 @@ impl<'a> TypeInferrer<'a> {
         }
     }
 
+    fn display_type(&self, ty: &Type) -> String {
+        match ty {
+            Type::Int => "int".to_string(),
+            Type::Uint => "uint".to_string(),
+            Type::Float => "float".to_string(),
+            Type::Bool => "bool".to_string(),
+            Type::String => "string".to_string(),
+            Type::Bytes => "bytes".to_string(),
+            Type::Unit => "()".to_string(),
+            Type::Array(inner) => format!("[{}]", self.display_type(inner)),
+            Type::FixedArray(inner, size) => format!("[{}; {}]", self.display_type(inner), size),
+            Type::Option(inner) => format!("option<{}>", self.display_type(inner)),
+            Type::Map(k, v) => format!("map<{}, {}>", self.display_type(k), self.display_type(v)),
+            Type::Channel(inner) => format!("channel<{}>", self.display_type(inner)),
+            Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
+            Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
+            Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
+            Type::Exception(name) => self.interner.resolve(name).to_string(),
+            Type::Function(f) => {
+                let params = f.params.iter()
+                    .map(|p| self.display_type(p))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("fn({}) -> {}", params, self.display_type(&f.returns))
+            }
+            Type::TypeVar(tv) => format!("?{}", tv.id),
+            Type::Generic(name, args) => {
+                let name_str = self.interner.resolve(name);
+                if args.is_empty() {
+                    name_str.to_string()
+                } else {
+                    let args_str = args.iter()
+                        .map(|a| self.display_type(a))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{}<{}>", name_str, args_str)
+                }
+            }
+            Type::Error => "<error>".to_string(),
+            Type::Never => "never".to_string(),
+        }
+    }
+
     fn infer_some(&mut self, some: &ast::SomeExpr) -> Type {
         let inner_ty = self.infer_expr(some.value);
         Type::Option(Box::new(inner_ty))
@@ -279,34 +341,59 @@ impl<'a> TypeInferrer<'a> {
         }
 
         let first = &path.segments[0];
-        let first_name = self.interner.resolve(&first.symbol);
 
-        if first_name == "std" && path.segments.len() >= 3 {
-            let module_name = self.interner.resolve(&path.segments[1].symbol).to_string();
-            let func_name = self.interner.resolve(&path.segments[2].symbol).to_string();
+        // For paths with 2+ segments, try module resolution
+        if path.segments.len() >= 2 {
+            // Function name is always the last segment
+            let func_name = self.interner.resolve(&path.segments.last().unwrap().symbol);
 
-            if let Some(module_fns) = super::get_std_module_functions(&module_name) {
-                if let Some(module_fn) = module_fns.iter().find(|f| f.name == func_name) {
-                    let params: Vec<Type> = module_fn.params.iter().map(|(_, ty)| ty.clone()).collect();
-                    return Type::Function(FunctionType {
-                        params,
-                        returns: Box::new(module_fn.return_ty.clone()),
-                        throws: vec![],
-                        is_variadic: module_fn.is_variadic,
-                    });
-                } else {
-                    self.errors.push(TypeError::Custom {
-                        message: format!("unknown function '{}' in module std::{}", func_name, module_name),
-                        span: path.span,
-                    });
-                    return Type::Error;
+            // Try each segment (except last) as potential module name
+            for i in 0..path.segments.len() - 1 {
+                let potential_module = &path.segments[i];
+
+                // Check registered modules (from imports)
+                if let Some(module) = self.symbols.get_module(potential_module.symbol) {
+                    let func_symbol = path.segments.last().unwrap().symbol;
+                    if let Some(func_sig) = module.get_function(func_symbol) {
+                        return Type::Function(self.symbols.to_function_type(func_sig));
+                    }
                 }
-            } else {
-                self.errors.push(TypeError::Custom {
-                    message: format!("unknown module 'std::{}'", module_name),
-                    span: path.span,
-                });
-                return Type::Error;
+
+                // Check std library modules
+                let module_name = self.interner.resolve(&potential_module.symbol);
+                if let Some(module_fns) = super::get_std_module_functions(module_name) {
+                    for std_fn in &module_fns {
+                        if std_fn.name == func_name {
+                            // Get interned Spur for type param (if generic)
+                            let type_param_spur = std_fn.type_params.first()
+                                .and_then(|tp_name| self.interner.get(tp_name));
+
+                            // Fix generic Spurs in return type
+                            let mut return_ty = std_fn.return_ty.clone();
+                            if let Some(tp_spur) = type_param_spur {
+                                fix_generic_spur(&mut return_ty, tp_spur);
+                            }
+
+                            // Fix generic Spurs in params
+                            let params: Vec<Type> = std_fn.params.iter()
+                                .map(|(_, ty)| {
+                                    let mut param_ty = ty.clone();
+                                    if let Some(tp_spur) = type_param_spur {
+                                        fix_generic_spur(&mut param_ty, tp_spur);
+                                    }
+                                    param_ty
+                                })
+                                .collect();
+
+                            return Type::Function(FunctionType {
+                                params,
+                                returns: Box::new(return_ty),
+                                throws: vec![],
+                                is_variadic: std_fn.is_variadic,
+                            });
+                        }
+                    }
+                }
             }
         }
 
@@ -333,7 +420,7 @@ impl<'a> TypeInferrer<'a> {
                         let variant = self.interner.resolve(&variant_name).to_string();
                         let enum_name = self.interner.resolve(&first.symbol).to_string();
                         self.errors.push(TypeError::Custom {
-                            message: format!("unknown variant {} for enum {}", variant, enum_name),
+                            message: format!("unknown variant '{}' for enum '{}'", variant, enum_name),
                             span: path.span,
                         });
                     }
@@ -344,7 +431,15 @@ impl<'a> TypeInferrer<'a> {
                 }
             }
         } else {
-            Type::Generic(first.symbol, Vec::new())
+            let path_str = path.segments.iter()
+                .map(|s| self.interner.resolve(&s.symbol))
+                .collect::<Vec<_>>()
+                .join("::");
+            self.errors.push(TypeError::Custom {
+                message: format!("undefined path '{}'", path_str),
+                span: path.span,
+            });
+            Type::Error
         }
     }
 
@@ -401,8 +496,8 @@ impl<'a> TypeInferrer<'a> {
                     _ => {
                         self.errors.push(TypeError::InvalidBinaryOp {
                             op: format!("{:?}", bin.op),
-                            left: left_ty.to_string(),
-                            right: right_ty.to_string(),
+                            left: self.display_type(&left_ty),
+                            right: self.display_type(&right_ty),
                             span: bin.span,
                         });
                         Type::Error
@@ -528,7 +623,7 @@ impl<'a> TypeInferrer<'a> {
                 if !resolved.is_numeric() && resolved != Type::Error {
                     self.errors.push(TypeError::InvalidOperation {
                         op: "negation".into(),
-                        ty: operand_ty.to_string(),
+                        ty: self.display_type(&operand_ty),
                         span: un.span,
                     });
                     return Type::Error;
@@ -546,7 +641,7 @@ impl<'a> TypeInferrer<'a> {
                 if !resolved.is_integer() && resolved != Type::Error {
                     self.errors.push(TypeError::InvalidOperation {
                         op: "bitwise not".into(),
-                        ty: operand_ty.to_string(),
+                        ty: self.display_type(&operand_ty),
                         span: un.span,
                     });
                     return Type::Error;
@@ -582,18 +677,32 @@ impl<'a> TypeInferrer<'a> {
                 }
         }
 
-        // Check if callee is a std path expression with generic function
+        // Check if callee is a path expression with generic function from a module
         if let ast::Expression::Path(path) = call.callee {
-            if path.segments.len() >= 3 {
-                let first_name = self.interner.resolve(&path.segments[0].symbol);
-                if first_name == "std" {
-                    let module_name = self.interner.resolve(&path.segments[1].symbol).to_string();
-                    let func_name = self.interner.resolve(&path.segments[2].symbol).to_string();
+            if path.segments.len() >= 2 {
+                let func_symbol = path.segments.last().unwrap().symbol;
+                let func_name = self.interner.resolve(&func_symbol);
 
-                    if let Some(module_fns) = super::get_std_module_functions(&module_name) {
-                        if let Some(module_fn) = module_fns.iter().find(|f| f.name == func_name) {
-                            if !module_fn.type_params.is_empty() {
-                                return self.infer_generic_std_call(call, module_fn);
+                // Try each segment (except last) as potential module
+                for i in 0..path.segments.len() - 1 {
+                    let module_symbol = path.segments[i].symbol;
+
+                    // Check registered modules (from imports)
+                    if let Some(func_sig) = self.symbols.get_module_function(module_symbol, func_symbol) {
+                        if !func_sig.type_params.is_empty() {
+                            return self.infer_generic_call(call, func_sig);
+                        }
+                    }
+
+                    // Check std library modules for generic functions
+                    let module_name = self.interner.resolve(&module_symbol);
+                    if let Some(module_fns) = super::get_std_module_functions(module_name) {
+                        for std_fn in &module_fns {
+                            if std_fn.name == func_name && !std_fn.type_params.is_empty() {
+                                // Create a temporary FunctionSig for generic inference
+                                if let Some(func_sig) = self.create_temp_function_sig(std_fn) {
+                                    return self.infer_generic_call(call, &func_sig);
+                                }
                             }
                         }
                     }
@@ -644,7 +753,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Error => Type::Error,
             _ => {
                 self.errors.push(TypeError::NotCallable {
-                    ty: callee_ty.to_string(),
+                    ty: self.display_type(&callee_ty),
                     span: call.span,
                 });
                 Type::Error
@@ -734,92 +843,6 @@ impl<'a> TypeInferrer<'a> {
         func_sig.return_ty.substitute(&substitution)
     }
 
-    fn infer_generic_std_call(
-        &mut self,
-        call: &ast::CallExpr,
-        module_fn: &super::StdModuleFn,
-    ) -> Type {
-        // For std generic functions, we infer the type from the arguments
-        // Currently handles: receive(ch), send(ch, val), close(ch), open_channel(cap)
-
-        // Check argument count
-        if call.args.len() != module_fn.params.len() {
-            self.errors.push(TypeError::WrongArgCount {
-                expected: module_fn.params.len(),
-                found: call.args.len(),
-                span: call.span,
-            });
-            return Type::Error;
-        }
-
-        // Infer argument types
-        let arg_types: Vec<Type> = call.args.iter().map(|arg| self.infer_expr(arg)).collect();
-
-        // For channel operations, extract the element type from the channel argument
-        match module_fn.name {
-            "receive" => {
-                // receive(ch: channel<T>) -> option<T>
-                // First argument is the channel, return option of its element type
-                if let Type::Channel(elem_ty) = arg_types[0].resolve() {
-                    Type::Option(elem_ty)
-                } else {
-                    self.errors.push(TypeError::Custom {
-                        message: format!("expected channel type, found {}", arg_types[0]),
-                        span: call.args[0].span(),
-                    });
-                    Type::Error
-                }
-            }
-            "send" => {
-                // send(ch: channel<T>, value: T) -> int
-                // Verify the value type matches the channel element type
-                if let Type::Channel(elem_ty) = arg_types[0].resolve() {
-                    if let Err(e) = unify(&arg_types[1], &elem_ty, call.args[1].span()) {
-                        self.errors.push(e);
-                    }
-                } else {
-                    self.errors.push(TypeError::Custom {
-                        message: format!("expected channel type, found {}", arg_types[0]),
-                        span: call.args[0].span(),
-                    });
-                }
-                Type::Int
-            }
-            "close" => {
-                // close(ch: channel<T>) -> unit
-                if !matches!(arg_types[0].resolve(), Type::Channel(_)) {
-                    self.errors.push(TypeError::Custom {
-                        message: format!("expected channel type, found {}", arg_types[0]),
-                        span: call.args[0].span(),
-                    });
-                }
-                Type::Unit
-            }
-            "open_channel" => {
-                // open_channel(capacity: int) -> channel<T>
-                // For open_channel with explicit type args, use those; otherwise infer from context
-                if !call.type_args.is_empty() {
-                    let elem_ty = self.convert_ast_type(&call.type_args[0]);
-                    Type::Channel(Box::new(elem_ty))
-                } else {
-                    // Create a fresh type var for the element type
-                    let elem_ty = fresh_type_var(self.next_var_id);
-                    Type::Channel(Box::new(elem_ty))
-                }
-            }
-            _ => {
-                // For other generic functions, try to unify and return the result
-                let params: Vec<Type> = module_fn.params.iter().map(|(_, ty)| ty.clone()).collect();
-                for (arg_ty, param_ty) in arg_types.iter().zip(params.iter()) {
-                    if let Err(e) = unify(arg_ty, param_ty, call.span) {
-                        self.errors.push(e);
-                    }
-                }
-                module_fn.return_ty.clone()
-            }
-        }
-    }
-
     fn infer_method_call(&mut self, call: &ast::MethodCallExpr) -> Type {
         let receiver_ty = self.infer_expr(call.receiver);
         let resolved = receiver_ty.resolve();
@@ -828,7 +851,7 @@ impl<'a> TypeInferrer<'a> {
         if let Type::Option(_) = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
             self.errors.push(TypeError::UndefinedMethod {
-                ty: resolved.to_string(),
+                ty: self.display_type(&resolved),
                 method: method_name.to_string(),
                 span: call.span,
             });
@@ -839,7 +862,7 @@ impl<'a> TypeInferrer<'a> {
         if let Type::Array(_) = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
             self.errors.push(TypeError::UndefinedMethod {
-                ty: resolved.to_string(),
+                ty: self.display_type(&resolved),
                 method: method_name.to_string(),
                 span: call.span,
             });
@@ -850,7 +873,7 @@ impl<'a> TypeInferrer<'a> {
         if let Type::Channel(_) = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
             self.errors.push(TypeError::UndefinedMethod {
-                ty: resolved.to_string(),
+                ty: self.display_type(&resolved),
                 method: method_name.to_string(),
                 span: call.span,
             });
@@ -903,7 +926,7 @@ impl<'a> TypeInferrer<'a> {
                 }
                 _ => {
                     self.errors.push(TypeError::UndefinedMethod {
-                        ty: resolved.to_string(),
+                        ty: self.display_type(&resolved),
                         method: method_name.to_string(),
                         span: call.span,
                     });
@@ -916,7 +939,7 @@ impl<'a> TypeInferrer<'a> {
         if let Type::String = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
             self.errors.push(TypeError::UndefinedMethod {
-                ty: resolved.to_string(),
+                ty: self.display_type(&resolved),
                 method: method_name.to_string(),
                 span: call.span,
             });
@@ -931,7 +954,7 @@ impl<'a> TypeInferrer<'a> {
             _ => {
                 let method = self.interner.resolve(&call.method.symbol).to_string();
                 self.errors.push(TypeError::UndefinedMethod {
-                    ty: resolved.to_string(),
+                    ty: self.display_type(&resolved),
                     method,
                     span: call.span,
                 });
@@ -989,7 +1012,7 @@ impl<'a> TypeInferrer<'a> {
         } else {
             let method = self.interner.resolve(&call.method.symbol).to_string();
             self.errors.push(TypeError::UndefinedMethod {
-                ty: resolved.to_string(),
+                ty: self.display_type(&resolved),
                 method,
                 span: call.span,
             });
@@ -1026,7 +1049,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Error => Type::Error,
             _ => {
                 self.errors.push(TypeError::NotIndexable {
-                    ty: base_ty.to_string(),
+                    ty: self.display_type(&base_ty),
                     span: idx.span,
                 });
                 Type::Error
@@ -1045,7 +1068,7 @@ impl<'a> TypeInferrer<'a> {
                     return Type::Int;
                 }
                 self.errors.push(TypeError::UndefinedField {
-                    ty: resolved.to_string(),
+                    ty: self.display_type(&resolved),
                     field: field_name.to_string(),
                     span: field.span,
                 });
@@ -1109,7 +1132,7 @@ impl<'a> TypeInferrer<'a> {
                 } else {
                     let field_name = self.interner.resolve(&field.field.symbol).to_string();
                     self.errors.push(TypeError::UndefinedField {
-                        ty: resolved.to_string(),
+                        ty: self.display_type(&resolved),
                         field: field_name,
                         span: field.span,
                     });
@@ -1128,7 +1151,7 @@ impl<'a> TypeInferrer<'a> {
                         }
                     }
                     self.errors.push(TypeError::UndefinedField {
-                        ty: resolved.to_string(),
+                        ty: self.display_type(&resolved),
                         field: field_name_str.to_string(),
                         span: field.span,
                     });
@@ -1141,7 +1164,7 @@ impl<'a> TypeInferrer<'a> {
             _ => {
                 let field_name = self.interner.resolve(&field.field.symbol).to_string();
                 self.errors.push(TypeError::UndefinedField {
-                    ty: resolved.to_string(),
+                    ty: self.display_type(&resolved),
                     field: field_name,
                     span: field.span,
                 });
@@ -1463,7 +1486,7 @@ impl<'a> TypeInferrer<'a> {
             if !is_propagated {
                 let exception_name = match exception_ty {
                     Type::Exception(name) => self.interner.resolve(name).to_string(),
-                    _ => exception_ty.to_string(),
+                    _ => self.display_type(exception_ty),
                 };
                 self.errors.push(TypeError::UncaughtException {
                     exception_type: exception_name,
@@ -1810,7 +1833,7 @@ impl<'a> TypeInferrer<'a> {
                     Type::Error => Type::Error,
                     _ => {
                         self.errors.push(TypeError::NotIterable {
-                            ty: iterable_ty.to_string(),
+                            ty: self.display_type(&iterable_ty),
                             span: for_stmt.iterable.span(),
                         });
                         Type::Error
@@ -2036,5 +2059,45 @@ impl<'a> TypeInferrer<'a> {
             // Primitive types and others don't need substitution
             _ => ty.clone(),
         }
+    }
+
+    /// Create a temporary FunctionSig from a StdModuleFn for generic inference
+    fn create_temp_function_sig(&self, std_fn: &super::StdModuleFn) -> Option<super::symbols::FunctionSig> {
+        let spur = self.interner.get(std_fn.name)?;
+
+        let type_params: Vec<_> = std_fn.type_params.iter()
+            .filter_map(|tp_name| {
+                self.interner.get(tp_name).map(|tp_spur| {
+                    TypeParam { name: tp_spur, bounds: vec![] }
+                })
+            })
+            .collect();
+
+        let mut return_ty = std_fn.return_ty.clone();
+        if let Some(tp) = type_params.first() {
+            fix_generic_spur(&mut return_ty, tp.name);
+        }
+
+        let params: Vec<_> = std_fn.params.iter()
+            .filter_map(|(pname, pty)| {
+                let pspur = self.interner.get(pname)?;
+                let mut param_ty = pty.clone();
+                if let Some(tp) = type_params.first() {
+                    fix_generic_spur(&mut param_ty, tp.name);
+                }
+                Some((pspur, param_ty))
+            })
+            .collect();
+
+        Some(super::symbols::FunctionSig {
+            name: spur,
+            type_params,
+            params,
+            return_ty,
+            throws: vec![],
+            is_public: true,
+            is_variadic: std_fn.is_variadic,
+            span: crate::source::Span::dummy(),
+        })
     }
 }

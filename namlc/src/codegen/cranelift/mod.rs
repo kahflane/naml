@@ -7,6 +7,7 @@
 //!
 
 mod array;
+mod builtins;
 mod context;
 mod errors;
 mod map;
@@ -35,7 +36,7 @@ use std::collections::{HashMap, HashSet};
 use std::panic;
 
 use cranelift::prelude::*;
-use cranelift_codegen::ir::{AtomicRmwOp, FuncRef};
+use cranelift_codegen::ir::{AtomicRmwOp};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use lasso::Rodeo;
@@ -51,7 +52,6 @@ use crate::codegen::cranelift::stmt::compile_statement;
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::heap::{get_heap_type, HeapType};
 use crate::codegen::cranelift::runtime::emit_cleanup_all_vars;
-use crate::source::Spanned;
 use crate::typechecker::{Type, TypeAnnotations};
 
 #[derive(Clone)]
@@ -130,7 +130,7 @@ unsafe impl Send for LambdaInfo {}
 
 // NamlArray struct layout offsets (must match runtime/array.rs)
 // NamlArray: header(16) + len(8) + capacity(8) + data(8)
-const ARRAY_LEN_OFFSET: i32 = 16;
+pub(crate) const ARRAY_LEN_OFFSET: i32 = 16;
 const ARRAY_CAPACITY_OFFSET: i32 = 24;
 const ARRAY_DATA_OFFSET: i32 = 32;
 
