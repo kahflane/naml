@@ -1952,7 +1952,6 @@ impl<'a> JitCompiler<'a> {
     }
 
     pub fn compile(&mut self, ast: &'a SourceFile<'a>) -> Result<(), CodegenError> {
-        // First pass: collect struct definitions with field heap types
         for item in &ast.items {
             if let crate::ast::Item::Struct(struct_item) = item {
                 let name = self.interner.resolve(&struct_item.name.symbol).to_string();
