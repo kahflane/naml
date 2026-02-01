@@ -128,6 +128,10 @@ pub enum BuiltinStrategy {
     ChannelReceive,
     /// (channel) -> void
     ChannelClose,
+    /// (value) -> mutex<T>
+    MutexNew,
+    /// (value) -> rwlock<T>
+    RwlockNew,
 
     // ========================================
     // Lambda-based collection strategies
@@ -525,6 +529,8 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "send", strategy: BuiltinStrategy::ChannelSend },
         BuiltinFunction { name: "receive", strategy: BuiltinStrategy::ChannelReceive },
         BuiltinFunction { name: "close", strategy: BuiltinStrategy::ChannelClose },
+        BuiltinFunction { name: "with_mutex", strategy: BuiltinStrategy::MutexNew },
+        BuiltinFunction { name: "with_rwlock", strategy: BuiltinStrategy::RwlockNew },
 
         // ========================================
         // File system module
@@ -641,6 +647,7 @@ pub fn compile_builtin_call(
     use super::runtime::rt_func_ref;
     use super::channels::{
         call_channel_new, call_channel_send, call_channel_receive, call_channel_close,
+        call_mutex_new, call_rwlock_new,
     };
     use super::strings::ensure_naml_string;
     use super::lambda::{
@@ -919,6 +926,16 @@ pub fn compile_builtin_call(
             let channel = compile_expression(ctx, builder, &args[0])?;
             call_channel_close(ctx, builder, channel)?;
             Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::MutexNew => {
+            let value = compile_expression(ctx, builder, &args[0])?;
+            call_mutex_new(ctx, builder, value)
+        }
+
+        BuiltinStrategy::RwlockNew => {
+            let value = compile_expression(ctx, builder, &args[0])?;
+            call_rwlock_new(ctx, builder, value)
         }
 
         // ========================================

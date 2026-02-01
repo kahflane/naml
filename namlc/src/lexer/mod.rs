@@ -408,11 +408,16 @@ pub enum Keyword {
     Option,
     Map,
     Channel,
+    Mutex,
+    Rwlock,
     Platforms,
     Native,
     Server,
     Browser,
     Type,
+    Locked,
+    Rlocked,
+    Wlocked,
 }
 
 pub fn tokenize(source: &str) -> (Vec<Token>, Rodeo) {
@@ -952,6 +957,7 @@ impl<'a> Lexer<'a> {
             (0x65747962, b's') => TokenKind::Keyword(Keyword::Bytes),  // "bytes"
             (0x736C6166, b'e') => TokenKind::Keyword(Keyword::False),  // "false"
             (0x63746163, b'h') => TokenKind::Keyword(Keyword::Catch),  // "catch"
+            (0x6574756D, b'x') => TokenKind::Keyword(Keyword::Mutex),  // "mutex"
             _ => TokenKind::Ident,
         }
     }
@@ -970,6 +976,8 @@ impl<'a> Lexer<'a> {
             (0x6974616E, 0x6576) => TokenKind::Keyword(Keyword::Native),  // "native"
             (0x76726573, 0x7265) => TokenKind::Keyword(Keyword::Server),  // "server"
             (0x6974706F, 0x6E6F) => TokenKind::Keyword(Keyword::Option),  // "option"
+            (0x6B636F6C, 0x6465) => TokenKind::Keyword(Keyword::Locked),  // "locked"
+            (0x6F6C7772, 0x6B63) => TokenKind::Keyword(Keyword::Rwlock),  // "rwlock"
             _ => TokenKind::Ident,
         }
     }
@@ -984,6 +992,8 @@ impl<'a> Lexer<'a> {
             (0x6E616863, 0x656E, b'l') => TokenKind::Keyword(Keyword::Channel),  // "channel"
             (0x776F7262, 0x6573, b'r') => TokenKind::Keyword(Keyword::Browser),  // "browser"
             (0x69636564, 0x616D, b'l') => TokenKind::Keyword(Keyword::Decimal),  // "decimal"
+            (0x636F6C72, 0x656B, b'd') => TokenKind::Keyword(Keyword::Rlocked),  // "rlocked"
+            (0x636F6C77, 0x656B, b'd') => TokenKind::Keyword(Keyword::Wlocked),  // "wlocked"
             _ => TokenKind::Ident,
         }
     }

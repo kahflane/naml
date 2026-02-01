@@ -65,3 +65,27 @@ pub fn call_channel_close(
     builder.ins().call(func_ref, &[ch]);
     Ok(())
 }
+
+// Mutex helper functions
+pub fn call_mutex_new(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    initial_value: Value,
+) -> Result<Value, CodegenError> {
+    let value = ensure_i64(builder, initial_value);
+    let func_ref = rt_func_ref(ctx, builder, "naml_mutex_new")?;
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}
+
+// RwLock helper functions
+pub fn call_rwlock_new(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    initial_value: Value,
+) -> Result<Value, CodegenError> {
+    let value = ensure_i64(builder, initial_value);
+    let func_ref = rt_func_ref(ctx, builder, "naml_rwlock_new")?;
+    let call = builder.ins().call(func_ref, &[value]);
+    Ok(builder.inst_results(call)[0])
+}

@@ -28,6 +28,8 @@ pub enum HeapTag {
     Closure = 4,
     Channel = 5,
     Bytes = 6,
+    Mutex = 7,
+    Rwlock = 8,
 }
 
 /// Header for all heap-allocated objects

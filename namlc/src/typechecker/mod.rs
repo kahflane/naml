@@ -407,6 +407,8 @@ impl<'a> TypeChecker<'a> {
             Type::Channel(inner) => Self::fix_default_generic_spur(inner, type_params),
             Type::Array(inner) => Self::fix_default_generic_spur(inner, type_params),
             Type::Option(inner) => Self::fix_default_generic_spur(inner, type_params),
+            Type::Mutex(inner) => Self::fix_default_generic_spur(inner, type_params),
+            Type::Rwlock(inner) => Self::fix_default_generic_spur(inner, type_params),
             Type::Map(k, v) => {
                 Self::fix_default_generic_spur(k, type_params);
                 Self::fix_default_generic_spur(v, type_params);
@@ -791,6 +793,12 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::generic("close", vec!["T"], vec![
                     ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
                 ], Type::Unit),
+                StdModuleFn::generic("with_mutex", vec!["T"], vec![
+                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
+                ], Type::Mutex(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
+                StdModuleFn::generic("with_rwlock", vec!["T"], vec![
+                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
+                ], Type::Rwlock(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
             ]),
             "datetime" => Some(vec![
                 StdModuleFn::new("now_ms", vec![], Type::Int),
@@ -1441,6 +1449,8 @@ impl<'a> TypeChecker<'a> {
                 Box::new(self.convert_type(v)),
             ),
             ast::NamlType::Channel(inner) => Type::Channel(Box::new(self.convert_type(inner))),
+            ast::NamlType::Mutex(inner) => Type::Mutex(Box::new(self.convert_type(inner))),
+            ast::NamlType::Rwlock(inner) => Type::Rwlock(Box::new(self.convert_type(inner))),
             ast::NamlType::Named(ident) => {
                 // Check for built-in types first
                 let name = self.interner.resolve(&ident.symbol);

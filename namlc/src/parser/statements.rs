@@ -31,6 +31,9 @@ pub fn parse_statement<'a, 'ast>(
         Some(TokenKind::Keyword(Keyword::For)) => parse_for_stmt(arena, input),
         Some(TokenKind::Keyword(Keyword::Loop)) => parse_loop_stmt(arena, input),
         Some(TokenKind::Keyword(Keyword::Switch)) => parse_switch_stmt(arena, input),
+        Some(TokenKind::Keyword(Keyword::Locked)) => parse_locked_stmt(arena, input, LockKind::Exclusive),
+        Some(TokenKind::Keyword(Keyword::Rlocked)) => parse_locked_stmt(arena, input, LockKind::Read),
+        Some(TokenKind::Keyword(Keyword::Wlocked)) => parse_locked_stmt(arena, input, LockKind::Write),
         Some(TokenKind::LBrace) => parse_block_stmt(arena, input),
         _ => parse_expr_or_assign_stmt(arena, input),
     }
@@ -378,6 +381,47 @@ fn parse_switch_stmt<'a, 'ast>(
             cases,
             default,
             span: start.span.merge(end.span),
+        }),
+    ))
+}
+
+fn parse_locked_stmt<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+    kind: LockKind,
+) -> PResult<'a, Statement<'ast>> {
+    let (input, start) = match kind {
+        LockKind::Exclusive => keyword(Keyword::Locked)(input)?,
+        LockKind::Read => keyword(Keyword::Rlocked)(input)?,
+        LockKind::Write => keyword(Keyword::Wlocked)(input)?,
+    };
+
+    let (input, _) = token(TokenKind::LParen)(input)?;
+
+    let (input, binding) = ident(input)?;
+    let (input, binding_ty) = if check(TokenKind::Colon)(input) {
+        let (input, _) = token(TokenKind::Colon)(input)?;
+        let (input, ty) = parse_type(input)?;
+        (input, Some(ty))
+    } else {
+        (input, None)
+    };
+
+    let (input, _) = keyword(Keyword::In)(input)?;
+    let (input, mutex) = parse_expression(arena, input)?;
+    let (input, _) = token(TokenKind::RParen)(input)?;
+    let (input, body) = parse_block(arena, input)?;
+    let body_span = body.span;
+
+    Ok((
+        input,
+        Statement::Locked(LockedStmt {
+            kind,
+            binding,
+            binding_ty,
+            mutex,
+            body,
+            span: start.span.merge(body_span),
         }),
     ))
 }

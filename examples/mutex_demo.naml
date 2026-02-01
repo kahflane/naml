@@ -1,0 +1,136 @@
+//!
+//! Concurrent Task Processing System
+//!
+//! A real-world example demonstrating mutex, rwlock, channels, and spawn
+//! working together to implement a multi-worker task processing system.
+//!
+//! Architecture:
+//! - Main thread dispatches tasks via a channel
+//! - Multiple worker threads consume tasks concurrently
+//! - Shared counter (mutex) tracks completed tasks atomically
+//! - Shared stats (rwlock) tracks processing metrics
+//! - Results are collected via a results channel
+//!
+
+use std::threads::*;
+
+fn main() {
+    print("=== Concurrent Task Processing System ===\n\n");
+
+    // Shared state protected by mutex: completed task counter
+    var completed: mutex<int> = with_mutex(0);
+
+    // Shared state protected by rwlock: total processed value
+    var stats: rwlock<int> = with_rwlock(0);
+
+    // Channels for task distribution and result collection
+    var tasks: channel<int> = open_channel(20);
+    var results: channel<int> = open_channel(20);
+
+    // Spawn 3 worker threads
+    print("Starting 3 worker threads...\n");
+
+    spawn {
+        worker_loop(1, tasks, results, completed, stats);
+    };
+
+    spawn {
+        worker_loop(2, tasks, results, completed, stats);
+    };
+
+    spawn {
+        worker_loop(3, tasks, results, completed, stats);
+    };
+
+    // Give workers time to start
+    sleep(100);
+
+    // Dispatch 10 tasks
+    print("\nDispatching 10 tasks...\n");
+    var i: int = 1;
+    while (i <= 10) {
+        var task_value: int = i * 10;
+        send(tasks, task_value);
+        println(fmt("  Dispatched task with value: {}", task_value));
+        i = i + 1;
+    }
+
+    // Close the tasks channel to signal workers to stop
+    close(tasks);
+    print("\nTasks channel closed. Workers finishing up...\n");
+
+    // Wait for all workers to finish
+    join();
+
+    // Collect results
+    print("\nCollecting results:\n");
+    var result_count: int = 0;
+    var total_result: int = 0;
+
+    while (result_count < 10) {
+        var val: int = receive(results) ?? -1;
+        if (val != -1) {
+            total_result = total_result + val;
+            result_count = result_count + 1;
+            println(fmt("  Result {}: {}", result_count, val));
+        }
+    }
+
+    // Read final stats
+    print("\n=== Final Statistics ===\n");
+
+    locked (count: int in completed) {
+        println(fmt("Tasks completed: {}", count));
+    }
+
+    rlocked (total: int in stats) {
+        println(fmt("Total input value processed: {}", total));
+    }
+
+    println(fmt("Total output value (doubled): {}", total_result));
+    println(fmt("Expected output: {}", 2 * (10 + 20 + 30 + 40 + 50 + 60 + 70 + 80 + 90 + 100)));
+    print("\n=== Processing Complete ===\n");
+}
+
+fn worker_loop(
+    id: int,
+    tasks: channel<int>,
+    results: channel<int>,
+    completed: mutex<int>,
+    stats: rwlock<int>
+) {
+    println(fmt("Worker {} started", id));
+
+    while (true) {
+        // Try to receive a task (returns -1 if channel closed)
+        var value: int = receive(tasks) ?? -1;
+
+        if (value == -1) {
+            // Channel closed or empty, no more tasks
+            println(fmt("Worker {} shutting down", id));
+            return;
+        }
+
+        println(fmt("Worker {} processing value: {}", id, value));
+
+        // Simulate some work
+        sleep(50);
+
+        // Simulate processing: double the value
+        var result: int = value * 2;
+
+        // Update completed counter (exclusive access via mutex)
+        locked (count: int in completed) {
+            count = count + 1;
+            println(fmt("Worker {} completed task #{}", id, count));
+        }
+
+        // Update stats (exclusive write access via rwlock)
+        wlocked (total: int in stats) {
+            total = total + value;
+        }
+
+        // Send result back
+        send(results, result);
+    }
+}

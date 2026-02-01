@@ -39,6 +39,7 @@ pub enum Statement<'ast> {
     Break(BreakStmt),
     Continue(ContinueStmt),
     Block(BlockStmt<'ast>),
+    Locked(LockedStmt<'ast>),
 }
 
 impl<'ast> Spanned for Statement<'ast> {
@@ -58,6 +59,7 @@ impl<'ast> Spanned for Statement<'ast> {
             Statement::Break(s) => s.span,
             Statement::Continue(s) => s.span,
             Statement::Block(s) => s.span,
+            Statement::Locked(s) => s.span,
         }
     }
 }
@@ -166,6 +168,23 @@ pub struct BreakStmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContinueStmt {
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LockKind {
+    Exclusive,  // locked - exclusive mutex access
+    Read,       // rlocked - read lock on rwlock
+    Write,      // wlocked - write lock on rwlock
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LockedStmt<'ast> {
+    pub kind: LockKind,
+    pub binding: Ident,
+    pub binding_ty: Option<NamlType>,
+    pub mutex: Expression<'ast>,
+    pub body: BlockStmt<'ast>,
     pub span: Span,
 }
 

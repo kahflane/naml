@@ -946,6 +946,67 @@ pub fn compile_statement(
                 }
             }
         }
+
+        Statement::Locked(locked_stmt) => {
+            use crate::ast::LockKind;
+
+            // Compile the mutex/rwlock expression to get the pointer
+            let mutex_ptr = compile_expression(ctx, builder, &locked_stmt.mutex)?;
+
+            // Determine which lock/unlock functions to use based on lock kind
+            let (lock_func, unlock_func) = match locked_stmt.kind {
+                LockKind::Exclusive => ("naml_mutex_lock", "naml_mutex_unlock"),
+                LockKind::Read => ("naml_rwlock_read_lock", "naml_rwlock_read_unlock"),
+                LockKind::Write => ("naml_rwlock_write_lock", "naml_rwlock_write_unlock"),
+            };
+
+            // Call lock function to acquire the lock and get initial value
+            let lock_fn = rt_func_ref(ctx, builder, lock_func)?;
+            let locked_value = builder.ins().call(lock_fn, &[mutex_ptr]);
+            let locked_value = builder.inst_results(locked_value)[0];
+
+            // Create a variable for the binding
+            let var = Variable::new(ctx.var_counter);
+            ctx.var_counter += 1;
+            builder.declare_var(var, cranelift::prelude::types::I64);
+            builder.def_var(var, locked_value);
+
+            // Store the binding in the variables map
+            let binding_name = ctx.interner.resolve(&locked_stmt.binding.symbol).to_string();
+            let old_binding = ctx.variables.insert(binding_name.clone(), var);
+
+            // Compile the body statements
+            for stmt in &locked_stmt.body.statements {
+                compile_statement(ctx, builder, stmt)?;
+                if ctx.block_terminated {
+                    break;
+                }
+            }
+
+            // Read the final value from the binding (may have been modified)
+            let final_value = builder.use_var(var);
+
+            // Call unlock function to release the lock
+            // Note: For read locks, we don't update the value (read-only)
+            let unlock_fn = rt_func_ref(ctx, builder, unlock_func)?;
+            match locked_stmt.kind {
+                LockKind::Read => {
+                    // Read unlock doesn't take a value parameter
+                    builder.ins().call(unlock_fn, &[mutex_ptr]);
+                }
+                LockKind::Exclusive | LockKind::Write => {
+                    // Exclusive and write unlock take the new value
+                    builder.ins().call(unlock_fn, &[mutex_ptr, final_value]);
+                }
+            }
+
+            // Restore or remove the binding
+            if let Some(old) = old_binding {
+                ctx.variables.insert(binding_name, old);
+            } else {
+                ctx.variables.remove(&binding_name);
+            }
+        }
     }
 
     Ok(())

@@ -38,6 +38,8 @@ fn fix_generic_spur(ty: &mut Type, type_param_spur: lasso::Spur) {
         Type::Channel(inner) => fix_generic_spur(inner, type_param_spur),
         Type::Array(inner) => fix_generic_spur(inner, type_param_spur),
         Type::Option(inner) => fix_generic_spur(inner, type_param_spur),
+        Type::Mutex(inner) => fix_generic_spur(inner, type_param_spur),
+        Type::Rwlock(inner) => fix_generic_spur(inner, type_param_spur),
         Type::Map(k, v) => {
             fix_generic_spur(k, type_param_spur);
             fix_generic_spur(v, type_param_spur);
@@ -161,6 +163,8 @@ impl<'a> TypeInferrer<'a> {
             Type::Option(inner) => format!("Option_{}", self.mangle_type(inner)),
             Type::Map(k, v) => format!("Map_{}_{}", self.mangle_type(k), self.mangle_type(v)),
             Type::Channel(inner) => format!("Channel_{}", self.mangle_type(inner)),
+            Type::Mutex(inner) => format!("Mutex_{}", self.mangle_type(inner)),
+            Type::Rwlock(inner) => format!("Rwlock_{}", self.mangle_type(inner)),
             Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
             Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
@@ -195,6 +199,8 @@ impl<'a> TypeInferrer<'a> {
             Type::Option(inner) => format!("option<{}>", self.display_type(inner)),
             Type::Map(k, v) => format!("map<{}, {}>", self.display_type(k), self.display_type(v)),
             Type::Channel(inner) => format!("channel<{}>", self.display_type(inner)),
+            Type::Mutex(inner) => format!("mutex<{}>", self.display_type(inner)),
+            Type::Rwlock(inner) => format!("rwlock<{}>", self.display_type(inner)),
             Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
             Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
@@ -1956,6 +1962,45 @@ impl<'a> TypeInferrer<'a> {
                 }
                 self.env.pop_scope();
             }
+
+            Locked(locked) => {
+                // Infer the mutex type and extract the inner type
+                let mutex_ty = self.infer_expr(&locked.mutex);
+                let inner_ty = match mutex_ty.resolve() {
+                    Type::Mutex(inner) => (*inner).clone(),
+                    Type::Rwlock(inner) => (*inner).clone(),
+                    Type::Error => Type::Error,
+                    other => {
+                        self.errors.push(TypeError::Custom {
+                            message: format!(
+                                "locked statement requires mutex or rwlock type, found {}",
+                                other
+                            ),
+                            span: locked.mutex.span(),
+                        });
+                        Type::Error
+                    }
+                };
+
+                // Check type annotation if present
+                let binding_ty = if let Some(ref annot) = locked.binding_ty {
+                    let expected = self.convert_ast_type(annot);
+                    if let Err(e) = unify(&inner_ty, &expected, locked.span) {
+                        self.errors.push(e);
+                    }
+                    expected
+                } else {
+                    inner_ty
+                };
+
+                // Type check the body with the binding in scope
+                self.env.push_scope();
+                self.env.define(locked.binding.symbol, binding_ty, true);
+                for s in &locked.body.statements {
+                    self.check_stmt(s);
+                }
+                self.env.pop_scope();
+            }
         }
     }
 
@@ -1980,6 +2025,12 @@ impl<'a> TypeInferrer<'a> {
             ),
             ast::NamlType::Channel(inner) => {
                 Type::Channel(Box::new(self.convert_ast_type(inner)))
+            }
+            ast::NamlType::Mutex(inner) => {
+                Type::Mutex(Box::new(self.convert_ast_type(inner)))
+            }
+            ast::NamlType::Rwlock(inner) => {
+                Type::Rwlock(Box::new(self.convert_ast_type(inner)))
             }
             ast::NamlType::Named(ident) => {
                 // Check for built-in types first

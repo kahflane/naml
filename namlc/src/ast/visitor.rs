@@ -267,6 +267,16 @@ pub fn walk_stmt<'ast, V: Visitor<'ast>>(v: &mut V, stmt: &Statement<'ast>) {
                 v.visit_stmt(stmt);
             }
         }
+        Statement::Locked(s) => {
+            v.visit_ident(&s.binding);
+            if let Some(ref ty) = s.binding_ty {
+                v.visit_type(ty);
+            }
+            v.visit_expr(&s.mutex);
+            for stmt in &s.body.statements {
+                v.visit_stmt(stmt);
+            }
+        }
     }
 }
 

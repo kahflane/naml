@@ -81,6 +81,14 @@ pub fn unify(a: &Type, b: &Type, span: Span) -> TypeResult<()> {
             unify(a_inner, b_inner, span)
         }
 
+        (Type::Mutex(a_inner), Type::Mutex(b_inner)) => {
+            unify(a_inner, b_inner, span)
+        }
+
+        (Type::Rwlock(a_inner), Type::Rwlock(b_inner)) => {
+            unify(a_inner, b_inner, span)
+        }
+
         (Type::Function(a_fn), Type::Function(b_fn)) => {
             if a_fn.params.len() != b_fn.params.len() {
                 return Err(TypeError::type_mismatch(

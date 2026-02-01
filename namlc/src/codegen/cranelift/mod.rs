@@ -637,6 +637,58 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_channel_decref as *const u8,
         );
 
+        // Mutex operations
+        builder.symbol(
+            "naml_mutex_new",
+            crate::runtime::naml_mutex_new as *const u8,
+        );
+        builder.symbol(
+            "naml_mutex_lock",
+            crate::runtime::naml_mutex_lock as *const u8,
+        );
+        builder.symbol(
+            "naml_mutex_unlock",
+            crate::runtime::naml_mutex_unlock as *const u8,
+        );
+        builder.symbol(
+            "naml_mutex_incref",
+            crate::runtime::naml_mutex_incref as *const u8,
+        );
+        builder.symbol(
+            "naml_mutex_decref",
+            crate::runtime::naml_mutex_decref as *const u8,
+        );
+
+        // RwLock operations
+        builder.symbol(
+            "naml_rwlock_new",
+            crate::runtime::naml_rwlock_new as *const u8,
+        );
+        builder.symbol(
+            "naml_rwlock_read_lock",
+            crate::runtime::naml_rwlock_read_lock as *const u8,
+        );
+        builder.symbol(
+            "naml_rwlock_read_unlock",
+            crate::runtime::naml_rwlock_read_unlock as *const u8,
+        );
+        builder.symbol(
+            "naml_rwlock_write_lock",
+            crate::runtime::naml_rwlock_write_lock as *const u8,
+        );
+        builder.symbol(
+            "naml_rwlock_write_unlock",
+            crate::runtime::naml_rwlock_write_unlock as *const u8,
+        );
+        builder.symbol(
+            "naml_rwlock_incref",
+            crate::runtime::naml_rwlock_incref as *const u8,
+        );
+        builder.symbol(
+            "naml_rwlock_decref",
+            crate::runtime::naml_rwlock_decref as *const u8,
+        );
+
         // Map operations
         builder.symbol("naml_map_new", crate::runtime::naml_map_new as *const u8);
         builder.symbol("naml_map_set", crate::runtime::naml_map_set as *const u8);
@@ -2313,6 +2365,94 @@ impl<'a> JitCompiler<'a> {
             &[],
         )?;
 
+        // Mutex functions
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_mutex_new",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_mutex_lock",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_mutex_unlock",
+            &[ptr, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_mutex_incref",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_mutex_decref",
+            &[ptr],
+            &[],
+        )?;
+
+        // RwLock functions
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_rwlock_new",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_rwlock_read_lock",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_rwlock_read_unlock",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_rwlock_write_lock",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_rwlock_write_unlock",
+            &[ptr, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_rwlock_incref",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_rwlock_decref",
+            &[ptr],
+            &[],
+        )?;
+
         // Scheduler/runtime
         declare(
             &mut self.module,
@@ -2835,20 +2975,10 @@ impl<'a> JitCompiler<'a> {
             self.declare_spawn_trampoline(*id, info)?;
         }
 
-        // Compile spawn trampolines (must be done before regular functions)
-        for info in self.spawn_blocks.clone().values() {
-            self.compile_spawn_trampoline(info)?;
-        }
-
         // Declare lambda functions
         for (id, info) in &self.lambda_blocks.clone() {
             self.declare_lambda_function(info)?;
             let _ = id; // suppress unused warning
-        }
-
-        // Compile lambda functions (must be done before regular functions)
-        for info in self.lambda_blocks.clone().values() {
-            self.compile_lambda_function(info)?;
         }
 
         // Declare all functions first (standalone and methods)
@@ -2870,6 +3000,16 @@ impl<'a> JitCompiler<'a> {
 
         // Process monomorphizations - declare and compile specialized versions
         self.process_monomorphizations()?;
+
+        // Compile spawn trampolines (after all functions are declared)
+        for info in self.spawn_blocks.clone().values() {
+            self.compile_spawn_trampoline(info)?;
+        }
+
+        // Compile lambda functions (after all functions are declared)
+        for info in self.lambda_blocks.clone().values() {
+            self.compile_lambda_function(info)?;
+        }
 
         // Compile standalone functions (skip generic functions)
         for item in &ast.items {
@@ -3411,6 +3551,10 @@ impl<'a> JitCompiler<'a> {
                     self.scan_expression_for_spawns(value)?;
                 }
             }
+            Statement::Locked(locked_stmt) => {
+                self.scan_expression_for_spawns(&locked_stmt.mutex)?;
+                self.scan_for_spawn_blocks(&locked_stmt.body)?;
+            }
             _ => {}
         }
         Ok(())
@@ -3660,6 +3804,15 @@ impl<'a> JitCompiler<'a> {
                 if let Some(ref value) = ret.value {
                     self.collect_vars_in_expression(value, captured, defined);
                 }
+            }
+            Statement::Locked(locked_stmt) => {
+                // Collect the mutex expression (e.g., the variable being locked)
+                self.collect_vars_in_expression(&locked_stmt.mutex, captured, defined);
+                // The binding is defined within the locked block scope
+                let binding_name = self.interner.resolve(&locked_stmt.binding.symbol).to_string();
+                let mut locked_defined = defined.clone();
+                locked_defined.insert(binding_name);
+                self.collect_vars_in_block(&locked_stmt.body, captured, &mut locked_defined);
             }
             _ => {}
         }

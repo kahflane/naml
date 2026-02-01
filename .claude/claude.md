@@ -221,3 +221,53 @@ spawn { }
 6. Re-export in `namlc/src/runtime/mod.rs`: `pub use naml_std_<name>::*;`
 7. Register functions in `namlc/src/typechecker/mod.rs` (get_std_module_functions)
 8. Register runtime symbols in `namlc/src/codegen/cranelift/mod.rs`
+
+## Testing and Examples - NEVER Take the Happy Path
+
+### Why This Matters
+Simple tests hide bugs. The mutex/rwlock implementation passed all simple tests but crashed when:
+- Calling user-defined functions from spawn blocks
+- Passing captured variables as function arguments
+- Combining multiple features (spawn + channels + mutex + function calls)
+
+### Mandatory Testing Rules
+
+**1. Always test the complex case FIRST**
+```naml
+// BAD - This will pass even with critical bugs
+var m: mutex<int> = with_mutex(0);
+locked (v: int in m) { v = v + 1; }
+println(v);  // "Works!"
+
+// GOOD - This exposes real bugs
+spawn {
+    worker_function(mutex_var, channel_var, rwlock_var);
+};
+```
+
+**2. Combine multiple features together**
+- Spawn + channels + mutex + rwlock + function calls
+- Loops + conditionals + error handling
+- Multiple threads accessing shared state
+
+**3. Pass values through function calls**
+Don't just use variables in the same scope - pass them to functions called from spawn blocks.
+
+**4. Test with multiple workers/iterations**
+```naml
+// Spawn 3+ workers, process 10+ tasks
+// Single iterations hide race conditions
+```
+
+**5. Verify final state matches expectations**
+```naml
+// Always check: actual == expected
+println(fmt("Total: {}, Expected: {}", actual, expected));
+```
+
+### Before Marking Any Feature Complete
+1. Create a complex real-world example in `examples/`
+2. The example MUST use spawn if the feature involves shared state
+3. The example MUST call user-defined functions with the new types
+4. The example MUST verify correctness (not just "it runs")
+5. If the complex test fails, DO NOT simplify - fix the root cause
