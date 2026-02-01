@@ -1,0 +1,111 @@
+use std::fs::*;
+
+fn main() {
+    println("=== Directory Operations ===");
+    println("");
+
+    var base_dir: string = "/tmp/naml_dir_test";
+
+    // Create nested directories
+    var nested: string = "/tmp/naml_dir_test/a/b/c";
+    mkdir_all(nested) catch e {
+        println("mkdir_all failed:");
+        println(e.message);
+    };
+    println("Created nested directories: a/b/c");
+
+    // Create some files in different directories
+    write("/tmp/naml_dir_test/file1.txt", "File 1") catch e {
+        println("write failed");
+    };
+    write("/tmp/naml_dir_test/file2.txt", "File 2") catch e {
+        println("write failed");
+    };
+    write("/tmp/naml_dir_test/a/file3.txt", "File 3") catch e {
+        println("write failed");
+    };
+    write("/tmp/naml_dir_test/a/b/file4.txt", "File 4") catch e {
+        println("write failed");
+    };
+    println("Created test files");
+
+    // List directory contents
+    println("");
+    println("Contents of /tmp/naml_dir_test:");
+    var entries: [string] = list_dir(base_dir) catch e {
+        println("list_dir failed:");
+        println(e.message);
+    };
+
+    for (i: int, entry: string in entries) {
+        print("  ");
+        print(basename(entry));
+        if (is_dir(entry)) {
+            println("/");
+        } else {
+            println("");
+        }
+    }
+
+    // Check directory properties
+    println("");
+    print("is_dir(base_dir): ");
+    println(is_dir(base_dir));
+    print("is_file(base_dir): ");
+    println(is_file(base_dir));
+
+    // List nested directory
+    println("");
+    println("Contents of /tmp/naml_dir_test/a:");
+    var a_entries: [string] = list_dir("/tmp/naml_dir_test/a") catch e {
+        println("list_dir failed:");
+        println(e.message);
+    };
+
+    for (i: int, entry: string in a_entries) {
+        print("  ");
+        println(basename(entry));
+    }
+
+    // Try to remove non-empty directory (should fail)
+    println("");
+    println("Trying to remove non-empty directory...");
+    remove(base_dir) catch e {
+        println("Expected error:");
+        println(e.message);
+    };
+
+    // Remove single file
+    println("");
+    remove("/tmp/naml_dir_test/file1.txt") catch e {
+        println("remove failed:");
+        println(e.message);
+    };
+    println("Removed file1.txt");
+
+    // Remove empty directory
+    mkdir("/tmp/naml_dir_test/empty") catch e {
+        println("mkdir failed");
+    };
+    remove("/tmp/naml_dir_test/empty") catch e {
+        println("remove failed:");
+        println(e.message);
+    };
+    println("Removed empty directory");
+
+    // Remove all recursively
+    println("");
+    println("Removing all with remove_all()...");
+    remove_all(base_dir) catch e {
+        println("remove_all failed:");
+        println(e.message);
+    };
+    println("Removed entire directory tree");
+
+    // Verify removal
+    print("exists after removal: ");
+    println(exists(base_dir));
+
+    println("");
+    println("=== Done ===");
+}

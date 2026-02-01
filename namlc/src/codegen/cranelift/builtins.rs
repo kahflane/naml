@@ -23,8 +23,9 @@ use super::array::{
 };
 use super::misc::{
     call_int_runtime, call_one_arg_int_runtime, call_one_arg_ptr_runtime,
-    call_three_arg_ptr_runtime, call_three_arg_void_runtime, call_two_arg_bool_runtime,
-    call_two_arg_int_runtime, call_two_arg_ptr_runtime, call_two_arg_runtime, call_void_runtime,
+    call_three_arg_int_runtime, call_three_arg_ptr_runtime, call_three_arg_void_runtime,
+    call_two_arg_bool_runtime, call_two_arg_int_runtime, call_two_arg_ptr_runtime,
+    call_two_arg_runtime, call_void_runtime,
 };
 use super::options::{
     compile_option_from_array_access, compile_option_from_array_get, compile_option_from_index_of,
@@ -198,6 +199,10 @@ pub enum BuiltinStrategy {
     FsWrite,
     /// (path, content) -> unit throws IOError
     FsAppend,
+    /// (path, bytes) -> unit throws IOError
+    FsWriteBytes,
+    /// (path, bytes) -> unit throws IOError
+    FsAppendBytes,
     /// (path) -> bool
     FsExists,
     /// (path) -> bool
@@ -232,6 +237,26 @@ pub enum BuiltinStrategy {
     FsCopy,
     /// (src, dst) -> unit throws IOError
     FsRename,
+
+    // ========================================
+    // Memory-mapped file strategies
+    // ========================================
+    /// (path, writable) -> int throws IOError
+    FsMmapOpen,
+    /// (handle) -> int throws IOError
+    FsMmapLen,
+    /// (handle, offset) -> int throws IOError
+    FsMmapReadByte,
+    /// (handle, offset, value) -> unit throws IOError
+    FsMmapWriteByte,
+    /// (handle, offset, len) -> bytes throws IOError
+    FsMmapRead,
+    /// (handle, offset, data) -> unit throws IOError
+    FsMmapWrite,
+    /// (handle) -> unit throws IOError
+    FsMmapFlush,
+    /// (handle) -> unit throws IOError
+    FsMmapClose,
 
     // ========================================
     // Core I/O strategies (varargs/special handling)
@@ -447,6 +472,8 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "read_bytes", strategy: BuiltinStrategy::FsReadBytes },
         BuiltinFunction { name: "write", strategy: BuiltinStrategy::FsWrite },
         BuiltinFunction { name: "append", strategy: BuiltinStrategy::FsAppend },
+        BuiltinFunction { name: "write_bytes", strategy: BuiltinStrategy::FsWriteBytes },
+        BuiltinFunction { name: "append_bytes", strategy: BuiltinStrategy::FsAppendBytes },
         BuiltinFunction { name: "exists", strategy: BuiltinStrategy::FsExists },
         BuiltinFunction { name: "is_file", strategy: BuiltinStrategy::FsIsFile },
         BuiltinFunction { name: "is_dir", strategy: BuiltinStrategy::FsIsDir },
@@ -465,6 +492,18 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "modified", strategy: BuiltinStrategy::FsModified },
         BuiltinFunction { name: "copy", strategy: BuiltinStrategy::FsCopy },
         BuiltinFunction { name: "rename", strategy: BuiltinStrategy::FsRename },
+
+        // ========================================
+        // Memory-mapped file operations
+        // ========================================
+        BuiltinFunction { name: "mmap_open", strategy: BuiltinStrategy::FsMmapOpen },
+        BuiltinFunction { name: "mmap_len", strategy: BuiltinStrategy::FsMmapLen },
+        BuiltinFunction { name: "mmap_read_byte", strategy: BuiltinStrategy::FsMmapReadByte },
+        BuiltinFunction { name: "mmap_write_byte", strategy: BuiltinStrategy::FsMmapWriteByte },
+        BuiltinFunction { name: "mmap_read", strategy: BuiltinStrategy::FsMmapRead },
+        BuiltinFunction { name: "mmap_write", strategy: BuiltinStrategy::FsMmapWrite },
+        BuiltinFunction { name: "mmap_flush", strategy: BuiltinStrategy::FsMmapFlush },
+        BuiltinFunction { name: "mmap_close", strategy: BuiltinStrategy::FsMmapClose },
     ];
     REGISTRY
 }
@@ -987,6 +1026,20 @@ pub fn compile_builtin_call(
             call_two_arg_int_runtime(ctx, builder, "naml_fs_append", path, content)
         }
 
+        BuiltinStrategy::FsWriteBytes => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let content = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_write_bytes", path, content)
+        }
+
+        BuiltinStrategy::FsAppendBytes => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let content = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_append_bytes", path, content)
+        }
+
         BuiltinStrategy::FsExists => {
             let path = compile_expression(ctx, builder, &args[0])?;
             let path = ensure_naml_string(ctx, builder, path, &args[0])?;
@@ -1090,6 +1143,60 @@ pub fn compile_builtin_call(
             let dst = compile_expression(ctx, builder, &args[1])?;
             let dst = ensure_naml_string(ctx, builder, dst, &args[1])?;
             call_two_arg_int_runtime(ctx, builder, "naml_fs_rename", src, dst)
+        }
+
+        // ========================================
+        // Memory-mapped file operations
+        // ========================================
+        BuiltinStrategy::FsMmapOpen => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let writable = compile_expression(ctx, builder, &args[1])?;
+            // Convert bool (i8) to i64 for runtime call
+            let writable_i64 = builder.ins().uextend(cranelift::prelude::types::I64, writable);
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_mmap_open", path, writable_i64)
+        }
+
+        BuiltinStrategy::FsMmapLen => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_mmap_len", handle)
+        }
+
+        BuiltinStrategy::FsMmapReadByte => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let offset = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_mmap_read_byte", handle, offset)
+        }
+
+        BuiltinStrategy::FsMmapWriteByte => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let offset = compile_expression(ctx, builder, &args[1])?;
+            let value = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_mmap_write_byte", handle, offset, value)
+        }
+
+        BuiltinStrategy::FsMmapRead => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let offset = compile_expression(ctx, builder, &args[1])?;
+            let len = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_ptr_runtime(ctx, builder, "naml_fs_mmap_read", handle, offset, len)
+        }
+
+        BuiltinStrategy::FsMmapWrite => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let offset = compile_expression(ctx, builder, &args[1])?;
+            let data = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_mmap_write", handle, offset, data)
+        }
+
+        BuiltinStrategy::FsMmapFlush => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_mmap_flush", handle)
+        }
+
+        BuiltinStrategy::FsMmapClose => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_mmap_close", handle)
         }
     }
 }

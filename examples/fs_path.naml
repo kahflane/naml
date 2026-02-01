@@ -1,0 +1,97 @@
+use std::fs::*;
+
+fn main() {
+    println("=== Path Manipulation ===");
+    println("");
+
+    var path: string = "/home/user/documents/report.pdf";
+
+    // Extract path components
+    println("Original path:");
+    println(path);
+    println("");
+
+    print("dirname:   ");
+    println(dirname(path));
+
+    print("basename:  ");
+    println(basename(path));
+
+    print("extension: ");
+    println(extension(path));
+
+    // Join path components
+    println("");
+    println("Joining paths:");
+    var parts: [string] = ["/home", "user", "projects", "naml"];
+    var joined: string = fs::join(parts);
+    print("join([\"/home\", \"user\", \"projects\", \"naml\"]): ");
+    println(joined);
+
+    // More path examples
+    println("");
+    println("More examples:");
+
+    var file1: string = "/var/log/system.log";
+    print("Path: ");
+    println(file1);
+    print("  dirname:   ");
+    println(dirname(file1));
+    print("  basename:  ");
+    println(basename(file1));
+    print("  extension: ");
+    println(extension(file1));
+
+    var file2: string = "/etc/nginx/nginx.conf";
+    println("");
+    print("Path: ");
+    println(file2);
+    print("  dirname:   ");
+    println(dirname(file2));
+    print("  basename:  ");
+    println(basename(file2));
+    print("  extension: ");
+    println(extension(file2));
+
+    var file3: string = "simple.txt";
+    println("");
+    print("Path: ");
+    println(file3);
+    print("  dirname:   ");
+    println(dirname(file3));
+    print("  basename:  ");
+    println(basename(file3));
+    print("  extension: ");
+    println(extension(file3));
+
+    // File with no extension
+    var file4: string = "/usr/bin/naml";
+    println("");
+    print("Path: ");
+    println(file4);
+    print("  dirname:   ");
+    println(dirname(file4));
+    print("  basename:  ");
+    println(basename(file4));
+    print("  extension: ");
+    var ext: string = extension(file4);
+    if (ext == "") {
+        println("(none)");
+    } else {
+        println(ext);
+    }
+
+    // Absolute path conversion
+    println("");
+    println("Absolute path:");
+    var rel_path: string = ".";
+    var abs_path: string = absolute(rel_path) catch e {
+        println("absolute failed:");
+        println(e.message);
+    };
+    print("absolute(\".\"): ");
+    println(abs_path);
+
+    println("");
+    println("=== Done ===");
+}

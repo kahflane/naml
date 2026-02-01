@@ -670,6 +670,15 @@ impl<'a> TypeChecker<'a> {
             // Copy/rename
             StdModuleFn::throwing("copy", vec![("src", Type::String), ("dst", Type::String)], Type::Unit, vec!["IOError"]),
             StdModuleFn::throwing("rename", vec![("src", Type::String), ("dst", Type::String)], Type::Unit, vec!["IOError"]),
+            // Memory-mapped file operations
+            StdModuleFn::throwing("mmap_open", vec![("path", Type::String), ("writable", Type::Bool)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("mmap_len", vec![("handle", Type::Int)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("mmap_read_byte", vec![("handle", Type::Int), ("offset", Type::Int)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("mmap_write_byte", vec![("handle", Type::Int), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("mmap_read", vec![("handle", Type::Int), ("offset", Type::Int), ("len", Type::Int)], Type::Bytes, vec!["IOError"]),
+            StdModuleFn::throwing("mmap_write", vec![("handle", Type::Int), ("offset", Type::Int), ("data", Type::Bytes)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("mmap_flush", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("mmap_close", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
         ]
     }
 

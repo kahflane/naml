@@ -1,0 +1,136 @@
+use std::fs::*;
+
+fn main() {
+    println("=== Memory-Mapped Files ===");
+    println("");
+
+    var test_file: string = "/tmp/mmap_test.bin";
+
+    // Create a test file with known content
+    write(test_file, "ABCDEFGHIJ0123456789") catch e {
+        println("Failed to create test file:");
+        println(e.message);
+    };
+    println("Created test file with: ABCDEFGHIJ0123456789");
+
+    // Open as read-only mmap
+    println("");
+    println("--- Read-Only Access ---");
+    var ro_handle: int = mmap_open(test_file, false) catch e {
+        println("mmap_open failed:");
+        println(e.message);
+    };
+    println("Opened mmap (read-only)");
+
+    // Get length
+    var len: int = mmap_len(ro_handle) catch e {
+        println("mmap_len failed:");
+        println(e.message);
+    };
+    print("Length: ");
+    print(len);
+    println(" bytes");
+
+    // Read individual bytes
+    println("Reading bytes at positions 0, 5, 10:");
+    var b0: int = mmap_read_byte(ro_handle, 0) catch e { println(e.message); };
+    var b5: int = mmap_read_byte(ro_handle, 5) catch e { println(e.message); };
+    var b10: int = mmap_read_byte(ro_handle, 10) catch e { println(e.message); };
+    print("  Position 0: ");
+    print(b0);
+    print(" ('A' = 65)");
+    println("");
+    print("  Position 5: ");
+    print(b5);
+    print(" ('F' = 70)");
+    println("");
+    print("  Position 10: ");
+    print(b10);
+    print(" ('0' = 48)");
+    println("");
+
+    // Close read-only handle
+    mmap_close(ro_handle) catch e {
+        println("mmap_close failed:");
+        println(e.message);
+    };
+    println("Closed read-only mmap");
+
+    // Open as writable mmap
+    println("");
+    println("--- Read-Write Access ---");
+    var rw_handle: int = mmap_open(test_file, true) catch e {
+        println("mmap_open (writable) failed:");
+        println(e.message);
+    };
+    println("Opened mmap (read-write)");
+
+    // Modify some bytes
+    println("Writing bytes:");
+    println("  Position 0: 'X' (88)");
+    println("  Position 1: 'Y' (89)");
+    println("  Position 2: 'Z' (90)");
+    mmap_write_byte(rw_handle, 0, 88) catch e { println(e.message); };
+    mmap_write_byte(rw_handle, 1, 89) catch e { println(e.message); };
+    mmap_write_byte(rw_handle, 2, 90) catch e { println(e.message); };
+
+    // Flush to disk
+    mmap_flush(rw_handle) catch e {
+        println("mmap_flush failed:");
+        println(e.message);
+    };
+    println("Flushed changes to disk");
+
+    // Close writable handle
+    mmap_close(rw_handle) catch e {
+        println("mmap_close failed:");
+        println(e.message);
+    };
+    println("Closed read-write mmap");
+
+    // Verify changes by reading file
+    println("");
+    println("--- Verification ---");
+    var content: string = read(test_file) catch e {
+        println("read failed:");
+        println(e.message);
+    };
+    print("File content after mmap writes: ");
+    println(content);
+
+    // Demonstrate error handling
+    println("");
+    println("--- Error Handling ---");
+
+    // Try to read out of bounds
+    var test_handle: int = mmap_open(test_file, false) catch e {
+        println("mmap_open failed:");
+        println(e.message);
+    };
+
+    println("Trying to read at offset 1000 (out of bounds):");
+    var bad_read: int = mmap_read_byte(test_handle, 1000) catch e {
+        print("  Caught error: ");
+        println(e.message);
+    };
+
+    mmap_close(test_handle) catch e {};
+
+    // Try to use invalid handle
+    println("Trying to use invalid handle (9999):");
+    var bad_len: int = mmap_len(9999) catch e {
+        print("  Caught error: ");
+        println(e.message);
+    };
+
+    // Cleanup
+    println("");
+    remove(test_file) catch e {
+        println("cleanup failed:");
+        println(e.message);
+    };
+    println("Cleaned up test file");
+
+    println("");
+    println("=== Done ===");
+}

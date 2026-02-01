@@ -1009,7 +1009,14 @@ pub fn compile_expression(
                     _ => Ok(value),
                 },
                 NamlType::Bytes => match source_type {
-                    Some(Type::String) => call_string_to_bytes(ctx, builder, value),
+                    Some(Type::String) => {
+                        // Convert string literal (C string) to NamlString first
+                        let mut str_val = value;
+                        if matches!(cast_expr.expr, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                            str_val = call_string_from_cstr(ctx, builder, value)?;
+                        }
+                        call_string_to_bytes(ctx, builder, str_val)
+                    }
                     Some(Type::Bytes) => Ok(value),
                     _ => Ok(value),
                 },

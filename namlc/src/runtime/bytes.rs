@@ -7,14 +7,8 @@
 use std::alloc::{alloc, dealloc, Layout};
 use naml_std_core::{HeapHeader, HeapTag, NamlString, naml_string_new};
 
-/// A heap-allocated byte array
-#[repr(C)]
-pub struct NamlBytes {
-    pub header: HeapHeader,
-    pub len: usize,
-    pub capacity: usize,
-    pub data: [u8; 0],
-}
+// Re-export NamlBytes from naml-std-core
+pub use naml_std_core::NamlBytes;
 
 /// Allocate new bytes with given capacity
 #[unsafe(no_mangle)]

@@ -1,0 +1,116 @@
+use std::fs::*;
+
+fn main() {
+    println("=== File System Basics ===");
+    println("");
+
+    var test_dir: string = "/tmp/naml_fs_test";
+    var test_file: string = "/tmp/naml_fs_test/hello.txt";
+
+    // Create test directory
+    mkdir_all(test_dir) catch e {
+        println("mkdir_all failed:");
+        println(e.message);
+    };
+    println("Created directory: /tmp/naml_fs_test");
+
+    // Write string to file
+    write(test_file, "Hello, naml!") catch e {
+        println("write failed:");
+        println(e.message);
+    };
+    println("Wrote to file: hello.txt");
+
+    // Read file content
+    var content: string = read(test_file) catch e {
+        println("read failed:");
+        println(e.message);
+    };
+    print("File content: ");
+    println(content);
+
+    // Append to file
+    append(test_file, "\nAppended line.") catch e {
+        println("append failed:");
+        println(e.message);
+    };
+    println("Appended to file");
+
+    // Read again
+    var updated: string = read(test_file) catch e {
+        println("read failed:");
+        println(e.message);
+    };
+    println("Updated content:");
+    println(updated);
+
+    // Check file properties
+    print("exists: ");
+    println(exists(test_file));
+    print("is_file: ");
+    println(is_file(test_file));
+    print("is_dir: ");
+    println(is_dir(test_file));
+
+    // Get file size
+    var file_size: int = size(test_file) catch e {
+        println("size failed:");
+        println(e.message);
+    };
+    print("File size: ");
+    print(file_size);
+    println(" bytes");
+
+    // Write and read bytes
+    var bytes_file: string = "/tmp/naml_fs_test/data.bin";
+    var data: bytes = "Binary data!" as bytes;
+    write_bytes(bytes_file, data) catch e {
+        println("write_bytes failed:");
+        println(e.message);
+    };
+    println("Wrote binary file: data.bin");
+
+    // Append bytes
+    var more_data: bytes = " More bytes." as bytes;
+    append_bytes(bytes_file, more_data) catch e {
+        println("append_bytes failed:");
+        println(e.message);
+    };
+    println("Appended to binary file");
+
+    // Read back as string
+    var bin_content: string = read(bytes_file) catch e {
+        println("read failed:");
+        println(e.message);
+    };
+    print("Binary file content: ");
+    println(bin_content);
+
+    // Copy file
+    var copy_path: string = "/tmp/naml_fs_test/hello_copy.txt";
+    copy(test_file, copy_path) catch e {
+        println("copy failed:");
+        println(e.message);
+    };
+    println("Copied hello.txt to hello_copy.txt");
+
+    // Rename file
+    var renamed_path: string = "/tmp/naml_fs_test/hello_renamed.txt";
+    rename(copy_path, renamed_path) catch e {
+        println("rename failed:");
+        println(e.message);
+    };
+    println("Renamed hello_copy.txt to hello_renamed.txt");
+
+    // Cleanup
+    println("");
+    println("Cleaning up...");
+    remove_all(test_dir) catch e {
+        println("cleanup failed:");
+        println(e.message);
+    };
+    println("Removed test directory");
+
+    println("");
+    println("=== Done ===");
+}

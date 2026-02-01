@@ -717,6 +717,8 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_fs_read_bytes", crate::runtime::naml_fs_read_bytes as *const u8);
         builder.symbol("naml_fs_write", crate::runtime::naml_fs_write as *const u8);
         builder.symbol("naml_fs_append", crate::runtime::naml_fs_append as *const u8);
+        builder.symbol("naml_fs_write_bytes", crate::runtime::naml_fs_write_bytes as *const u8);
+        builder.symbol("naml_fs_append_bytes", crate::runtime::naml_fs_append_bytes as *const u8);
         builder.symbol("naml_fs_exists", crate::runtime::naml_fs_exists as *const u8);
         builder.symbol("naml_fs_is_file", crate::runtime::naml_fs_is_file as *const u8);
         builder.symbol("naml_fs_is_dir", crate::runtime::naml_fs_is_dir as *const u8);
@@ -735,6 +737,16 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_fs_copy", crate::runtime::naml_fs_copy as *const u8);
         builder.symbol("naml_fs_rename", crate::runtime::naml_fs_rename as *const u8);
         builder.symbol("naml_io_error_new", crate::runtime::naml_io_error_new as *const u8);
+
+        // Memory-mapped file operations
+        builder.symbol("naml_fs_mmap_open", crate::runtime::naml_fs_mmap_open as *const u8);
+        builder.symbol("naml_fs_mmap_len", crate::runtime::naml_fs_mmap_len as *const u8);
+        builder.symbol("naml_fs_mmap_read_byte", crate::runtime::naml_fs_mmap_read_byte as *const u8);
+        builder.symbol("naml_fs_mmap_write_byte", crate::runtime::naml_fs_mmap_write_byte as *const u8);
+        builder.symbol("naml_fs_mmap_read", crate::runtime::naml_fs_mmap_read as *const u8);
+        builder.symbol("naml_fs_mmap_write", crate::runtime::naml_fs_mmap_write as *const u8);
+        builder.symbol("naml_fs_mmap_flush", crate::runtime::naml_fs_mmap_flush as *const u8);
+        builder.symbol("naml_fs_mmap_close", crate::runtime::naml_fs_mmap_close as *const u8);
 
         // Exception handling
         builder.symbol(
@@ -2360,6 +2372,8 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_read_bytes", &[ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_write", &[ptr, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_append", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_write_bytes", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_append_bytes", &[ptr, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_exists", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_is_file", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_is_dir", &[ptr], &[i64t])?;
@@ -2378,6 +2392,16 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_copy", &[ptr, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_rename", &[ptr, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_io_error_new", &[ptr, ptr, i64t], &[ptr])?;
+
+        // Memory-mapped file operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_open", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_len", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_read_byte", &[i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_write_byte", &[i64t, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_read", &[i64t, i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_write", &[i64t, i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_flush", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_close", &[i64t], &[i64t])?;
 
         // Bytes operations
         declare(
