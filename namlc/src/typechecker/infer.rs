@@ -683,11 +683,15 @@ impl<'a> TypeInferrer<'a> {
                 }
                 return Type::Exception(exc_def.name);
             }
-
-            if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol)
-                && !func_sig.type_params.is_empty() {
+            
+            if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
+                if let Some(ref module) = func_sig.module {
+                    self.annotations.record_resolved_module(call.span, module.clone());
+                }
+                if !func_sig.type_params.is_empty() {
                     return self.infer_generic_call(call, func_sig);
                 }
+            }
         }
 
         // Check if callee is a path expression with generic function from a module
@@ -2138,6 +2142,7 @@ impl<'a> TypeInferrer<'a> {
             is_public: true,
             is_variadic: std_fn.is_variadic,
             span: crate::source::Span::dummy(),
+            module: None,
         })
     }
 }

@@ -134,6 +134,7 @@ impl<'a> TypeChecker<'a> {
                     is_public: true,
                     is_variadic,
                     span: Span::dummy(),
+                    module: None,
                 });
             }
         }
@@ -149,6 +150,7 @@ impl<'a> TypeChecker<'a> {
                 is_public: true,
                 is_variadic: false,
                 span: Span::dummy(),
+                module: None,
             });
         }
 
@@ -295,15 +297,12 @@ impl<'a> TypeChecker<'a> {
         match items {
             UseItems::All => {
                 for module_fn in &module_fns {
-                    let sig = self.create_std_fn_sig(module_fn);
+                    let sig = self.create_std_fn_sig(module_fn, module);
                     if let Some(ref sig) = sig {
-                        // Always register under module namespace for qualified calls
                         self.symbols.register_module(module_spur).add_function(sig.clone());
-                        // Also register under the short alias for qualified calls
                         if let Some(alias_spur) = short_alias_spur {
                             self.symbols.register_module(alias_spur).add_function(sig.clone());
                         }
-                        // Check for collision - mark as ambiguous if already exists
                         if self.symbols.has_function(sig.name) {
                             self.symbols.mark_ambiguous(sig.name);
                         } else {
@@ -318,7 +317,7 @@ impl<'a> TypeChecker<'a> {
                     let found = module_fns.iter().find(|f| f.name == entry_name);
                     match found {
                         Some(module_fn) => {
-                            let sig = self.create_std_fn_sig(module_fn);
+                            let sig = self.create_std_fn_sig(module_fn, module);
                             if let Some(ref sig) = sig {
                                 self.symbols.register_module(module_spur).add_function(sig.clone());
                                 // Also register under the short alias
@@ -341,7 +340,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn create_std_fn_sig(&mut self, module_fn: &StdModuleFn) -> Option<FunctionSig> {
+    fn create_std_fn_sig(&mut self, module_fn: &StdModuleFn, module_name: &str) -> Option<FunctionSig> {
         let spur = self.interner.get_or_intern(module_fn.name);
 
         let type_params: Vec<_> = module_fn.type_params.iter()
@@ -370,6 +369,8 @@ impl<'a> TypeChecker<'a> {
             })
             .collect();
 
+        let module = module_name.split("::").last().map(String::from);
+
         Some(FunctionSig {
             name: spur,
             type_params,
@@ -379,6 +380,7 @@ impl<'a> TypeChecker<'a> {
             is_public: true,
             is_variadic: module_fn.is_variadic,
             span: Span::dummy(),
+            module,
         })
     }
 
@@ -856,6 +858,7 @@ impl<'a> TypeChecker<'a> {
                             is_public: true,
                             is_variadic: *is_variadic,
                             span: crate::source::Span::dummy(),
+                            module: None, 
                         };
                         self.symbols.register_module(module_spur).add_function(sig.clone());
                         self.symbols.define_function(sig);
@@ -884,6 +887,7 @@ impl<'a> TypeChecker<'a> {
                                 is_public: true,
                                 is_variadic: *is_variadic,
                                 span: crate::source::Span::dummy(),
+                                module: None, 
                             };
                             self.symbols.register_module(module_spur).add_function(sig.clone());
                             self.symbols.define_function(sig);
@@ -939,6 +943,7 @@ impl<'a> TypeChecker<'a> {
             is_public: func.is_public,
             is_variadic: false,
             span: func.span,
+            module: None,
         });
     }
 
@@ -966,6 +971,7 @@ impl<'a> TypeChecker<'a> {
             is_public: true,
             is_variadic: false,
             span: ext.span,
+            module: None,
         });
     }
 

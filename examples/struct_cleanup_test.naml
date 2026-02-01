@@ -5,7 +5,7 @@
 /// Each struct should have its heap fields decremented when the struct is freed.
 ///
 
-use std::collections::count;
+use std::collections::arrays::count;
 
 struct Person {
     name: string,

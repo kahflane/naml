@@ -8,7 +8,7 @@
 ///             get, contains, size, print_list.
 ///
 
-use std::collections::{count, push};
+use std::collections::arrays::{count, push};
 
 fn push_front(vals: [int], nexts: [int], head: int) -> int {
     var idx: int = count(vals);

@@ -5,7 +5,7 @@
 /// Run this multiple times and monitor memory usage to verify no leaks.
 ///
 
-use std::collections::count;
+use std::collections::arrays::count;
 
 fn test_string_cleanup() {
     println("=== String Cleanup Test ===");

@@ -1,10 +1,10 @@
-use std::collections::*;
+use std::collections::arrays::*;
 
 fn main() {
   var nums: [int] = [1, 2, 3, 4, 5];
   println("\nAccess Functions:");
-  var f: option<int> = collections::first(nums);
-  var l: option<int> = collections::last(nums);
+  var f: option<int> = first(nums);
+  var l: option<int> = last(nums);
   print("first: ");
   println(f!);
   print("last: ");

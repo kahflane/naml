@@ -1,4 +1,4 @@
-use std::collections::{
+use std::collections::arrays::{
     count, sum, first, last, get, push, pop, shift,
     apply, where, any, all, fold, find, find_index,
     unique, compact, last_index_of, index_of, contains,

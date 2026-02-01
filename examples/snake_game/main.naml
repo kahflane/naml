@@ -1,6 +1,6 @@
 use std::io::*;
 use std::random::*;
-use std::collections::{count, push};
+use std::collections::arrays::{count, push};
 use snake::*;
 use food::*;
 use grid::*;

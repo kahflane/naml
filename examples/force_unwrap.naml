@@ -1,4 +1,4 @@
-use std::collections::pop;
+use std::collections::arrays::pop;
 
 fn main() {
     println("Testing force unwrap operator (!):");

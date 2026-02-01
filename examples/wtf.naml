@@ -1,0 +1,10 @@
+fn d(f: fn(int) -> int, y: int) -> int {                                                                                                                                                              
+    return f(y);                                                                                                                                                                                      
+}                                                                                                                                                                                                     
+                                                                                                                                                                                                    
+fn main() {                                                                                                                                                                                           
+    var x: int = 1;                                                                                                                                                                                   
+    var y: int = 2;        
+    var z: fn(int)->int = fn(x: int) -> int { return x + 1; };                                                                                                                                                                           
+    println(d(z, y));                                                                                                                                               
+}

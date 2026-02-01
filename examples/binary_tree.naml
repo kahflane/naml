@@ -9,7 +9,7 @@
 ///             inorder, preorder, postorder, tree_size, tree_height.
 ///
 
-use std::collections::{count, push};
+use std::collections::arrays::{count, push};
 
 fn insert(vals: [int], lefts: [int], rights: [int], root: int, val: int) -> int {
     var idx: int = count(vals);

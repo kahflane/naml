@@ -31,6 +31,7 @@ pub struct FunctionSig {
     pub is_public: bool,
     pub is_variadic: bool,
     pub span: Span,
+    pub module: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -312,6 +313,7 @@ mod tests {
             is_public: true,
             is_variadic: false,
             span: Span::dummy(),
+            module: None,
         });
 
         assert!(table.get_function(main).is_some());

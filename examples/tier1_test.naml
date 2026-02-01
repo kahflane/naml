@@ -11,7 +11,7 @@
 /// - Control flow (if, while, for)
 ///
 
-use std::collections::count;
+use std::collections::arrays::count;
 
 enum Color {
     Red,

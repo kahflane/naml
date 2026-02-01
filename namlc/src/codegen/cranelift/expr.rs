@@ -215,9 +215,15 @@ pub fn compile_expression(
 
                 let is_user_defined = ctx.functions.contains_key(actual_func_name);
 
-                // Check builtin registry FIRST for identifier-based calls
                 if !is_user_defined {
-                    if let Some(builtin) = super::builtins::lookup_builtin(func_name) {
+                    let qualified_name = if let Some(module) = ctx.annotations.get_resolved_module(call.span) {
+                        format!("{}::{}", module, func_name)
+                    } else {
+                        func_name.to_string()
+                    };
+
+                    if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name)
+                        .or_else(|| super::builtins::lookup_builtin(func_name)) {
                         return super::builtins::compile_builtin_call(ctx, builder, builtin, &call.args);
                     }
                 }

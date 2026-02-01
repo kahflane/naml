@@ -63,6 +63,7 @@ pub struct TypeAnnotations {
     expr_types: HashMap<Span, ExprTypeInfo>,
     monomorphizations: HashMap<String, MonomorphizationInfo>,
     call_site_instantiations: HashMap<Span, String>,
+    resolved_modules: HashMap<Span, String>,
 }
 
 impl TypeAnnotations {
@@ -71,6 +72,7 @@ impl TypeAnnotations {
             expr_types: HashMap::new(),
             monomorphizations: HashMap::new(),
             call_site_instantiations: HashMap::new(),
+            resolved_modules: HashMap::new(),
         }
     }
 
@@ -136,6 +138,14 @@ impl TypeAnnotations {
 
     pub fn get_monomorphization_info(&self, mangled_name: &str) -> Option<&MonomorphizationInfo> {
         self.monomorphizations.get(mangled_name)
+    }
+
+    pub fn record_resolved_module(&mut self, call_span: Span, module: String) {
+        self.resolved_modules.insert(call_span, module);
+    }
+
+    pub fn get_resolved_module(&self, span: Span) -> Option<&String> {
+        self.resolved_modules.get(&span)
     }
 }
 

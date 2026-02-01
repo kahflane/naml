@@ -1,4 +1,4 @@
-use std::collections::{count, push, pop};
+use std::collections::arrays::{count, push, pop};
 
 fn main() {
     println("Testing arrays with for loop:");
