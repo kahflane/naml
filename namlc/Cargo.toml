@@ -106,6 +106,7 @@ naml-std-datetime.workspace = true
 naml-std-metrics.workspace = true
 naml-std-strings.workspace = true
 naml-std-collections.workspace = true
+naml-std-fs.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

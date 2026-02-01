@@ -1,0 +1,19 @@
+use std::fs::*;
+
+fn main() {
+    println("Testing IOError exception fields");
+    println("=================================");
+
+    var missing: string = read("/nonexistent/file.txt") catch e {
+        println("Caught IOError!");
+        println("  message:");
+        println(e.message());
+        println("  path:");
+        println(e.path);
+        println("  code:");
+        println(e.code);
+    };
+
+    println("");
+    println("Test completed!");
+}

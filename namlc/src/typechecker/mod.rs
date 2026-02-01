@@ -72,16 +72,21 @@ pub(crate) struct StdModuleFn {
     pub type_params: Vec<&'static str>,
     pub params: Vec<(&'static str, Type)>,
     pub return_ty: Type,
+    pub throws: Vec<&'static str>,
     pub is_variadic: bool,
 }
 
 impl StdModuleFn {
     fn new(name: &'static str, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
-        Self { name, type_params: vec![], params, return_ty, is_variadic: false }
+        Self { name, type_params: vec![], params, return_ty, throws: vec![], is_variadic: false }
+    }
+
+    fn throwing(name: &'static str, params: Vec<(&'static str, Type)>, return_ty: Type, throws: Vec<&'static str>) -> Self {
+        Self { name, type_params: vec![], params, return_ty, throws, is_variadic: false }
     }
 
     fn generic(name: &'static str, type_params: Vec<&'static str>, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
-        Self { name, type_params, params, return_ty, is_variadic: false }
+        Self { name, type_params, params, return_ty, throws: vec![], is_variadic: false }
     }
 }
 
@@ -287,6 +292,9 @@ impl<'a> TypeChecker<'a> {
             None
         };
 
+        // Register module-specific exception types
+        self.register_std_module_exceptions(module);
+
         match items {
             UseItems::All => {
                 for module_fn in &module_fns {
@@ -352,12 +360,19 @@ impl<'a> TypeChecker<'a> {
             })
             .collect();
 
+        let throws: Vec<_> = module_fn.throws.iter()
+            .map(|ex_name| {
+                let ex_spur = self.interner.get_or_intern(ex_name);
+                Type::Exception(ex_spur)
+            })
+            .collect();
+
         Some(FunctionSig {
             name: spur,
             type_params,
             params,
             return_ty,
-            throws: vec![],
+            throws,
             is_public: true,
             is_variadic: module_fn.is_variadic,
             span: Span::dummy(),
@@ -587,6 +602,72 @@ impl<'a> TypeChecker<'a> {
         ]
     }
 
+    fn register_std_module_exceptions(&mut self, module: &str) {
+        match module {
+            "fs" => {
+                // Register IOError exception
+                let io_error_name = self.interner.get_or_intern("IOError");
+                let message_field = self.interner.get_or_intern("message");
+                let path_field = self.interner.get_or_intern("path");
+                let code_field = self.interner.get_or_intern("code");
+
+                // Only register if not already registered
+                if self.symbols.get_type(io_error_name).is_none() {
+                    self.symbols.define_type(
+                        io_error_name,
+                        TypeDef::Exception(ExceptionDef {
+                            name: io_error_name,
+                            fields: vec![
+                                (message_field, Type::String),
+                                (path_field, Type::String),
+                                (code_field, Type::Int),
+                            ],
+                            is_public: true,
+                            span: Span::dummy(),
+                        }),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn get_fs_functions() -> Vec<StdModuleFn> {
+        vec![
+            // File reading
+            StdModuleFn::throwing("read", vec![("path", Type::String)], Type::String, vec!["IOError"]),
+            StdModuleFn::throwing("read_bytes", vec![("path", Type::String)], Type::Bytes, vec!["IOError"]),
+            // File writing
+            StdModuleFn::throwing("write", vec![("path", Type::String), ("content", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("write_bytes", vec![("path", Type::String), ("content", Type::Bytes)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("append", vec![("path", Type::String), ("content", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("append_bytes", vec![("path", Type::String), ("content", Type::Bytes)], Type::Unit, vec!["IOError"]),
+            // Existence checks (non-throwing)
+            StdModuleFn::new("exists", vec![("path", Type::String)], Type::Bool),
+            StdModuleFn::new("is_file", vec![("path", Type::String)], Type::Bool),
+            StdModuleFn::new("is_dir", vec![("path", Type::String)], Type::Bool),
+            // Directory operations
+            StdModuleFn::throwing("list_dir", vec![("path", Type::String)], Type::Array(Box::new(Type::String)), vec!["IOError"]),
+            StdModuleFn::throwing("mkdir", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("mkdir_all", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
+            // Delete operations
+            StdModuleFn::throwing("remove", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("remove_all", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
+            // Path operations (non-throwing)
+            StdModuleFn::new("join", vec![("parts", Type::Array(Box::new(Type::String)))], Type::String),
+            StdModuleFn::new("dirname", vec![("path", Type::String)], Type::String),
+            StdModuleFn::new("basename", vec![("path", Type::String)], Type::String),
+            StdModuleFn::new("extension", vec![("path", Type::String)], Type::String),
+            StdModuleFn::throwing("absolute", vec![("path", Type::String)], Type::String, vec!["IOError"]),
+            // Metadata
+            StdModuleFn::throwing("size", vec![("path", Type::String)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("modified", vec![("path", Type::String)], Type::Int, vec!["IOError"]),
+            // Copy/rename
+            StdModuleFn::throwing("copy", vec![("src", Type::String), ("dst", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("rename", vec![("src", Type::String), ("dst", Type::String)], Type::Unit, vec!["IOError"]),
+        ]
+    }
+
     fn get_std_submodules(module: &str) -> Option<Vec<&'static str>> {
         match module {
             "collections" => Some(vec!["arrays", "maps"]),
@@ -671,6 +752,7 @@ impl<'a> TypeChecker<'a> {
             }
             "collections::arrays" => Some(Self::get_collections_array_functions()),
             "collections::maps" => Some(Self::get_collections_map_functions()),
+            "fs" => Some(Self::get_fs_functions()),
             _ => None,
         }
     }

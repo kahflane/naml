@@ -710,6 +710,30 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_map_from_arrays", crate::runtime::naml_map_from_arrays as *const u8);
         builder.symbol("naml_map_from_entries", crate::runtime::naml_map_from_entries as *const u8);
 
+        // File system operations (from naml-std-fs)
+        builder.symbol("naml_fs_read", crate::runtime::naml_fs_read as *const u8);
+        builder.symbol("naml_fs_read_bytes", crate::runtime::naml_fs_read_bytes as *const u8);
+        builder.symbol("naml_fs_write", crate::runtime::naml_fs_write as *const u8);
+        builder.symbol("naml_fs_append", crate::runtime::naml_fs_append as *const u8);
+        builder.symbol("naml_fs_exists", crate::runtime::naml_fs_exists as *const u8);
+        builder.symbol("naml_fs_is_file", crate::runtime::naml_fs_is_file as *const u8);
+        builder.symbol("naml_fs_is_dir", crate::runtime::naml_fs_is_dir as *const u8);
+        builder.symbol("naml_fs_list_dir", crate::runtime::naml_fs_list_dir as *const u8);
+        builder.symbol("naml_fs_mkdir", crate::runtime::naml_fs_mkdir as *const u8);
+        builder.symbol("naml_fs_mkdir_all", crate::runtime::naml_fs_mkdir_all as *const u8);
+        builder.symbol("naml_fs_remove", crate::runtime::naml_fs_remove as *const u8);
+        builder.symbol("naml_fs_remove_all", crate::runtime::naml_fs_remove_all as *const u8);
+        builder.symbol("naml_fs_join", crate::runtime::naml_fs_join as *const u8);
+        builder.symbol("naml_fs_dirname", crate::runtime::naml_fs_dirname as *const u8);
+        builder.symbol("naml_fs_basename", crate::runtime::naml_fs_basename as *const u8);
+        builder.symbol("naml_fs_extension", crate::runtime::naml_fs_extension as *const u8);
+        builder.symbol("naml_fs_absolute", crate::runtime::naml_fs_absolute as *const u8);
+        builder.symbol("naml_fs_size", crate::runtime::naml_fs_size as *const u8);
+        builder.symbol("naml_fs_modified", crate::runtime::naml_fs_modified as *const u8);
+        builder.symbol("naml_fs_copy", crate::runtime::naml_fs_copy as *const u8);
+        builder.symbol("naml_fs_rename", crate::runtime::naml_fs_rename as *const u8);
+        builder.symbol("naml_io_error_new", crate::runtime::naml_io_error_new as *const u8);
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -944,7 +968,24 @@ impl<'a> JitCompiler<'a> {
             generic_functions: HashMap::new(),
         };
         compiler.declare_runtime_functions()?;
+        compiler.register_builtin_exceptions();
         Ok(compiler)
+    }
+
+    /// Register built-in exception types (like IOError from std::fs)
+    fn register_builtin_exceptions(&mut self) {
+        // IOError exception from std::fs module
+        // Fields: path (string), code (int)
+        // Note: message is implicit at offset 0 for all exceptions
+        self.exception_names.insert("IOError".to_string());
+        self.struct_defs.insert(
+            "IOError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0001, // Reserved type ID for IOError
+                fields: vec!["path".to_string(), "code".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None], // path is string, code is int
+            },
+        );
     }
 
     fn declare_runtime_functions(&mut self) -> Result<(), CodegenError> {
@@ -2273,6 +2314,30 @@ impl<'a> JitCompiler<'a> {
             &[],
             &[i64t],
         )?;
+
+        // File system operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_read", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_read_bytes", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_write", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_append", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_exists", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_is_file", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_is_dir", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_list_dir", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mkdir", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mkdir_all", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_remove", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_remove_all", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_join", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_dirname", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_basename", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_extension", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_absolute", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_size", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_modified", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_copy", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_rename", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_io_error_new", &[ptr, ptr, i64t], &[ptr])?;
 
         // Bytes operations
         declare(

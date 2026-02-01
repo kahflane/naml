@@ -1,0 +1,46 @@
+##
+## naml-std-fs - File System Operations
+##
+## Provides file system operations for naml programs:
+## - read(path) -> string: Read file as UTF-8 string
+## - read_bytes(path) -> bytes: Read file as raw bytes
+## - write(path, content): Write string to file
+## - write_bytes(path, content): Write bytes to file
+## - append(path, content): Append string to file
+## - exists(path) -> bool: Check if path exists
+## - is_file(path) -> bool: Check if path is a file
+## - is_dir(path) -> bool: Check if path is a directory
+## - list_dir(path) -> [string]: List directory contents
+## - mkdir(path): Create directory
+## - mkdir_all(path): Create directory and parents
+## - remove(path): Remove file or empty directory
+## - remove_all(path): Remove directory recursively
+## - join(parts) -> string: Join path components
+## - dirname(path) -> string: Get parent directory
+## - basename(path) -> string: Get filename
+## - extension(path) -> string: Get file extension
+## - absolute(path) -> string: Convert to absolute path
+## - size(path) -> int: Get file size in bytes
+## - modified(path) -> int: Get last modified timestamp
+## - copy(src, dst): Copy file
+## - rename(src, dst): Rename/move file
+##
+## All throwing functions use IOError exception.
+##
+## Platform: Native and Server WASM (uses std::fs)
+##
+
+[package]
+name = "naml-std-fs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "File system operations for the naml programming language"
+
+[lib]
+name = "naml_std_fs"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true

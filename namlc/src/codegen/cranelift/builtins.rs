@@ -188,6 +188,52 @@ pub enum BuiltinStrategy {
     MapFromEntries,
 
     // ========================================
+    // File system module strategies
+    // ========================================
+    /// (path) -> string throws IOError
+    FsRead,
+    /// (path) -> bytes throws IOError
+    FsReadBytes,
+    /// (path, content) -> unit throws IOError
+    FsWrite,
+    /// (path, content) -> unit throws IOError
+    FsAppend,
+    /// (path) -> bool
+    FsExists,
+    /// (path) -> bool
+    FsIsFile,
+    /// (path) -> bool
+    FsIsDir,
+    /// (path) -> [string] throws IOError
+    FsListDir,
+    /// (path) -> unit throws IOError
+    FsMkdir,
+    /// (path) -> unit throws IOError
+    FsMkdirAll,
+    /// (path) -> unit throws IOError
+    FsRemove,
+    /// (path) -> unit throws IOError
+    FsRemoveAll,
+    /// ([string]) -> string
+    FsJoin,
+    /// (path) -> string
+    FsDirname,
+    /// (path) -> string
+    FsBasename,
+    /// (path) -> string
+    FsExtension,
+    /// (path) -> string throws IOError
+    FsAbsolute,
+    /// (path) -> int throws IOError
+    FsSize,
+    /// (path) -> int throws IOError
+    FsModified,
+    /// (src, dst) -> unit throws IOError
+    FsCopy,
+    /// (src, dst) -> unit throws IOError
+    FsRename,
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -404,6 +450,32 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "send", strategy: BuiltinStrategy::ChannelSend },
         BuiltinFunction { name: "receive", strategy: BuiltinStrategy::ChannelReceive },
         BuiltinFunction { name: "close", strategy: BuiltinStrategy::ChannelClose },
+
+        // ========================================
+        // File system module
+        // ========================================
+        BuiltinFunction { name: "read", strategy: BuiltinStrategy::FsRead },
+        BuiltinFunction { name: "read_bytes", strategy: BuiltinStrategy::FsReadBytes },
+        BuiltinFunction { name: "write", strategy: BuiltinStrategy::FsWrite },
+        BuiltinFunction { name: "append", strategy: BuiltinStrategy::FsAppend },
+        BuiltinFunction { name: "exists", strategy: BuiltinStrategy::FsExists },
+        BuiltinFunction { name: "is_file", strategy: BuiltinStrategy::FsIsFile },
+        BuiltinFunction { name: "is_dir", strategy: BuiltinStrategy::FsIsDir },
+        BuiltinFunction { name: "list_dir", strategy: BuiltinStrategy::FsListDir },
+        BuiltinFunction { name: "mkdir", strategy: BuiltinStrategy::FsMkdir },
+        BuiltinFunction { name: "mkdir_all", strategy: BuiltinStrategy::FsMkdirAll },
+        BuiltinFunction { name: "remove", strategy: BuiltinStrategy::FsRemove },
+        BuiltinFunction { name: "remove_all", strategy: BuiltinStrategy::FsRemoveAll },
+        // Note: join conflicts with threads::join, so fs::join needs qualified call
+        BuiltinFunction { name: "fs::join", strategy: BuiltinStrategy::FsJoin },
+        BuiltinFunction { name: "dirname", strategy: BuiltinStrategy::FsDirname },
+        BuiltinFunction { name: "basename", strategy: BuiltinStrategy::FsBasename },
+        BuiltinFunction { name: "extension", strategy: BuiltinStrategy::FsExtension },
+        BuiltinFunction { name: "absolute", strategy: BuiltinStrategy::FsAbsolute },
+        BuiltinFunction { name: "size", strategy: BuiltinStrategy::FsSize },
+        BuiltinFunction { name: "modified", strategy: BuiltinStrategy::FsModified },
+        BuiltinFunction { name: "copy", strategy: BuiltinStrategy::FsCopy },
+        BuiltinFunction { name: "rename", strategy: BuiltinStrategy::FsRename },
     ];
     REGISTRY
 }
@@ -893,6 +965,142 @@ pub fn compile_builtin_call(
         BuiltinStrategy::MapFromEntries => {
             let pairs = compile_expression(ctx, builder, &args[0])?;
             call_one_arg_ptr_runtime(ctx, builder, "naml_map_from_entries", pairs)
+        }
+
+        // ========================================
+        // File system strategies
+        // ========================================
+        BuiltinStrategy::FsRead => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_read", path)
+        }
+
+        BuiltinStrategy::FsReadBytes => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_read_bytes", path)
+        }
+
+        BuiltinStrategy::FsWrite => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let content = compile_expression(ctx, builder, &args[1])?;
+            let content = ensure_naml_string(ctx, builder, content, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_write", path, content)
+        }
+
+        BuiltinStrategy::FsAppend => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let content = compile_expression(ctx, builder, &args[1])?;
+            let content = ensure_naml_string(ctx, builder, content, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_append", path, content)
+        }
+
+        BuiltinStrategy::FsExists => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_exists", path)
+        }
+
+        BuiltinStrategy::FsIsFile => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_is_file", path)
+        }
+
+        BuiltinStrategy::FsIsDir => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_is_dir", path)
+        }
+
+        BuiltinStrategy::FsListDir => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_list_dir", path)
+        }
+
+        BuiltinStrategy::FsMkdir => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_mkdir", path)
+        }
+
+        BuiltinStrategy::FsMkdirAll => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_mkdir_all", path)
+        }
+
+        BuiltinStrategy::FsRemove => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_remove", path)
+        }
+
+        BuiltinStrategy::FsRemoveAll => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_remove_all", path)
+        }
+
+        BuiltinStrategy::FsJoin => {
+            let parts = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_join", parts)
+        }
+
+        BuiltinStrategy::FsDirname => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_dirname", path)
+        }
+
+        BuiltinStrategy::FsBasename => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_basename", path)
+        }
+
+        BuiltinStrategy::FsExtension => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_extension", path)
+        }
+
+        BuiltinStrategy::FsAbsolute => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_absolute", path)
+        }
+
+        BuiltinStrategy::FsSize => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_size", path)
+        }
+
+        BuiltinStrategy::FsModified => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_modified", path)
+        }
+
+        BuiltinStrategy::FsCopy => {
+            let src = compile_expression(ctx, builder, &args[0])?;
+            let src = ensure_naml_string(ctx, builder, src, &args[0])?;
+            let dst = compile_expression(ctx, builder, &args[1])?;
+            let dst = ensure_naml_string(ctx, builder, dst, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_copy", src, dst)
+        }
+
+        BuiltinStrategy::FsRename => {
+            let src = compile_expression(ctx, builder, &args[0])?;
+            let src = ensure_naml_string(ctx, builder, src, &args[0])?;
+            let dst = compile_expression(ctx, builder, &args[1])?;
+            let dst = ensure_naml_string(ctx, builder, dst, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_rename", src, dst)
         }
     }
 }
