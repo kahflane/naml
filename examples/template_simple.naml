@@ -1,0 +1,8 @@
+fn main() {
+    var simple: string = `Hello, World!`;
+    println(simple);
+
+    var name: string = "Alice";
+    var greeting: string = `Hello {name}!`;
+    println(greeting);
+}

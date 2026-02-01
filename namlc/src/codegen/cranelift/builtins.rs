@@ -17,6 +17,7 @@
 
 use cranelift::prelude::*;
 use cranelift_codegen::ir::MemFlags;
+use cranelift_module::Module;
 
 use super::array::{
     call_array_clear_runtime, call_array_contains_bool, call_array_fill_runtime, call_array_push,
@@ -305,6 +306,20 @@ pub enum BuiltinStrategy {
     PathSeparator,
 
     // ========================================
+    // Encoding module strategies
+    // ========================================
+    /// (bytes) -> string (encode bytes to string)
+    EncodingBytesToString(&'static str),
+    /// (string) -> bytes (encode string to bytes)
+    EncodingStringToBytes(&'static str),
+    /// (bytes) -> bool (validation)
+    EncodingValidate(&'static str),
+    /// (bytes, out_tag, out_value) -> throwing decode to string
+    EncodingDecodeToString(&'static str),
+    /// (string, out_tag, out_value) -> throwing decode to bytes
+    EncodingDecodeToBytes(&'static str),
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -588,6 +603,23 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "path::ends_with", strategy: BuiltinStrategy::PathTwoArgBool("naml_path_ends_with") },
         BuiltinFunction { name: "components", strategy: BuiltinStrategy::PathComponents },
         BuiltinFunction { name: "separator", strategy: BuiltinStrategy::PathSeparator },
+
+        // ========================================
+        // Encoding module
+        // ========================================
+        // UTF-8
+        BuiltinFunction { name: "utf8::encode", strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_utf8_encode") },
+        BuiltinFunction { name: "utf8::decode", strategy: BuiltinStrategy::EncodingDecodeToString("naml_encoding_utf8_decode") },
+        BuiltinFunction { name: "utf8::is_valid", strategy: BuiltinStrategy::EncodingValidate("naml_encoding_utf8_is_valid") },
+        // Hex
+        BuiltinFunction { name: "hex::encode", strategy: BuiltinStrategy::EncodingBytesToString("naml_encoding_hex_encode") },
+        BuiltinFunction { name: "hex::decode", strategy: BuiltinStrategy::EncodingDecodeToBytes("naml_encoding_hex_decode") },
+        // Base64
+        BuiltinFunction { name: "base64::encode", strategy: BuiltinStrategy::EncodingBytesToString("naml_encoding_base64_encode") },
+        BuiltinFunction { name: "base64::decode", strategy: BuiltinStrategy::EncodingDecodeToBytes("naml_encoding_base64_decode") },
+        // URL
+        BuiltinFunction { name: "url::encode", strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_url_encode") },
+        BuiltinFunction { name: "url::decode", strategy: BuiltinStrategy::EncodingDecodeToString("naml_encoding_url_decode") },
     ];
     REGISTRY
 }
@@ -1404,6 +1436,112 @@ pub fn compile_builtin_call(
             let inst = builder.ins().call(func_ref, &[]);
             let results = builder.inst_results(inst);
             Ok(results[0])
+        }
+
+        // ========================================
+        // Encoding strategies
+        // ========================================
+        BuiltinStrategy::EncodingBytesToString(runtime_fn) => {
+            let bytes = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, bytes)
+        }
+
+        BuiltinStrategy::EncodingStringToBytes(runtime_fn) => {
+            let s = compile_expression(ctx, builder, &args[0])?;
+            let s = ensure_naml_string(ctx, builder, s, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, s)
+        }
+
+        BuiltinStrategy::EncodingValidate(runtime_fn) => {
+            let bytes = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, runtime_fn, bytes)
+        }
+
+        BuiltinStrategy::EncodingDecodeToString(runtime_fn) => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let bytes = compile_expression(ctx, builder, &args[0])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 4, 4));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            builder.ins().call(func_ref, &[bytes, out_tag, out_value]);
+
+            let tag = builder.ins().load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder.ins().load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder.ins().brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_decode_error;
+            throw_decode_error(ctx, builder, value)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        BuiltinStrategy::EncodingDecodeToBytes(runtime_fn) => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let s = compile_expression(ctx, builder, &args[0])?;
+            let s = ensure_naml_string(ctx, builder, s, &args[0])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 4, 4));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            builder.ins().call(func_ref, &[s, out_tag, out_value]);
+
+            let tag = builder.ins().load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder.ins().load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder.ins().brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_decode_error;
+            throw_decode_error(ctx, builder, value)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
         }
     }
 }

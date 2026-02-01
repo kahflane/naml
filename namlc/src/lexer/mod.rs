@@ -290,6 +290,7 @@ pub enum TokenKind {
     IntLit,
     FloatLit,
     StringLit,
+    TemplateLit,
     BytesLit,
 
     Keyword(Keyword),
@@ -670,6 +671,7 @@ impl<'a> Lexer<'a> {
             b'#' => TokenKind::Hash,
 
             b'"' => self.scan_string(),
+            b'`' => self.scan_template_string(),
 
             b'0'..=b'9' => self.scan_number(start),
 
@@ -723,6 +725,17 @@ impl<'a> Lexer<'a> {
             };
             let symbol = self.interner.get_or_intern(text.as_ref());
             Token::with_symbol(kind, span, symbol)
+        } else if kind == TokenKind::TemplateLit {
+            // Template strings: only escape \` (backtick), preserve everything else including newlines
+            let raw = &self.source[(start as usize + 1)..(end as usize - 1)];
+            let text = if raw.contains("\\`") {
+                // Only need to escape backticks in template strings
+                raw.replace("\\`", "`")
+            } else {
+                raw.to_string()
+            };
+            let symbol = self.interner.get_or_intern(&text);
+            Token::with_symbol(kind, span, symbol)
         } else {
             Token::new(kind, span)
         }
@@ -761,6 +774,40 @@ impl<'a> Lexer<'a> {
                         self.pos = self.bytes.len();
                     }
                     return TokenKind::Error; // Unterminated string
+                }
+            }
+        }
+    }
+
+    fn scan_template_string(&mut self) -> TokenKind {
+        // Template strings are delimited by backticks and support:
+        // - Multi-line content (newlines preserved)
+        // - {expression} interpolation (parsed later)
+        // - Escape only \` (backtick)
+        loop {
+            match memchr2(b'`', b'\\', &self.bytes[self.pos..]) {
+                Some(offset) => {
+                    self.pos += offset;
+                    match self.bytes[self.pos] {
+                        b'`' => {
+                            self.pos += 1;
+                            return TokenKind::TemplateLit;
+                        }
+                        b'\\' => {
+                            self.pos += 1;
+                            if self.pos < self.bytes.len() {
+                                // Only skip next char if it's a backtick (the only escape in templates)
+                                if self.bytes[self.pos] == b'`' {
+                                    self.pos += 1;
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                None => {
+                    self.pos = self.bytes.len();
+                    return TokenKind::Error; // Unterminated template string
                 }
             }
         }

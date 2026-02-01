@@ -51,6 +51,7 @@ pub enum Expression<'ast> {
     Elvis(ElvisExpr<'ast>),
     FallibleCast(FallibleCastExpr<'ast>),
     ForceUnwrap(ForceUnwrapExpr<'ast>),
+    TemplateString(TemplateStringExpr),
 }
 
 impl<'ast> Spanned for Expression<'ast> {
@@ -82,6 +83,7 @@ impl<'ast> Spanned for Expression<'ast> {
             Expression::Elvis(e) => e.span,
             Expression::FallibleCast(e) => e.span,
             Expression::ForceUnwrap(e) => e.span,
+            Expression::TemplateString(e) => e.span,
         }
     }
 }
@@ -294,6 +296,21 @@ pub struct ElvisExpr<'ast> {
     pub left: &'ast Expression<'ast>,
     pub right: &'ast Expression<'ast>,
     pub span: Span,
+}
+
+/// Template string expression: `Hello {name}!`
+/// Supports multi-line strings and expression interpolation
+#[derive(Debug, Clone, PartialEq)]
+pub struct TemplateStringExpr {
+    pub parts: Vec<TemplateStringPart>,
+    pub span: Span,
+}
+
+/// A part of a template string - either literal text or an interpolated expression
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplateStringPart {
+    Literal(String),
+    Expression(String),  // Raw expression string, parsed during codegen
 }
 
 impl LiteralExpr {

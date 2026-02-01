@@ -324,7 +324,12 @@ impl<'a> TypeChecker<'a> {
                                 if let Some(alias_spur) = short_alias_spur {
                                     self.symbols.register_module(alias_spur).add_function(sig.clone());
                                 }
-                                self.symbols.define_function(sig.clone());
+                                // Check for duplicate imports (same fix as UseItems::All)
+                                if self.symbols.has_function(sig.name) {
+                                    self.symbols.mark_ambiguous(sig.name);
+                                } else {
+                                    self.symbols.define_function(sig.clone());
+                                }
                             }
                         }
                         None => {
@@ -633,6 +638,26 @@ impl<'a> TypeChecker<'a> {
                     );
                 }
             }
+            "encoding" | "encoding::utf8" | "encoding::hex" | "encoding::base64" | "encoding::url" => {
+                // Register DecodeError exception
+                let decode_error_name = self.interner.get_or_intern("DecodeError");
+                let position_field = self.interner.get_or_intern("position");
+
+                // Only register if not already registered
+                if self.symbols.get_type(decode_error_name).is_none() {
+                    self.symbols.define_type(
+                        decode_error_name,
+                        TypeDef::Exception(ExceptionDef {
+                            name: decode_error_name,
+                            fields: vec![
+                                (position_field, Type::Int),
+                            ],
+                            is_public: true,
+                            span: Span::dummy(),
+                        }),
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -695,9 +720,39 @@ impl<'a> TypeChecker<'a> {
         ]
     }
 
+    fn get_encoding_utf8_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("encode", vec![("s", Type::String)], Type::Bytes),
+            StdModuleFn::throwing("decode", vec![("data", Type::Bytes)], Type::String, vec!["DecodeError"]),
+            StdModuleFn::new("is_valid", vec![("data", Type::Bytes)], Type::Bool),
+        ]
+    }
+
+    fn get_encoding_hex_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::Bytes, vec!["DecodeError"]),
+        ]
+    }
+
+    fn get_encoding_base64_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::Bytes, vec!["DecodeError"]),
+        ]
+    }
+
+    fn get_encoding_url_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("encode", vec![("s", Type::String)], Type::String),
+            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::String, vec!["DecodeError"]),
+        ]
+    }
+
     fn get_std_submodules(module: &str) -> Option<Vec<&'static str>> {
         match module {
             "collections" => Some(vec!["arrays", "maps"]),
+            "encoding" => Some(vec!["utf8", "hex", "base64", "url"]),
             _ => None,
         }
     }
@@ -809,6 +864,18 @@ impl<'a> TypeChecker<'a> {
                 // Path manipulation
                 StdModuleFn::new("strip_prefix", vec![("path", Type::String), ("prefix", Type::String)], Type::String),
             ]),
+            // Encoding module and submodules
+            "encoding" => {
+                let mut fns = Self::get_encoding_utf8_functions();
+                fns.extend(Self::get_encoding_hex_functions());
+                fns.extend(Self::get_encoding_base64_functions());
+                fns.extend(Self::get_encoding_url_functions());
+                Some(fns)
+            }
+            "encoding::utf8" => Some(Self::get_encoding_utf8_functions()),
+            "encoding::hex" => Some(Self::get_encoding_hex_functions()),
+            "encoding::base64" => Some(Self::get_encoding_base64_functions()),
+            "encoding::url" => Some(Self::get_encoding_url_functions()),
             _ => None,
         }
     }
@@ -941,7 +1008,12 @@ impl<'a> TypeChecker<'a> {
                                 module: None, 
                             };
                             self.symbols.register_module(module_spur).add_function(sig.clone());
-                            self.symbols.define_function(sig);
+                            // Check for duplicate imports (same fix as UseItems::All)
+                            if self.symbols.has_function(sig.name) {
+                                self.symbols.mark_ambiguous(sig.name);
+                            } else {
+                                self.symbols.define_function(sig);
+                            }
                         }
                         None => {
                             self.errors.push(TypeError::PrivateSymbol {

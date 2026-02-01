@@ -1,0 +1,30 @@
+##
+## naml-std-encoding - Encoding/decoding operations
+##
+## Provides encoding and decoding for common formats:
+## - utf8: String <-> bytes UTF-8 conversion
+## - hex: Bytes <-> hex string
+## - base64: Bytes <-> base64 string
+## - url: URL percent-encoding
+## - json: JSON parsing and serialization
+##
+## Platform: All (native, server, browser)
+##
+
+[package]
+name = "naml-std-encoding"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Encoding/decoding operations for the naml programming language"
+
+[lib]
+name = "naml_std_encoding"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
+hex = "0.4"
+base64 = "0.22"
+urlencoding = "2.1"

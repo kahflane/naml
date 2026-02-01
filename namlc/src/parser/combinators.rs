@@ -138,6 +138,20 @@ pub fn string_lit(input: TokenStream) -> PResult<(lasso::Spur, Span)> {
     }
 }
 
+pub fn template_lit(input: TokenStream) -> PResult<(lasso::Spur, Span)> {
+    match input.first() {
+        Some(tok) if tok.kind == TokenKind::TemplateLit => {
+            let (rest, _) = input.take_split(1);
+            let symbol = tok.symbol.expect("TemplateLit must have symbol");
+            Ok((rest, (symbol, tok.span)))
+        }
+        _ => Err(nom::Err::Error(PError {
+            input,
+            kind: PErrorKind::Expected(TokenKind::TemplateLit),
+        })),
+    }
+}
+
 pub fn peek_token(input: TokenStream) -> Option<TokenKind> {
     input.first().map(|t| t.kind)
 }

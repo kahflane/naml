@@ -991,6 +991,18 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_string_to_bytes as *const u8,
         );
 
+        // Encoding operations (from naml-std-encoding)
+        builder.symbol("naml_encoding_utf8_encode", crate::runtime::naml_encoding_utf8_encode as *const u8);
+        builder.symbol("naml_encoding_utf8_decode", crate::runtime::naml_encoding_utf8_decode as *const u8);
+        builder.symbol("naml_encoding_utf8_is_valid", crate::runtime::naml_encoding_utf8_is_valid as *const u8);
+        builder.symbol("naml_encoding_hex_encode", crate::runtime::naml_encoding_hex_encode as *const u8);
+        builder.symbol("naml_encoding_hex_decode", crate::runtime::naml_encoding_hex_decode as *const u8);
+        builder.symbol("naml_encoding_base64_encode", crate::runtime::naml_encoding_base64_encode as *const u8);
+        builder.symbol("naml_encoding_base64_decode", crate::runtime::naml_encoding_base64_decode as *const u8);
+        builder.symbol("naml_encoding_url_encode", crate::runtime::naml_encoding_url_encode as *const u8);
+        builder.symbol("naml_encoding_url_decode", crate::runtime::naml_encoding_url_decode as *const u8);
+        builder.symbol("naml_decode_error_new", crate::runtime::naml_decode_error_new as *const u8);
+
         let module = JITModule::new(builder);
         let ctx = module.make_context();
 
@@ -1069,6 +1081,18 @@ impl<'a> JitCompiler<'a> {
                     "line".to_string(),
                 ],
                 field_heap_types: vec![Some(HeapType::String), Some(HeapType::String), None],
+            },
+        );
+
+        // DecodeError exception from std::encoding module
+        // Fields: message (string at implicit offset 0), position (int)
+        self.exception_names.insert("DecodeError".to_string());
+        self.struct_defs.insert(
+            "DecodeError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0003, // Reserved type ID for DecodeError
+                fields: vec!["message".to_string(), "position".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None], // message is string, position is int
             },
         );
     }
@@ -2519,6 +2543,23 @@ impl<'a> JitCompiler<'a> {
             &[ptr],
             &[],
         )?;
+
+        // Encoding operations (from naml-std-encoding)
+        // UTF-8
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_utf8_encode", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_utf8_decode", &[ptr, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_utf8_is_valid", &[ptr], &[i64t])?;
+        // Hex
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_hex_encode", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_hex_decode", &[ptr, ptr, ptr], &[])?;
+        // Base64
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_base64_encode", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_base64_decode", &[ptr, ptr, ptr], &[])?;
+        // URL
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_url_encode", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_url_decode", &[ptr, ptr, ptr], &[])?;
+        // DecodeError helper
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_decode_error_new", &[ptr, i64t], &[ptr])?;
 
         // Datetime operations
         declare(

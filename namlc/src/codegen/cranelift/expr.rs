@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expression, Literal, LiteralExpr, NamlType};
+use crate::ast::{BinaryOp, Expression, Literal, LiteralExpr, NamlType, TemplateStringPart};
 use crate::codegen::cranelift::array::{compile_array_literal, compile_direct_array_get_or_panic};
 use crate::codegen::cranelift::literal::compile_literal;
 use crate::codegen::cranelift::map::{compile_direct_map_get_or_panic, compile_map_literal};
@@ -16,7 +16,8 @@ use crate::codegen::cranelift::externs::compile_extern_call;
 use crate::codegen::cranelift::options::{compile_option_from_array_get, compile_option_from_map_get};
 use crate::codegen::cranelift::runtime::{call_alloc_closure_data, rt_func_ref};
 use crate::codegen::cranelift::spawns::call_spawn_closure;
-use crate::codegen::cranelift::strings::{call_bytes_to_string, call_float_to_string, call_int_to_string, call_string_equals, call_string_from_cstr, call_string_to_bytes, call_string_to_float, call_string_to_int};
+use crate::codegen::cranelift::strings::{call_bytes_to_string, call_float_to_string, call_int_to_string, call_string_concat, call_string_equals, call_string_from_cstr, call_string_to_bytes, call_string_to_float, call_string_to_int};
+use crate::codegen::cranelift::literal::compile_string_literal;
 use crate::codegen::cranelift::structs::{call_struct_get_field, call_struct_new, call_struct_set_field};
 use crate::codegen::cranelift::types::tc_type_to_cranelift;
 
@@ -1347,9 +1348,108 @@ pub fn compile_expression(
             Ok(builder.block_params(merge_block)[0])
         }
 
+        Expression::TemplateString(template) => {
+            compile_template_string(ctx, builder, template)
+        }
+
         _ => Err(CodegenError::Unsupported(format!(
             "Expression type not yet implemented: {:?}",
             std::mem::discriminant(expr)
         ))),
+    }
+}
+
+fn compile_template_string(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    template: &crate::ast::TemplateStringExpr,
+) -> Result<Value, CodegenError> {
+    use crate::codegen::cranelift::heap::HeapType;
+    use crate::lexer::tokenize;
+
+    let mut result: Option<Value> = None;
+
+    for part in &template.parts {
+        let part_value = match part {
+            TemplateStringPart::Literal(s) => {
+                // Compile literal string part
+                let ptr = compile_string_literal(ctx, builder, s)?;
+                call_string_from_cstr(ctx, builder, ptr)?
+            }
+            TemplateStringPart::Expression(expr_str) => {
+                // Tokenize the expression to get the identifier
+                let (tokens, interner) = tokenize(expr_str);
+
+                // Filter out whitespace, newline, and EOF tokens
+                let tokens: Vec<_> = tokens.into_iter()
+                    .filter(|t| !matches!(t.kind,
+                        crate::lexer::TokenKind::Eof |
+                        crate::lexer::TokenKind::Whitespace |
+                        crate::lexer::TokenKind::Newline
+                    ))
+                    .collect();
+
+                if tokens.is_empty() {
+                    // Empty expression, return empty string
+                    let ptr = compile_string_literal(ctx, builder, "")?;
+                    call_string_from_cstr(ctx, builder, ptr)?
+                } else if tokens.len() == 1 && tokens[0].kind == crate::lexer::TokenKind::Ident {
+                    // Simple identifier case - look up and convert to string
+                    let ident_spur = tokens[0].symbol.unwrap();
+                    let ident_name = interner.resolve(&ident_spur);
+
+                    // Look up the variable in the current context
+                    if let Some(&var) = ctx.variables.get(ident_name) {
+                        let val = builder.use_var(var);
+
+                        // Check if this is a heap type (like string)
+                        if let Some(heap_type) = ctx.var_heap_types.get(ident_name) {
+                            match heap_type {
+                                HeapType::String => val, // Already a string pointer
+                                _ => call_int_to_string(ctx, builder, val)?, // Other heap types
+                            }
+                        } else {
+                            // Not a heap type - check Cranelift type
+                            let var_type = builder.func.dfg.value_type(val);
+                            if var_type == cranelift::prelude::types::F64 {
+                                call_float_to_string(ctx, builder, val)?
+                            } else if var_type == cranelift::prelude::types::I8 {
+                                // Bool type
+                                let true_str = compile_string_literal(ctx, builder, "true")?;
+                                let true_naml = call_string_from_cstr(ctx, builder, true_str)?;
+                                let false_str = compile_string_literal(ctx, builder, "false")?;
+                                let false_naml = call_string_from_cstr(ctx, builder, false_str)?;
+                                builder.ins().select(val, true_naml, false_naml)
+                            } else {
+                                call_int_to_string(ctx, builder, val)?
+                            }
+                        }
+                    } else {
+                        // Variable not found, return as literal
+                        let ptr = compile_string_literal(ctx, builder, &format!("{{{}}}", expr_str))?;
+                        call_string_from_cstr(ctx, builder, ptr)?
+                    }
+                } else {
+                    // Complex expression - not yet fully supported
+                    // For now, output as literal with braces
+                    let ptr = compile_string_literal(ctx, builder, &format!("{{{}}}", expr_str))?;
+                    call_string_from_cstr(ctx, builder, ptr)?
+                }
+            }
+        };
+
+        result = Some(match result {
+            Some(acc) => call_string_concat(ctx, builder, acc, part_value)?,
+            None => part_value,
+        });
+    }
+
+    // Handle empty template string
+    match result {
+        Some(value) => Ok(value),
+        None => {
+            let ptr = compile_string_literal(ctx, builder, "")?;
+            call_string_from_cstr(ctx, builder, ptr)
+        }
     }
 }

@@ -108,6 +108,7 @@ naml-std-strings.workspace = true
 naml-std-collections.workspace = true
 naml-std-fs.workspace = true
 naml-std-path.workspace = true
+naml-std-encoding.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

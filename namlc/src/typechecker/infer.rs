@@ -86,6 +86,7 @@ impl<'a> TypeInferrer<'a> {
             Expression::Ternary(ternary) => self.infer_ternary(ternary),
             Expression::Elvis(elvis) => self.infer_elvis(elvis),
             Expression::ForceUnwrap(unwrap) => self.infer_force_unwrap(unwrap),
+            Expression::TemplateString(template) => self.infer_template_string(template),
         };
 
         let resolved_ty = ty.resolve();
@@ -284,6 +285,12 @@ impl<'a> TypeInferrer<'a> {
                 Type::Error
             }
         }
+    }
+
+    fn infer_template_string(&mut self, _template: &ast::TemplateStringExpr) -> Type {
+        // Template strings contain raw expression strings that are parsed during codegen
+        // They always evaluate to String type
+        Type::String
     }
 
     fn infer_literal(&mut self, lit: &ast::LiteralExpr) -> Type {

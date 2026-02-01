@@ -19,6 +19,7 @@ members = [
     "std/naml-std-collections",
     "std/naml-std-fs",
     "std/naml-std-path",
+    "std/naml-std-encoding",
 ]
 
 [workspace.package]
@@ -136,6 +137,7 @@ naml-std-strings = { path = "std/naml-std-strings" }
 naml-std-collections = { path = "std/naml-std-collections" }
 naml-std-fs = { path = "std/naml-std-fs" }
 naml-std-path = { path = "std/naml-std-path" }
+naml-std-encoding = { path = "std/naml-std-encoding" }
 
 [profile.release]
 lto = true

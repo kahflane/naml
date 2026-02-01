@@ -27,6 +27,7 @@ pub enum HeapTag {
     Map = 3,
     Closure = 4,
     Channel = 5,
+    Bytes = 6,
 }
 
 /// Header for all heap-allocated objects

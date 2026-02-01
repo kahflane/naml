@@ -4,6 +4,7 @@ use cranelift_frontend::FunctionBuilder;
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::{CompileContext};
 use crate::codegen::cranelift::runtime::rt_func_ref;
+use crate::codegen::cranelift::literal::compile_string_literal;
 
 // Exception handling helper functions
 pub fn call_exception_set(
@@ -13,6 +14,26 @@ pub fn call_exception_set(
 ) -> Result<(), CodegenError> {
     let func_ref = rt_func_ref(ctx, builder, "naml_exception_set")?;
     builder.ins().call(func_ref, &[exception_ptr]);
+    Ok(())
+}
+
+/// Throw a DecodeError exception with the given error position
+pub fn throw_decode_error(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    position: Value,
+) -> Result<(), CodegenError> {
+    let cstr_ptr = compile_string_literal(ctx, builder, "invalid encoding at position")?;
+
+    let from_cstr = rt_func_ref(ctx, builder, "naml_string_from_cstr")?;
+    let call = builder.ins().call(from_cstr, &[cstr_ptr]);
+    let message = builder.inst_results(call)[0];
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_decode_error_new")?;
+    let call = builder.ins().call(func_ref, &[message, position]);
+    let exc_ptr = builder.inst_results(call)[0];
+
+    call_exception_set(ctx, builder, exc_ptr)?;
     Ok(())
 }
 

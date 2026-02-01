@@ -432,6 +432,10 @@ pub fn walk_expr<'ast, V: Visitor<'ast>>(v: &mut V, expr: &Expression<'ast>) {
         Expression::ForceUnwrap(e) => {
             v.visit_expr(e.expr);
         }
+        Expression::TemplateString(_) => {
+            // Template string expressions are stored as raw strings
+            // and parsed during codegen, so nothing to visit here
+        }
     }
 }
 

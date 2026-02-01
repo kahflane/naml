@@ -190,6 +190,7 @@ fn parse_atom<'a, 'ast>(
         Some(TokenKind::IntLit) => parse_int_literal(input),
         Some(TokenKind::FloatLit) => parse_float_literal(input),
         Some(TokenKind::StringLit) => parse_string_literal(input),
+        Some(TokenKind::TemplateLit) => parse_template_string(arena, input),
         Some(TokenKind::Keyword(Keyword::True | Keyword::False)) => parse_bool_literal(input),
         Some(TokenKind::Keyword(Keyword::None)) => parse_none_literal(input),
         Some(TokenKind::Keyword(Keyword::Some)) => parse_some_expr(arena, input),
@@ -239,6 +240,83 @@ fn parse_string_literal<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Express
             span,
         }),
     ))
+}
+
+fn parse_template_string<'a, 'ast>(
+    _arena: &'ast AstArena,
+    input: TokenStream<'a>,
+) -> PResult<'a, Expression<'ast>> {
+    let (new_input, (_symbol, span)) = template_lit(input)?;
+
+    // Get the raw content from source (between backticks)
+    let raw = &input.source[(span.start as usize + 1)..(span.end as usize - 1)];
+
+    // Parse template string into parts (literal strings and raw expression strings)
+    let mut parts = Vec::new();
+    let mut current_pos = 0;
+    let mut brace_depth = 0;
+    let mut expr_start = 0;
+
+    let chars: Vec<char> = raw.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        if brace_depth == 0 {
+            if c == '{' {
+                // Start of expression - save any literal before this
+                if i > current_pos {
+                    let literal: String = chars[current_pos..i].iter().collect();
+                    parts.push(TemplateStringPart::Literal(process_template_escapes(&literal)));
+                }
+                brace_depth = 1;
+                expr_start = i + 1;
+            }
+        } else {
+            if c == '{' {
+                brace_depth += 1;
+            } else if c == '}' {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    // End of expression - store raw expression string
+                    let expr_str: String = chars[expr_start..i].iter().collect();
+
+                    if expr_str.is_empty() {
+                        // Empty braces
+                        parts.push(TemplateStringPart::Literal("{}".to_string()));
+                    } else {
+                        // Store raw expression string to be parsed during codegen
+                        parts.push(TemplateStringPart::Expression(expr_str));
+                    }
+
+                    current_pos = i + 1;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    // Add any remaining literal
+    if current_pos < chars.len() {
+        let literal: String = chars[current_pos..].iter().collect();
+        if brace_depth > 0 {
+            // Unclosed brace - include the opening brace
+            let unclosed: String = chars[expr_start - 1..].iter().collect();
+            parts.push(TemplateStringPart::Literal(process_template_escapes(&unclosed)));
+        } else {
+            parts.push(TemplateStringPart::Literal(process_template_escapes(&literal)));
+        }
+    }
+
+    Ok((
+        new_input,
+        Expression::TemplateString(TemplateStringExpr { parts, span }),
+    ))
+}
+
+fn process_template_escapes(s: &str) -> String {
+    s.replace("\\`", "`")
 }
 
 fn parse_bool_literal<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Expression<'ast>> {
