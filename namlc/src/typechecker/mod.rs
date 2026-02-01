@@ -679,6 +679,19 @@ impl<'a> TypeChecker<'a> {
             StdModuleFn::throwing("mmap_write", vec![("handle", Type::Int), ("offset", Type::Int), ("data", Type::Bytes)], Type::Unit, vec!["IOError"]),
             StdModuleFn::throwing("mmap_flush", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
             StdModuleFn::throwing("mmap_close", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
+            // File handle operations
+            StdModuleFn::throwing("file_open", vec![("path", Type::String), ("mode", Type::String)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("file_close", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("file_read", vec![("handle", Type::Int), ("count", Type::Int)], Type::String, vec!["IOError"]),
+            StdModuleFn::throwing("file_read_line", vec![("handle", Type::Int)], Type::String, vec!["IOError"]),
+            StdModuleFn::throwing("file_read_all", vec![("handle", Type::Int)], Type::String, vec!["IOError"]),
+            StdModuleFn::throwing("file_write", vec![("handle", Type::Int), ("content", Type::String)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("file_write_line", vec![("handle", Type::Int), ("content", Type::String)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("file_flush", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing("file_seek", vec![("handle", Type::Int), ("offset", Type::Int), ("whence", Type::Int)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("file_tell", vec![("handle", Type::Int)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing("file_eof", vec![("handle", Type::Int)], Type::Bool, vec!["IOError"]),
+            StdModuleFn::throwing("file_size", vec![("handle", Type::Int)], Type::Int, vec!["IOError"]),
         ]
     }
 

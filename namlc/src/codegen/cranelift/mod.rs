@@ -748,6 +748,20 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_fs_mmap_flush", crate::runtime::naml_fs_mmap_flush as *const u8);
         builder.symbol("naml_fs_mmap_close", crate::runtime::naml_fs_mmap_close as *const u8);
 
+        // File handle operations
+        builder.symbol("naml_fs_file_open", crate::runtime::naml_fs_file_open as *const u8);
+        builder.symbol("naml_fs_file_close", crate::runtime::naml_fs_file_close as *const u8);
+        builder.symbol("naml_fs_file_read", crate::runtime::naml_fs_file_read as *const u8);
+        builder.symbol("naml_fs_file_read_line", crate::runtime::naml_fs_file_read_line as *const u8);
+        builder.symbol("naml_fs_file_read_all", crate::runtime::naml_fs_file_read_all as *const u8);
+        builder.symbol("naml_fs_file_write", crate::runtime::naml_fs_file_write as *const u8);
+        builder.symbol("naml_fs_file_write_line", crate::runtime::naml_fs_file_write_line as *const u8);
+        builder.symbol("naml_fs_file_flush", crate::runtime::naml_fs_file_flush as *const u8);
+        builder.symbol("naml_fs_file_seek", crate::runtime::naml_fs_file_seek as *const u8);
+        builder.symbol("naml_fs_file_tell", crate::runtime::naml_fs_file_tell as *const u8);
+        builder.symbol("naml_fs_file_eof", crate::runtime::naml_fs_file_eof as *const u8);
+        builder.symbol("naml_fs_file_size", crate::runtime::naml_fs_file_size as *const u8);
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -2402,6 +2416,20 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_write", &[i64t, i64t, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_flush", &[i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_close", &[i64t], &[i64t])?;
+
+        // File handle operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_open", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_close", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_read", &[i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_read_line", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_read_all", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_write", &[i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_write_line", &[i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_flush", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_seek", &[i64t, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_tell", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_eof", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_size", &[i64t], &[i64t])?;
 
         // Bytes operations
         declare(

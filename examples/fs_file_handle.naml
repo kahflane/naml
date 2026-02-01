@@ -1,0 +1,101 @@
+use std::fs::*;
+
+fn main() {
+    println("=== File Handle Test ===");
+    println("");
+
+    var test_file: string = "/tmp/naml_file_handle_test.txt";
+
+    // Test writing to a file
+    println("Opening file for writing...");
+    var handle: int = file_open(test_file, "w") catch e {
+        println("file_open failed:");
+        println(e.message);
+    };
+
+    file_write_line(handle, "Hello, World!") catch e {
+        println("file_write_line failed:");
+        println(e.message);
+    };
+    file_write_line(handle, "This is line 2.") catch e {
+        println("file_write_line failed");
+    };
+    file_write_line(handle, "This is line 3.") catch e {
+        println("file_write_line failed");
+    };
+
+    file_flush(handle) catch e {
+        println("file_flush failed");
+    };
+    file_close(handle) catch e {
+        println("file_close failed");
+    };
+    println("File written and closed.");
+
+    // Test reading the file back
+    println("");
+    println("Opening file for reading...");
+    var reader: int = file_open(test_file, "r") catch e {
+        println("file_open failed");
+    };
+
+    // Read line by line
+    var line1: string = file_read_line(reader) catch e {
+        println("file_read_line failed");
+    };
+    print("Line 1: ");
+    print(line1);
+
+    var line2: string = file_read_line(reader) catch e {
+        println("file_read_line failed");
+    };
+    print("Line 2: ");
+    print(line2);
+
+    // Get current position
+    var pos: int = file_tell(reader) catch e {
+        println("file_tell failed");
+    };
+    print("Position after reading 2 lines: ");
+    println(pos);
+
+    // Seek back to start (SEEK_SET = 0)
+    file_seek(reader, 0, 0) catch e {
+        println("file_seek failed");
+    };
+    println("Seeked back to start.");
+
+    // Read all content
+    var all_content: string = file_read_all(reader) catch e {
+        println("file_read_all failed");
+    };
+    println("All content:");
+    print(all_content);
+
+    // Check file size
+    var fsize: int = file_size(reader) catch e {
+        println("file_size failed");
+    };
+    print("File size: ");
+    print(fsize);
+    println(" bytes");
+
+    // Check EOF - now returns bool!
+    var eof: bool = file_eof(reader) catch e {
+        println("file_eof failed");
+    };
+    print("EOF: ");
+    println(eof);
+
+    file_close(reader) catch e {
+        println("file_close failed");
+    };
+
+    // Clean up
+    remove(test_file) catch e {
+        println("remove failed");
+    };
+
+    println("");
+    println("=== All tests passed! ===");
+}

@@ -259,6 +259,34 @@ pub enum BuiltinStrategy {
     FsMmapClose,
 
     // ========================================
+    // File handle strategies
+    // ========================================
+    /// (path, mode) -> int throws IOError
+    FsFileOpen,
+    /// (handle) -> unit throws IOError
+    FsFileClose,
+    /// (handle, count) -> string throws IOError
+    FsFileRead,
+    /// (handle) -> string throws IOError
+    FsFileReadLine,
+    /// (handle) -> string throws IOError
+    FsFileReadAll,
+    /// (handle, content) -> int throws IOError
+    FsFileWrite,
+    /// (handle, content) -> int throws IOError
+    FsFileWriteLine,
+    /// (handle) -> unit throws IOError
+    FsFileFlush,
+    /// (handle, offset, whence) -> int throws IOError
+    FsFileSeek,
+    /// (handle) -> int throws IOError
+    FsFileTell,
+    /// (handle) -> bool throws IOError
+    FsFileEof,
+    /// (handle) -> int throws IOError
+    FsFileSize,
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -504,6 +532,22 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "mmap_write", strategy: BuiltinStrategy::FsMmapWrite },
         BuiltinFunction { name: "mmap_flush", strategy: BuiltinStrategy::FsMmapFlush },
         BuiltinFunction { name: "mmap_close", strategy: BuiltinStrategy::FsMmapClose },
+
+        // ========================================
+        // File handle operations
+        // ========================================
+        BuiltinFunction { name: "file_open", strategy: BuiltinStrategy::FsFileOpen },
+        BuiltinFunction { name: "file_close", strategy: BuiltinStrategy::FsFileClose },
+        BuiltinFunction { name: "file_read", strategy: BuiltinStrategy::FsFileRead },
+        BuiltinFunction { name: "file_read_line", strategy: BuiltinStrategy::FsFileReadLine },
+        BuiltinFunction { name: "file_read_all", strategy: BuiltinStrategy::FsFileReadAll },
+        BuiltinFunction { name: "file_write", strategy: BuiltinStrategy::FsFileWrite },
+        BuiltinFunction { name: "file_write_line", strategy: BuiltinStrategy::FsFileWriteLine },
+        BuiltinFunction { name: "file_flush", strategy: BuiltinStrategy::FsFileFlush },
+        BuiltinFunction { name: "file_seek", strategy: BuiltinStrategy::FsFileSeek },
+        BuiltinFunction { name: "file_tell", strategy: BuiltinStrategy::FsFileTell },
+        BuiltinFunction { name: "file_eof", strategy: BuiltinStrategy::FsFileEof },
+        BuiltinFunction { name: "file_size", strategy: BuiltinStrategy::FsFileSize },
     ];
     REGISTRY
 }
@@ -1197,6 +1241,79 @@ pub fn compile_builtin_call(
         BuiltinStrategy::FsMmapClose => {
             let handle = compile_expression(ctx, builder, &args[0])?;
             call_one_arg_int_runtime(ctx, builder, "naml_fs_mmap_close", handle)
+        }
+
+        // ========================================
+        // File handle operations
+        // ========================================
+        BuiltinStrategy::FsFileOpen => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let mode = compile_expression(ctx, builder, &args[1])?;
+            let mode = ensure_naml_string(ctx, builder, mode, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_file_open", path, mode)
+        }
+
+        BuiltinStrategy::FsFileClose => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_file_close", handle)
+        }
+
+        BuiltinStrategy::FsFileRead => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let count = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, "naml_fs_file_read", handle, count)
+        }
+
+        BuiltinStrategy::FsFileReadLine => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_file_read_line", handle)
+        }
+
+        BuiltinStrategy::FsFileReadAll => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_file_read_all", handle)
+        }
+
+        BuiltinStrategy::FsFileWrite => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let content = compile_expression(ctx, builder, &args[1])?;
+            let content = ensure_naml_string(ctx, builder, content, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_file_write", handle, content)
+        }
+
+        BuiltinStrategy::FsFileWriteLine => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let content = compile_expression(ctx, builder, &args[1])?;
+            let content = ensure_naml_string(ctx, builder, content, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_file_write_line", handle, content)
+        }
+
+        BuiltinStrategy::FsFileFlush => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_file_flush", handle)
+        }
+
+        BuiltinStrategy::FsFileSeek => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let offset = compile_expression(ctx, builder, &args[1])?;
+            let whence = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_file_seek", handle, offset, whence)
+        }
+
+        BuiltinStrategy::FsFileTell => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_file_tell", handle)
+        }
+
+        BuiltinStrategy::FsFileEof => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_file_eof", handle)
+        }
+
+        BuiltinStrategy::FsFileSize => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_file_size", handle)
         }
     }
 }

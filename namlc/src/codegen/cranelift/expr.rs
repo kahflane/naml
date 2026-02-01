@@ -18,6 +18,7 @@ use crate::codegen::cranelift::runtime::{call_alloc_closure_data, rt_func_ref};
 use crate::codegen::cranelift::spawns::call_spawn_closure;
 use crate::codegen::cranelift::strings::{call_bytes_to_string, call_float_to_string, call_int_to_string, call_string_equals, call_string_from_cstr, call_string_to_bytes, call_string_to_float, call_string_to_int};
 use crate::codegen::cranelift::structs::{call_struct_get_field, call_struct_new, call_struct_set_field};
+use crate::codegen::cranelift::types::tc_type_to_cranelift;
 
 pub fn compile_expression(
     ctx: &mut CompileContext<'_>,
@@ -890,6 +891,10 @@ pub fn compile_expression(
         }
 
         Expression::Catch(catch_expr) => {
+            // Get the expression type to handle Bool correctly
+            let expr_type = ctx.annotations.get_type(catch_expr.expr.span());
+            let is_bool_type = matches!(expr_type, Some(Type::Bool));
+
             // Compile the expression that might throw
             let result = compile_expression(ctx, builder, catch_expr.expr)?;
 
@@ -900,7 +905,12 @@ pub fn compile_expression(
             let exception_block = builder.create_block();
             let no_exception_block = builder.create_block();
             let merge_block = builder.create_block();
-            builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+            // Use the appropriate type for the merge block based on expression type
+            let merge_type = expr_type
+                .map(|t| tc_type_to_cranelift(&t))
+                .unwrap_or(cranelift::prelude::types::I64);
+            builder.append_block_param(merge_block, merge_type);
 
             // Branch based on exception check
             let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
@@ -946,10 +956,16 @@ pub fn compile_expression(
             // If handler didn't return/throw, check for tail expression or use default
             if !ctx.block_terminated {
                 let handler_value = if let Some(tail) = catch_expr.handler.tail {
-                    compile_expression(ctx, builder, tail)?
+                    let val = compile_expression(ctx, builder, tail)?;
+                    // Convert to correct type if needed
+                    if is_bool_type {
+                        builder.ins().ireduce(cranelift::prelude::types::I8, val)
+                    } else {
+                        val
+                    }
                 } else {
-                    // No tail expression - use 0 as default value
-                    builder.ins().iconst(cranelift::prelude::types::I64, 0)
+                    // No tail expression - use 0 as default value with correct type
+                    builder.ins().iconst(merge_type, 0)
                 };
                 builder.ins().jump(merge_block, &[handler_value]);
             }
@@ -958,7 +974,13 @@ pub fn compile_expression(
             // No exception block: jump to merge with the result
             builder.switch_to_block(no_exception_block);
             builder.seal_block(no_exception_block);
-            builder.ins().jump(merge_block, &[result]);
+            // Convert result to correct type if Bool (runtime returns I64, but Bool needs I8)
+            let result_converted = if is_bool_type {
+                builder.ins().ireduce(cranelift::prelude::types::I8, result)
+            } else {
+                result
+            };
+            builder.ins().jump(merge_block, &[result_converted]);
 
             // Merge block - returns the value directly (not wrapped in option)
             builder.switch_to_block(merge_block);
