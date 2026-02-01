@@ -1,0 +1,285 @@
+///
+/// JSON Test - Matching json_demo structure
+///
+
+use std::encoding::json;
+
+fn extract_user_name(user: json) -> string {
+    var name_json: json = user["name"];
+    if (name_json is json_string) {
+        return name_json as string;
+    }
+    return "unknown";
+}
+
+fn extract_user_age(user: json) -> int {
+    var age_json: json = user["age"];
+    if (age_json is json_number) {
+        return age_json as int;
+    }
+    return 0;
+}
+
+fn count_active_users(users: json) -> int {
+    var count: int = 0;
+    var total: int = json::count(users);
+    var i: int = 0;
+    while (i < total) {
+        var user: json = users[i];
+        var active: json = user["active"];
+        if (active is json_bool) {
+            var is_active: int = active as int;
+            if (is_active == 1) {
+                count = count + 1;
+            }
+        }
+        i = i + 1;
+    }
+    return count;
+}
+
+fn sum_all_ages(users: json) -> int {
+    var sum: int = 0;
+    var total: int = json::count(users);
+    var i: int = 0;
+    while (i < total) {
+        var user: json = users[i];
+        sum = sum + extract_user_age(user);
+        i = i + 1;
+    }
+    return sum;
+}
+
+fn process_nested_data(data: json) -> string throws PathError {
+    var settings: json = json::path(data, ".settings");
+    var theme: json = settings["theme"];
+    var font_size: json = json::path(data, ".settings.font_size");
+
+    var theme_str: string = "unknown";
+    if (theme is json_string) {
+        theme_str = theme as string;
+    }
+
+    var font_str: string = "default";
+    if (font_size is json_number) {
+        font_str = fmt("{}", font_size as int);
+    }
+
+    return fmt("Theme: {}, Font: {}", theme_str, font_str);
+}
+
+fn main() {
+    println("=== JSON Processing Demo ===");
+    println("");
+
+    // Test 1: Basic parsing and encoding
+    println("Test 1: Basic JSON parsing and encoding");
+    var json_str: string = "{\"name\": \"Alice\", \"age\": 30, \"active\": true}";
+    var user: json = json::decode(json_str) catch e {
+        println("Failed to decode JSON");
+    };
+    println(fmt("  Decoded JSON, type = {}", json::type_name(user)));
+    println(fmt("  Re-encoded: {}", json::encode(user)));
+
+    var actual_type: string = json::type_name(user);
+    if (actual_type == "object") {
+        println("  PASS: Type is object");
+    } else {
+        println(fmt("  FAIL: Expected type 'object', got '{}'", actual_type));
+    }
+    println("");
+
+    // Test 2: Indexing and type checking
+    println("Test 2: Indexing and type checking");
+    var name: json = user["name"];
+    var age: json = user["age"];
+    var active: json = user["active"];
+    var missing: json = user["missing"];
+
+    println(fmt("  name type: {}", json::type_name(name)));
+    println(fmt("  age type: {}", json::type_name(age)));
+    println(fmt("  active type: {}", json::type_name(active)));
+    println(fmt("  missing type: {}", json::type_name(missing)));
+
+    if (name is json_string) {
+        println("  PASS: name is json_string");
+    } else {
+        println("  FAIL: name should be json_string");
+    }
+
+    if (age is json_number) {
+        println("  PASS: age is json_number");
+    } else {
+        println("  FAIL: age should be json_number");
+    }
+
+    if (active is json_bool) {
+        println("  PASS: active is json_bool");
+    } else {
+        println("  FAIL: active should be json_bool");
+    }
+
+    if (missing is json_null) {
+        println("  PASS: missing is json_null");
+    } else {
+        println("  FAIL: missing should be json_null");
+    }
+    println("");
+
+    // Test 3: Casting
+    println("Test 3: Casting JSON to primitives");
+    var name_str: string = name as string;
+    var age_int: int = age as int;
+    println(fmt("  name as string: \"{}\"", name_str));
+    println(fmt("  age as int: {}", age_int));
+
+    if (name_str == "Alice") {
+        println("  PASS: name cast correct");
+    } else {
+        println(fmt("  FAIL: Expected 'Alice', got '{}'", name_str));
+    }
+
+    if (age_int == 30) {
+        println("  PASS: age cast correct");
+    } else {
+        println(fmt("  FAIL: Expected 30, got {}", age_int));
+    }
+    println("");
+
+    // Test 4: User-defined functions with json parameters
+    println("Test 4: User-defined functions with json");
+    var complex_json: string = "{\"users\": [{\"name\": \"Alice\", \"age\": 30, \"active\": true}, {\"name\": \"Bob\", \"age\": 25, \"active\": false}, {\"name\": \"Charlie\", \"age\": 35, \"active\": true}], \"settings\": {\"theme\": \"dark\", \"font_size\": 14}}";
+    var data: json = json::decode(complex_json) catch e {
+        println("Failed to decode complex JSON");
+    };
+
+    var users: json = data["users"];
+    println(fmt("  Users count: {}", json::count(users)));
+
+    var alice_name: string = extract_user_name(users[0]);
+    println(fmt("  First user name: {}", alice_name));
+    if (alice_name == "Alice") {
+        println("  PASS: extract_user_name works");
+    } else {
+        println("  FAIL: extract_user_name failed");
+    }
+
+    var bob_age: int = extract_user_age(users[1]);
+    println(fmt("  Bob's age: {}", bob_age));
+    if (bob_age == 25) {
+        println("  PASS: extract_user_age works");
+    } else {
+        println("  FAIL: extract_user_age failed");
+    }
+
+    var active_count: int = count_active_users(users);
+    println(fmt("  Active users: {}", active_count));
+    if (active_count == 2) {
+        println("  PASS: count_active_users works");
+    } else {
+        println(fmt("  FAIL: Expected 2 active users, got {}", active_count));
+    }
+
+    var total_age: int = sum_all_ages(users);
+    println(fmt("  Sum of ages: {}", total_age));
+    if (total_age == 90) {
+        println("  PASS: sum_all_ages works (30+25+35=90)");
+    } else {
+        println(fmt("  FAIL: Expected 90, got {}", total_age));
+    }
+    println("");
+
+    // Test 5: Path-based navigation (jq-style)
+    println("Test 5: Path navigation (jq-style)");
+    var first_name: json = json::path(data, ".users[0].name") catch e {
+        println("Path error");
+    };
+    var theme: json = json::path(data, ".settings.theme") catch e {
+        println("Path error");
+    };
+
+    println(fmt("  .users[0].name = \"{}\"", first_name as string));
+    println(fmt("  .settings.theme = \"{}\"", theme as string));
+
+    if ((first_name as string) == "Alice") {
+        println("  PASS: path .users[0].name works");
+    } else {
+        println("  FAIL: path navigation failed");
+    }
+
+    if ((theme as string) == "dark") {
+        println("  PASS: path .settings.theme works");
+    } else {
+        println("  FAIL: path navigation failed");
+    }
+    println("");
+
+    // Test 6: Nested processing
+    println("Test 6: Nested data processing");
+    var settings_str: string = process_nested_data(data) catch e {
+        "Error processing";
+    };
+    println(fmt("  Result: {}", settings_str));
+    if (settings_str == "Theme: dark, Font: 14") {
+        println("  PASS: process_nested_data works");
+    } else {
+        println(fmt("  FAIL: Expected 'Theme: dark, Font: 14', got '{}'", settings_str));
+    }
+    println("");
+
+    // Test 7: JSON keys
+    println("Test 7: JSON object keys");
+    var settings2: json = data["settings"];
+    var setting_keys: [string] = json::keys(settings2);
+    var has_theme: bool = json::exists(settings2, "theme");
+    var has_font: bool = json::exists(settings2, "font_size");
+    println(fmt("  has 'theme': {}", has_theme));
+    println(fmt("  has 'font_size': {}", has_font));
+    if (has_theme && has_font) {
+        println("  PASS: keys() returns expected keys");
+    } else {
+        println("  FAIL: keys() missing expected keys");
+    }
+    println("");
+
+    // Test 8: Pretty printing
+    println("Test 8: Pretty printing");
+    var pretty: string = json::encode_pretty(user);
+    println("  Pretty JSON:");
+    println(pretty);
+    println("");
+
+    // Test 9: Exists check
+    println("Test 9: Exists check");
+    var has_name2: bool = json::exists(user, "name");
+    var has_email: bool = json::exists(user, "email");
+    println(fmt("  has 'name': {}", has_name2));
+    println(fmt("  has 'email': {}", has_email));
+    if (has_name2 && !has_email) {
+        println("  PASS: exists() works correctly");
+    } else {
+        println("  FAIL: exists() not working");
+    }
+    println("");
+
+    // Test 10: Array access
+    println("Test 10: Array access");
+    var arr_json: string = "[10, 20, 30, 40, 50]";
+    var arr: json = json::decode(arr_json) catch e {
+        println("Failed to decode array");
+    };
+    println(fmt("  Array type: {}", json::type_name(arr)));
+    println(fmt("  Array count: {}", json::count(arr)));
+
+    var third: json = arr[2];
+    var third_val: int = third as int;
+    println(fmt("  arr[2] = {}", third_val));
+    if (third_val == 30) {
+        println("  PASS: Array indexing works");
+    } else {
+        println(fmt("  FAIL: Expected 30, got {}", third_val));
+    }
+    println("");
+
+    println("=== All tests completed ===");
+}

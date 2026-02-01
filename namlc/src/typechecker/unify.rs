@@ -34,7 +34,8 @@ pub fn unify(a: &Type, b: &Type, span: Span) -> TypeResult<()> {
         | (Type::Bool, Type::Bool)
         | (Type::String, Type::String)
         | (Type::Bytes, Type::Bytes)
-        | (Type::Unit, Type::Unit) => Ok(()),
+        | (Type::Unit, Type::Unit)
+        | (Type::Json, Type::Json) => Ok(()),
 
         (Type::TypeVar(var), other) | (other, Type::TypeVar(var)) => {
             if let Type::TypeVar(other_var) = other

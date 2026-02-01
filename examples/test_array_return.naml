@@ -1,0 +1,11 @@
+///
+/// Test array returning functions
+///
+
+use std::strings::*;
+
+fn main() {
+    var s: string = "Hello World";
+    var parts: [string] = split(s, " ");
+    println("Split worked");
+}

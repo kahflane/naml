@@ -194,6 +194,36 @@ pub fn compile_expression(
                 }
                 return Ok(result);
             }
+
+            // Handle `is` operator for JSON subtype checking
+            if bin.op == BinaryOp::Is {
+                let lhs_type = ctx.annotations.get_type(bin.left.span());
+                if matches!(lhs_type, Some(Type::Json)) {
+                    if let Expression::Identifier(ident) = bin.right {
+                        let type_name = ctx.interner.resolve(&ident.ident.symbol);
+                        let expected_type = match type_name {
+                            "json_null" => Some(0i64),
+                            "json_bool" => Some(1i64),
+                            "json_number" => Some(2i64),
+                            "json_string" => Some(3i64),
+                            "json_array" => Some(4i64),
+                            "json_object" => Some(5i64),
+                            _ => None,
+                        };
+
+                        if let Some(type_id) = expected_type {
+                            let json = compile_expression(ctx, builder, bin.left)?;
+                            let func_ref = rt_func_ref(ctx, builder, "naml_json_get_type")?;
+                            let call = builder.ins().call(func_ref, &[json]);
+                            let actual_type = builder.inst_results(call)[0];
+                            let expected = builder.ins().iconst(cranelift::prelude::types::I64, type_id);
+                            let result = builder.ins().icmp(IntCC::Equal, actual_type, expected);
+                            return Ok(result);
+                        }
+                    }
+                }
+            }
+
             let lhs = compile_expression(ctx, builder, bin.left)?;
             let rhs = compile_expression(ctx, builder, bin.right)?;
             compile_binary_op(builder, &bin.op, lhs, rhs)
@@ -518,6 +548,30 @@ pub fn compile_expression(
 
         Expression::Index(index_expr) => {
             let base = compile_expression(ctx, builder, index_expr.base)?;
+
+            // Check if this is JSON indexing
+            let base_type = ctx.annotations.get_type(index_expr.base.span());
+            if matches!(base_type, Some(Type::Json)) {
+                // JSON indexing: data["key"] or data[0]
+                if let Expression::Literal(LiteralExpr {
+                                               value: Literal::String(_),
+                                               ..
+                                           }) = index_expr.index
+                {
+                    // String key access: json["key"]
+                    let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
+                    let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
+                    let func_ref = rt_func_ref(ctx, builder, "naml_json_index_string")?;
+                    let call = builder.ins().call(func_ref, &[base, naml_str]);
+                    return Ok(builder.inst_results(call)[0]);
+                } else {
+                    // Integer index access: json[0]
+                    let index = compile_expression(ctx, builder, index_expr.index)?;
+                    let func_ref = rt_func_ref(ctx, builder, "naml_json_index_int")?;
+                    let call = builder.ins().call(func_ref, &[base, index]);
+                    return Ok(builder.inst_results(call)[0]);
+                }
+            }
 
             // Indexing returns option<T> for safety (none if out of bounds / key not found)
             if let Expression::Literal(LiteralExpr {
@@ -1004,6 +1058,18 @@ pub fn compile_expression(
                         .fcvt_to_sint(cranelift::prelude::types::I64, value)),
                     Some(Type::String) => call_string_to_int(ctx, builder, value),
                     Some(Type::Uint) | Some(Type::Int) => Ok(value),
+                    Some(Type::Json) => {
+                        // JSON to int cast: call runtime to extract int value
+                        let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+                        let ptr_type = ctx.module.target_config().pointer_type();
+                        let out_ptr = builder.ins().stack_addr(ptr_type, slot, 0);
+                        let func_ref = rt_func_ref(ctx, builder, "naml_json_as_int")?;
+                        let call = builder.ins().call(func_ref, &[value, out_ptr]);
+                        let success = builder.inst_results(call)[0];
+                        // Load and return the value (panics if not successful in release mode)
+                        let _ = success; // TODO: panic if cast fails
+                        Ok(builder.ins().load(cranelift::prelude::types::I64, MemFlags::trusted(), out_ptr, 0))
+                    }
                     _ => Ok(value),
                 },
                 NamlType::Uint => match source_type {
@@ -1022,6 +1088,15 @@ pub fn compile_expression(
                         .fcvt_from_uint(cranelift::prelude::types::F64, value)),
                     Some(Type::String) => call_string_to_float(ctx, builder, value),
                     Some(Type::Float) => Ok(value),
+                    Some(Type::Json) => {
+                        // JSON to float cast
+                        let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+                        let ptr_type = ctx.module.target_config().pointer_type();
+                        let out_ptr = builder.ins().stack_addr(ptr_type, slot, 0);
+                        let func_ref = rt_func_ref(ctx, builder, "naml_json_as_float")?;
+                        builder.ins().call(func_ref, &[value, out_ptr]);
+                        Ok(builder.ins().load(cranelift::prelude::types::F64, MemFlags::trusted(), out_ptr, 0))
+                    }
                     _ => Ok(value),
                 },
                 NamlType::String => match source_type {
@@ -1029,6 +1104,12 @@ pub fn compile_expression(
                     Some(Type::Float) => call_float_to_string(ctx, builder, value),
                     Some(Type::Bytes) => call_bytes_to_string(ctx, builder, value),
                     Some(Type::String) => Ok(value),
+                    Some(Type::Json) => {
+                        // JSON to string cast: extracts string value if JSON is a string type
+                        let func_ref = rt_func_ref(ctx, builder, "naml_json_as_string")?;
+                        let call = builder.ins().call(func_ref, &[value]);
+                        Ok(builder.inst_results(call)[0])
+                    }
                     _ => Ok(value),
                 },
                 NamlType::Bytes => match source_type {

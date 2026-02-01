@@ -37,6 +37,20 @@ pub fn throw_decode_error(
     Ok(())
 }
 
+/// Throw a PathError exception with the given path string
+pub fn throw_path_error(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    path: Value,
+) -> Result<(), CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, "naml_path_error_new")?;
+    let call = builder.ins().call(func_ref, &[path]);
+    let exc_ptr = builder.inst_results(call)[0];
+
+    call_exception_set(ctx, builder, exc_ptr)?;
+    Ok(())
+}
+
 pub fn call_exception_get(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,

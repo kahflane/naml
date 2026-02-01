@@ -1055,6 +1055,26 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_encoding_url_decode", crate::runtime::naml_encoding_url_decode as *const u8);
         builder.symbol("naml_decode_error_new", crate::runtime::naml_decode_error_new as *const u8);
 
+        // JSON encoding operations
+        builder.symbol("naml_json_decode", crate::runtime::naml_json_decode as *const u8);
+        builder.symbol("naml_json_encode", crate::runtime::naml_json_encode as *const u8);
+        builder.symbol("naml_json_encode_pretty", crate::runtime::naml_json_encode_pretty as *const u8);
+        builder.symbol("naml_json_exists", crate::runtime::naml_json_exists as *const u8);
+        builder.symbol("naml_json_path", crate::runtime::naml_json_path as *const u8);
+        builder.symbol("naml_json_keys", crate::runtime::naml_json_keys as *const u8);
+        builder.symbol("naml_json_count", crate::runtime::naml_json_count as *const u8);
+        builder.symbol("naml_json_get_type", crate::runtime::naml_json_get_type as *const u8);
+        builder.symbol("naml_json_type_name", crate::runtime::naml_json_type_name as *const u8);
+        builder.symbol("naml_json_is_null", crate::runtime::naml_json_is_null as *const u8);
+        builder.symbol("naml_json_index_string", crate::runtime::naml_json_index_string as *const u8);
+        builder.symbol("naml_json_index_int", crate::runtime::naml_json_index_int as *const u8);
+        builder.symbol("naml_json_as_int", crate::runtime::naml_json_as_int as *const u8);
+        builder.symbol("naml_json_as_float", crate::runtime::naml_json_as_float as *const u8);
+        builder.symbol("naml_json_as_bool", crate::runtime::naml_json_as_bool as *const u8);
+        builder.symbol("naml_json_as_string", crate::runtime::naml_json_as_string as *const u8);
+        builder.symbol("naml_json_null", crate::runtime::naml_json_null as *const u8);
+        builder.symbol("naml_path_error_new", crate::runtime::naml_path_error_new as *const u8);
+
         let module = JITModule::new(builder);
         let ctx = module.make_context();
 
@@ -2700,6 +2720,26 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_url_decode", &[ptr, ptr, ptr], &[])?;
         // DecodeError helper
         declare(&mut self.module, &mut self.runtime_funcs, "naml_decode_error_new", &[ptr, i64t], &[ptr])?;
+
+        // JSON encoding operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_decode", &[ptr, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_encode", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_encode_pretty", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_exists", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_path", &[ptr, ptr, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_keys", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_count", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_get_type", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_type_name", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_is_null", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_index_string", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_index_int", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_int", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_float", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_bool", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_string", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_null", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_error_new", &[ptr], &[ptr])?;
 
         // Datetime operations
         declare(

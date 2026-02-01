@@ -30,6 +30,7 @@ pub enum HeapTag {
     Bytes = 6,
     Mutex = 7,
     Rwlock = 8,
+    Json = 9,
 }
 
 /// Header for all heap-allocated objects

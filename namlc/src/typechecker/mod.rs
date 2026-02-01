@@ -338,6 +338,18 @@ impl<'a> TypeChecker<'a> {
                             }
                         }
                         None => {
+                            // Check if this is a submodule
+                            if let Some(sub_modules) = Self::get_std_submodules(module) {
+                                if sub_modules.contains(&entry_name.as_str()) {
+                                    // This is a submodule import, resolve it as a module
+                                    let full_path = format!("{}::{}", module, entry_name);
+                                    let sub_spur = self.interner.get_or_intern(&entry_name);
+                                    let mut sub_path_spurs = path_spurs.to_vec();
+                                    sub_path_spurs.push(sub_spur);
+                                    self.resolve_std_module(&full_path, &sub_path_spurs, &UseItems::All, entry.span);
+                                    continue;
+                                }
+                            }
                             self.errors.push(TypeError::UnknownModuleSymbol {
                                 module: format!("std::{}", module),
                                 symbol: entry_name,
@@ -645,7 +657,7 @@ impl<'a> TypeChecker<'a> {
                     );
                 }
             }
-            "encoding" | "encoding::utf8" | "encoding::hex" | "encoding::base64" | "encoding::url" => {
+            "encoding" | "encoding::utf8" | "encoding::hex" | "encoding::base64" | "encoding::url" | "encoding::json" => {
                 // Register DecodeError exception
                 let decode_error_name = self.interner.get_or_intern("DecodeError");
                 let position_field = self.interner.get_or_intern("position");
@@ -658,6 +670,24 @@ impl<'a> TypeChecker<'a> {
                             name: decode_error_name,
                             fields: vec![
                                 (position_field, Type::Int),
+                            ],
+                            is_public: true,
+                            span: Span::dummy(),
+                        }),
+                    );
+                }
+
+                // Register PathError exception (for json::path)
+                let path_error_name = self.interner.get_or_intern("PathError");
+                let path_field = self.interner.get_or_intern("path");
+
+                if self.symbols.get_type(path_error_name).is_none() {
+                    self.symbols.define_type(
+                        path_error_name,
+                        TypeDef::Exception(ExceptionDef {
+                            name: path_error_name,
+                            fields: vec![
+                                (path_field, Type::String),
                             ],
                             is_public: true,
                             span: Span::dummy(),
@@ -756,10 +786,25 @@ impl<'a> TypeChecker<'a> {
         ]
     }
 
+    fn get_encoding_json_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::Json, vec!["DecodeError"]),
+            StdModuleFn::new("encode", vec![("value", Type::Json)], Type::String),
+            StdModuleFn::new("encode_pretty", vec![("value", Type::Json)], Type::String),
+            StdModuleFn::new("exists", vec![("data", Type::Json), ("key", Type::String)], Type::Bool),
+            StdModuleFn::throwing("path", vec![("data", Type::Json), ("jq_path", Type::String)], Type::Json, vec!["PathError"]),
+            StdModuleFn::new("keys", vec![("data", Type::Json)], Type::Array(Box::new(Type::String))),
+            StdModuleFn::new("count", vec![("data", Type::Json)], Type::Int),
+            StdModuleFn::new("get_type", vec![("data", Type::Json)], Type::Int),
+            StdModuleFn::new("type_name", vec![("data", Type::Json)], Type::String),
+            StdModuleFn::new("is_null", vec![("data", Type::Json)], Type::Bool),
+        ]
+    }
+
     fn get_std_submodules(module: &str) -> Option<Vec<&'static str>> {
         match module {
             "collections" => Some(vec!["arrays", "maps"]),
-            "encoding" => Some(vec!["utf8", "hex", "base64", "url"]),
+            "encoding" => Some(vec!["utf8", "hex", "base64", "url", "json"]),
             _ => None,
         }
     }
@@ -883,12 +928,14 @@ impl<'a> TypeChecker<'a> {
                 fns.extend(Self::get_encoding_hex_functions());
                 fns.extend(Self::get_encoding_base64_functions());
                 fns.extend(Self::get_encoding_url_functions());
+                fns.extend(Self::get_encoding_json_functions());
                 Some(fns)
             }
             "encoding::utf8" => Some(Self::get_encoding_utf8_functions()),
             "encoding::hex" => Some(Self::get_encoding_hex_functions()),
             "encoding::base64" => Some(Self::get_encoding_base64_functions()),
             "encoding::url" => Some(Self::get_encoding_url_functions()),
+            "encoding::json" => Some(Self::get_encoding_json_functions()),
             _ => None,
         }
     }
@@ -1456,6 +1503,9 @@ impl<'a> TypeChecker<'a> {
                 let name = self.interner.resolve(&ident.symbol);
                 if name == "stack_frame" {
                     return Type::StackFrame;
+                }
+                if name == "json" {
+                    return Type::Json;
                 }
 
                 if let Some(def) = self.symbols.get_type(ident.symbol) {

@@ -324,6 +324,28 @@ pub enum BuiltinStrategy {
     EncodingDecodeToBytes(&'static str),
 
     // ========================================
+    // JSON encoding strategies
+    // ========================================
+    /// (string) -> json throws DecodeError
+    JsonDecode,
+    /// (json) -> string
+    JsonEncode(&'static str),
+    /// (json, string) -> bool
+    JsonExists,
+    /// (json, string) -> json throws PathError
+    JsonPath,
+    /// (json) -> [string]
+    JsonKeys,
+    /// (json) -> int
+    JsonCount,
+    /// (json) -> int
+    JsonGetType,
+    /// (json) -> string
+    JsonTypeName,
+    /// (json) -> bool
+    JsonIsNull,
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -626,6 +648,17 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         // URL
         BuiltinFunction { name: "url::encode", strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_url_encode") },
         BuiltinFunction { name: "url::decode", strategy: BuiltinStrategy::EncodingDecodeToString("naml_encoding_url_decode") },
+        // JSON
+        BuiltinFunction { name: "json::decode", strategy: BuiltinStrategy::JsonDecode },
+        BuiltinFunction { name: "json::encode", strategy: BuiltinStrategy::JsonEncode("naml_json_encode") },
+        BuiltinFunction { name: "json::encode_pretty", strategy: BuiltinStrategy::JsonEncode("naml_json_encode_pretty") },
+        BuiltinFunction { name: "json::exists", strategy: BuiltinStrategy::JsonExists },
+        BuiltinFunction { name: "json::path", strategy: BuiltinStrategy::JsonPath },
+        BuiltinFunction { name: "json::keys", strategy: BuiltinStrategy::JsonKeys },
+        BuiltinFunction { name: "json::count", strategy: BuiltinStrategy::JsonCount },
+        BuiltinFunction { name: "json::get_type", strategy: BuiltinStrategy::JsonGetType },
+        BuiltinFunction { name: "json::type_name", strategy: BuiltinStrategy::JsonTypeName },
+        BuiltinFunction { name: "json::is_null", strategy: BuiltinStrategy::JsonIsNull },
     ];
     REGISTRY
 }
@@ -1559,6 +1592,160 @@ pub fn compile_builtin_call(
 
             let result = builder.block_params(merge_block)[0];
             Ok(result)
+        }
+
+        // ========================================
+        // JSON strategies
+        // ========================================
+        BuiltinStrategy::JsonDecode => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let s = compile_expression(ctx, builder, &args[0])?;
+            let s = ensure_naml_string(ctx, builder, s, &args[0])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 4, 4));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, "naml_json_decode")?;
+            builder.ins().call(func_ref, &[s, out_tag, out_value]);
+
+            let tag = builder.ins().load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder.ins().load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder.ins().brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_decode_error;
+            throw_decode_error(ctx, builder, value)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        BuiltinStrategy::JsonEncode(runtime_fn) => {
+            let json = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, json)
+        }
+
+        BuiltinStrategy::JsonExists => {
+            use super::runtime::rt_func_ref;
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+            let key = compile_expression(ctx, builder, &args[1])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[1])?;
+
+            let func_ref = rt_func_ref(ctx, builder, "naml_json_exists")?;
+            let inst = builder.ins().call(func_ref, &[json, key]);
+            let result = builder.inst_results(inst)[0];
+            // Truncate i64 to i8 for bool type
+            Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+        }
+
+        BuiltinStrategy::JsonPath => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+            let path = compile_expression(ctx, builder, &args[1])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[1])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 4, 4));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, "naml_json_path")?;
+            builder.ins().call(func_ref, &[json, path, out_tag, out_value]);
+
+            let tag = builder.ins().load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder.ins().load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder.ins().brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_path_error;
+            throw_path_error(ctx, builder, path)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        BuiltinStrategy::JsonKeys => {
+            let json = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_json_keys", json)
+        }
+
+        BuiltinStrategy::JsonCount => {
+            use super::runtime::rt_func_ref;
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_json_count")?;
+            let inst = builder.ins().call(func_ref, &[json]);
+            Ok(builder.inst_results(inst)[0])
+        }
+
+        BuiltinStrategy::JsonGetType => {
+            use super::runtime::rt_func_ref;
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_json_get_type")?;
+            let inst = builder.ins().call(func_ref, &[json]);
+            Ok(builder.inst_results(inst)[0])
+        }
+
+        BuiltinStrategy::JsonTypeName => {
+            use super::runtime::rt_func_ref;
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_json_type_name")?;
+            let inst = builder.ins().call(func_ref, &[json]);
+            Ok(builder.inst_results(inst)[0])
+        }
+
+        BuiltinStrategy::JsonIsNull => {
+            use super::runtime::rt_func_ref;
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_json_is_null")?;
+            let inst = builder.ins().call(func_ref, &[json]);
+            let result = builder.inst_results(inst)[0];
+            // Truncate i64 to i8 for bool type
+            Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
         }
     }
 }

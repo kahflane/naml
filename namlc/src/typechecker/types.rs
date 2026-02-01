@@ -53,6 +53,9 @@ pub enum Type {
     // Built-in stack frame type for exception stack traces
     StackFrame,
 
+    // Dynamic JSON type for encoding::json module
+    Json,
+
     Function(FunctionType),
 
     TypeVar(TypeVarRef),
@@ -325,6 +328,7 @@ impl fmt::Display for Type {
             Type::Interface(i) => write!(f, "interface:{:?}", i.name),
             Type::Exception(name) => write!(f, "exception:{:?}", name),
             Type::StackFrame => write!(f, "stack_frame"),
+            Type::Json => write!(f, "json"),
             Type::Function(func) => {
                 write!(f, "fn(")?;
                 for (i, p) in func.params.iter().enumerate() {

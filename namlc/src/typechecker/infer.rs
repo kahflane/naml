@@ -170,6 +170,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
             Type::Exception(name) => self.interner.resolve(name).to_string(),
             Type::StackFrame => "stack_frame".to_string(),
+            Type::Json => "json".to_string(),
             Type::Function(_) => "fn".to_string(),
             Type::TypeVar(tv) => format!("T{}", tv.id),
             Type::Generic(name, args) => {
@@ -206,6 +207,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
             Type::Exception(name) => self.interner.resolve(name).to_string(),
             Type::StackFrame => "stack_frame".to_string(),
+            Type::Json => "json".to_string(),
             Type::Function(f) => {
                 let params = f.params.iter()
                     .map(|p| self.display_type(p))
@@ -474,11 +476,21 @@ impl<'a> TypeInferrer<'a> {
 
         // Handle `is` operator specially - RHS is a type name, not an expression
         if bin.op == Is {
-            let _left_ty = self.infer_expr(bin.left);
-            if let ast::Expression::Identifier(ident) = &bin.right
-                && self.symbols.get_type(ident.ident.symbol).is_some() {
+            let left_ty = self.infer_expr(bin.left);
+            if let ast::Expression::Identifier(ident) = &bin.right {
+                // Check if it's a registered type
+                if self.symbols.get_type(ident.ident.symbol).is_some() {
                     return Type::Bool;
                 }
+                // Check if it's a JSON subtype (when LHS is Json)
+                let left_resolved = left_ty.resolve();
+                if matches!(left_resolved, Type::Json) {
+                    let type_name = self.interner.resolve(&ident.ident.symbol);
+                    if matches!(type_name, "json_null" | "json_bool" | "json_number" | "json_string" | "json_array" | "json_object") {
+                        return Type::Bool;
+                    }
+                }
+            }
             self.errors.push(TypeError::Custom {
                 message: "'is' operator requires a type name on the right side".to_string(),
                 span: bin.right.span(),
@@ -1075,6 +1087,21 @@ impl<'a> TypeInferrer<'a> {
                     self.errors.push(e);
                 }
                 Type::String
+            }
+            Type::Json => {
+                // JSON can be indexed by string (object key) or int (array index)
+                // Both return Json since the result type is dynamic
+                let idx_resolved = index_ty.resolve();
+                if !matches!(idx_resolved, Type::String | Type::Int) {
+                    self.errors.push(TypeError::Custom {
+                        message: format!(
+                            "JSON can only be indexed by string or int, got {}",
+                            self.display_type(&index_ty)
+                        ),
+                        span: idx.index.span(),
+                    });
+                }
+                Type::Json
             }
             Type::Error => Type::Error,
             _ => {
@@ -2037,6 +2064,9 @@ impl<'a> TypeInferrer<'a> {
                 let name = self.interner.resolve(&ident.symbol);
                 if name == "stack_frame" {
                     return Type::StackFrame;
+                }
+                if name == "json" {
+                    return Type::Json;
                 }
 
                 // Look up the name to see if it's a known type (struct, enum, etc.)

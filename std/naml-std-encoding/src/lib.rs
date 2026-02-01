@@ -6,7 +6,7 @@
 /// - hex: Bytes <-> hex string conversion
 /// - base64: Bytes <-> base64 string conversion
 /// - url: URL percent-encoding/decoding
-/// - json: JSON parsing and serialization (future)
+/// - json: JSON parsing and serialization
 ///
 /// All decode functions can throw DecodeError on invalid input.
 ///
@@ -15,11 +15,13 @@ pub mod utf8;
 pub mod hex;
 pub mod base64;
 pub mod url;
+pub mod json;
 
 pub use utf8::*;
 pub use hex::*;
 pub use base64::*;
 pub use url::*;
+pub use json::*;
 
 use naml_std_core::value::NamlString;
 
