@@ -12,6 +12,7 @@
 //! - String operations (from naml-std-strings)
 //! - Collection operations (from naml-std-collections)
 //! - File system operations (from naml-std-fs)
+//! - Path operations (from naml-std-path)
 //! - Map operations (local)
 //! - Bytes operations (local)
 //!
@@ -27,6 +28,7 @@ pub use naml_std_datetime::*;
 pub use naml_std_metrics::*;
 pub use naml_std_strings::*;
 pub use naml_std_fs::*;
+pub use naml_std_path::*;
 
 // Import collection arrays functions (not the arrays module to avoid conflict with naml_std_core::array)
 pub use naml_std_collections::arrays::*;

@@ -287,6 +287,24 @@ pub enum BuiltinStrategy {
     FsFileSize,
 
     // ========================================
+    // Path module strategies
+    // ========================================
+    /// ([string]) -> string (join)
+    PathJoin,
+    /// (path) -> string (normalize, dirname, basename, extension, stem)
+    PathOneArgStr(&'static str),
+    /// (path) -> bool (is_absolute, is_relative, has_root)
+    PathOneArgBool(&'static str),
+    /// (path, other) -> string (with_extension, strip_prefix)
+    PathTwoArgStr(&'static str),
+    /// (path, other) -> bool (starts_with, ends_with)
+    PathTwoArgBool(&'static str),
+    /// (path) -> [string] (components)
+    PathComponents,
+    /// () -> string (separator)
+    PathSeparator,
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -548,6 +566,28 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "file_tell", strategy: BuiltinStrategy::FsFileTell },
         BuiltinFunction { name: "file_eof", strategy: BuiltinStrategy::FsFileEof },
         BuiltinFunction { name: "file_size", strategy: BuiltinStrategy::FsFileSize },
+
+        // ========================================
+        // Path module
+        // ========================================
+        // Note: path::join conflicts with threads::join, so needs qualified call
+        BuiltinFunction { name: "path::join", strategy: BuiltinStrategy::PathJoin },
+        BuiltinFunction { name: "path::normalize", strategy: BuiltinStrategy::PathOneArgStr("naml_path_normalize") },
+        BuiltinFunction { name: "path::dirname", strategy: BuiltinStrategy::PathOneArgStr("naml_path_dirname") },
+        BuiltinFunction { name: "path::basename", strategy: BuiltinStrategy::PathOneArgStr("naml_path_basename") },
+        BuiltinFunction { name: "path::extension", strategy: BuiltinStrategy::PathOneArgStr("naml_path_extension") },
+        BuiltinFunction { name: "path::stem", strategy: BuiltinStrategy::PathOneArgStr("naml_path_stem") },
+        BuiltinFunction { name: "path::to_slash", strategy: BuiltinStrategy::PathOneArgStr("naml_path_to_slash") },
+        BuiltinFunction { name: "path::from_slash", strategy: BuiltinStrategy::PathOneArgStr("naml_path_from_slash") },
+        BuiltinFunction { name: "is_absolute", strategy: BuiltinStrategy::PathOneArgBool("naml_path_is_absolute") },
+        BuiltinFunction { name: "is_relative", strategy: BuiltinStrategy::PathOneArgBool("naml_path_is_relative") },
+        BuiltinFunction { name: "has_root", strategy: BuiltinStrategy::PathOneArgBool("naml_path_has_root") },
+        BuiltinFunction { name: "with_extension", strategy: BuiltinStrategy::PathTwoArgStr("naml_path_with_extension") },
+        BuiltinFunction { name: "strip_prefix", strategy: BuiltinStrategy::PathTwoArgStr("naml_path_strip_prefix") },
+        BuiltinFunction { name: "path::starts_with", strategy: BuiltinStrategy::PathTwoArgBool("naml_path_starts_with") },
+        BuiltinFunction { name: "path::ends_with", strategy: BuiltinStrategy::PathTwoArgBool("naml_path_ends_with") },
+        BuiltinFunction { name: "components", strategy: BuiltinStrategy::PathComponents },
+        BuiltinFunction { name: "separator", strategy: BuiltinStrategy::PathSeparator },
     ];
     REGISTRY
 }
@@ -1314,6 +1354,56 @@ pub fn compile_builtin_call(
         BuiltinStrategy::FsFileSize => {
             let handle = compile_expression(ctx, builder, &args[0])?;
             call_one_arg_int_runtime(ctx, builder, "naml_fs_file_size", handle)
+        }
+
+        // ========================================
+        // Path module operations
+        // ========================================
+        BuiltinStrategy::PathJoin => {
+            let parts = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_path_join", parts)
+        }
+
+        BuiltinStrategy::PathOneArgStr(runtime_fn) => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, path)
+        }
+
+        BuiltinStrategy::PathOneArgBool(runtime_fn) => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, runtime_fn, path)
+        }
+
+        BuiltinStrategy::PathTwoArgStr(runtime_fn) => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let other = compile_expression(ctx, builder, &args[1])?;
+            let other = ensure_naml_string(ctx, builder, other, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, runtime_fn, path, other)
+        }
+
+        BuiltinStrategy::PathTwoArgBool(runtime_fn) => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let other = compile_expression(ctx, builder, &args[1])?;
+            let other = ensure_naml_string(ctx, builder, other, &args[1])?;
+            call_two_arg_bool_runtime(ctx, builder, runtime_fn, path, other)
+        }
+
+        BuiltinStrategy::PathComponents => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_path_components", path)
+        }
+
+        BuiltinStrategy::PathSeparator => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_path_separator")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
         }
     }
 }

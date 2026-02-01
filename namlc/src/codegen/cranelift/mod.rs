@@ -762,6 +762,25 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_fs_file_eof", crate::runtime::naml_fs_file_eof as *const u8);
         builder.symbol("naml_fs_file_size", crate::runtime::naml_fs_file_size as *const u8);
 
+        // Path operations (from naml-std-path)
+        builder.symbol("naml_path_join", crate::runtime::naml_path_join as *const u8);
+        builder.symbol("naml_path_normalize", crate::runtime::naml_path_normalize as *const u8);
+        builder.symbol("naml_path_is_absolute", crate::runtime::naml_path_is_absolute as *const u8);
+        builder.symbol("naml_path_is_relative", crate::runtime::naml_path_is_relative as *const u8);
+        builder.symbol("naml_path_has_root", crate::runtime::naml_path_has_root as *const u8);
+        builder.symbol("naml_path_dirname", crate::runtime::naml_path_dirname as *const u8);
+        builder.symbol("naml_path_basename", crate::runtime::naml_path_basename as *const u8);
+        builder.symbol("naml_path_extension", crate::runtime::naml_path_extension as *const u8);
+        builder.symbol("naml_path_stem", crate::runtime::naml_path_stem as *const u8);
+        builder.symbol("naml_path_with_extension", crate::runtime::naml_path_with_extension as *const u8);
+        builder.symbol("naml_path_components", crate::runtime::naml_path_components as *const u8);
+        builder.symbol("naml_path_separator", crate::runtime::naml_path_separator as *const u8);
+        builder.symbol("naml_path_to_slash", crate::runtime::naml_path_to_slash as *const u8);
+        builder.symbol("naml_path_from_slash", crate::runtime::naml_path_from_slash as *const u8);
+        builder.symbol("naml_path_starts_with", crate::runtime::naml_path_starts_with as *const u8);
+        builder.symbol("naml_path_ends_with", crate::runtime::naml_path_ends_with as *const u8);
+        builder.symbol("naml_path_strip_prefix", crate::runtime::naml_path_strip_prefix as *const u8);
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -2430,6 +2449,25 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_tell", &[i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_eof", &[i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_size", &[i64t], &[i64t])?;
+
+        // Path operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_join", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_normalize", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_is_absolute", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_is_relative", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_has_root", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_dirname", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_basename", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_extension", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_stem", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_with_extension", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_components", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_separator", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_to_slash", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_from_slash", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_starts_with", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_ends_with", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_strip_prefix", &[ptr, ptr], &[ptr])?;
 
         // Bytes operations
         declare(

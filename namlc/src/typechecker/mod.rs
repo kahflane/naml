@@ -780,6 +780,35 @@ impl<'a> TypeChecker<'a> {
             "collections::arrays" => Some(Self::get_collections_array_functions()),
             "collections::maps" => Some(Self::get_collections_map_functions()),
             "fs" => Some(Self::get_fs_functions()),
+            "path" => Some(vec![
+                // Path joining and construction
+                StdModuleFn::new("join", vec![("parts", Type::Array(Box::new(Type::String)))], Type::String),
+                // Path normalization
+                StdModuleFn::new("normalize", vec![("path", Type::String)], Type::String),
+                // Path type checks
+                StdModuleFn::new("is_absolute", vec![("path", Type::String)], Type::Bool),
+                StdModuleFn::new("is_relative", vec![("path", Type::String)], Type::Bool),
+                StdModuleFn::new("has_root", vec![("path", Type::String)], Type::Bool),
+                // Path component extraction
+                StdModuleFn::new("dirname", vec![("path", Type::String)], Type::String),
+                StdModuleFn::new("basename", vec![("path", Type::String)], Type::String),
+                StdModuleFn::new("extension", vec![("path", Type::String)], Type::String),
+                StdModuleFn::new("stem", vec![("path", Type::String)], Type::String),
+                // Path modification
+                StdModuleFn::new("with_extension", vec![("path", Type::String), ("ext", Type::String)], Type::String),
+                // Path component splitting
+                StdModuleFn::new("components", vec![("path", Type::String)], Type::Array(Box::new(Type::String))),
+                // Platform info
+                StdModuleFn::new("separator", vec![], Type::String),
+                // Slash conversion
+                StdModuleFn::new("to_slash", vec![("path", Type::String)], Type::String),
+                StdModuleFn::new("from_slash", vec![("path", Type::String)], Type::String),
+                // Path comparison
+                StdModuleFn::new("starts_with", vec![("path", Type::String), ("prefix", Type::String)], Type::Bool),
+                StdModuleFn::new("ends_with", vec![("path", Type::String), ("suffix", Type::String)], Type::Bool),
+                // Path manipulation
+                StdModuleFn::new("strip_prefix", vec![("path", Type::String), ("prefix", Type::String)], Type::String),
+            ]),
             _ => None,
         }
     }

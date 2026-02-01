@@ -1,0 +1,36 @@
+##
+## naml-std-path - Cross-platform path manipulation
+##
+## Provides path operations for naml programs using Rust's std::path
+## for cross-platform compatibility (Windows, Unix, WASM).
+##
+## Functions:
+## - join(parts: [string]) -> string
+## - normalize(path: string) -> string
+## - is_absolute(path: string) -> bool
+## - is_relative(path: string) -> bool
+## - dirname(path: string) -> string
+## - basename(path: string) -> string
+## - extension(path: string) -> string
+## - stem(path: string) -> string
+## - with_extension(path: string, ext: string) -> string
+## - components(path: string) -> [string]
+## - separator() -> string
+## - to_slash(path: string) -> string
+## - from_slash(path: string) -> string
+##
+
+[package]
+name = "naml-std-path"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cross-platform path manipulation for the naml programming language"
+
+[lib]
+name = "naml_std_path"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true

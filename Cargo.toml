@@ -18,6 +18,7 @@ members = [
     "std/naml-std-strings",
     "std/naml-std-collections",
     "std/naml-std-fs",
+    "std/naml-std-path",
 ]
 
 [workspace.package]
@@ -134,6 +135,7 @@ naml-std-metrics = { path = "std/naml-std-metrics" }
 naml-std-strings = { path = "std/naml-std-strings" }
 naml-std-collections = { path = "std/naml-std-collections" }
 naml-std-fs = { path = "std/naml-std-fs" }
+naml-std-path = { path = "std/naml-std-path" }
 
 [profile.release]
 lto = true

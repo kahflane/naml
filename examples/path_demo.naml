@@ -1,0 +1,124 @@
+use std::path::*;
+
+fn main() {
+    println("=== Path Module Demo ===");
+    println("");
+
+    // Test path joining
+    println("--- Path Joining ---");
+    var parts: [string] = ["home", "user", "documents", "file.txt"];
+    var joined: string = path::join(parts);
+    print("join([home, user, documents, file.txt]) = ");
+    println(joined);
+
+    // Test path normalization
+    println("");
+    println("--- Path Normalization ---");
+    var messy_path: string = "a/b/../c/./d";
+    var normalized: string = path::normalize(messy_path);
+    print("normalize(\"a/b/../c/./d\") = ");
+    println(normalized);
+
+    // Test absolute/relative checks
+    println("");
+    println("--- Absolute/Relative Checks ---");
+    var abs_path: string = "/home/user/file.txt";
+    var rel_path: string = "relative/path/file.txt";
+
+    print("is_absolute(\"/home/user/file.txt\") = ");
+    println(is_absolute(abs_path));
+
+    print("is_absolute(\"relative/path/file.txt\") = ");
+    println(is_absolute(rel_path));
+
+    print("is_relative(\"relative/path/file.txt\") = ");
+    println(is_relative(rel_path));
+
+    print("has_root(\"/home/user/file.txt\") = ");
+    println(has_root(abs_path));
+
+    // Test path component extraction
+    println("");
+    println("--- Component Extraction ---");
+    var test_path: string = "/home/user/documents/report.pdf";
+
+    print("dirname(\"/home/user/documents/report.pdf\") = ");
+    println(path::dirname(test_path));
+
+    print("basename(\"/home/user/documents/report.pdf\") = ");
+    println(path::basename(test_path));
+
+    print("extension(\"/home/user/documents/report.pdf\") = ");
+    println(path::extension(test_path));
+
+    print("stem(\"/home/user/documents/report.pdf\") = ");
+    println(path::stem(test_path));
+
+    // Test extension modification
+    println("");
+    println("--- Extension Modification ---");
+    var doc_path: string = "/docs/readme.md";
+    var new_path: string = with_extension(doc_path, "txt");
+    print("with_extension(\"/docs/readme.md\", \"txt\") = ");
+    println(new_path);
+
+    // Test path components
+    println("");
+    println("--- Path Components ---");
+    var unix_path: string = "/usr/local/bin";
+    var comps: [string] = components(unix_path);
+    print("components(\"/usr/local/bin\") = ");
+    print("[");
+    for (i: int, comp: string in comps) {
+        if (i > 0) {
+            print(", ");
+        }
+        print("\"");
+        print(comp);
+        print("\"");
+    }
+    println("]");
+
+    // Test platform separator
+    println("");
+    println("--- Platform Info ---");
+    var sep: string = separator();
+    print("separator() = \"");
+    print(sep);
+    println("\"");
+
+    // Test slash conversion
+    println("");
+    println("--- Slash Conversion ---");
+    var win_style: string = "a\\b\\c";
+    var to_forward: string = path::to_slash(win_style);
+    print("to_slash(\"a\\\\b\\\\c\") = ");
+    println(to_forward);
+
+    var unix_style: string = "a/b/c";
+    var from_forward: string = path::from_slash(unix_style);
+    print("from_slash(\"a/b/c\") = ");
+    println(from_forward);
+
+    // Test path comparison
+    println("");
+    println("--- Path Comparison ---");
+    var base: string = "/home/user";
+    var full: string = "/home/user/docs/file.txt";
+
+    print("starts_with(\"/home/user/docs/file.txt\", \"/home/user\") = ");
+    println(path::starts_with(full, base));
+
+    print("ends_with(\"/home/user/docs/file.txt\", \"file.txt\") = ");
+    println(path::ends_with(full, "file.txt"));
+
+    // Test strip prefix
+    println("");
+    println("--- Strip Prefix ---");
+    var stripped: string = strip_prefix(full, base);
+    print("strip_prefix(\"/home/user/docs/file.txt\", \"/home/user\") = ");
+    println(stripped);
+
+    println("");
+    println("=== All tests complete! ===");
+}
