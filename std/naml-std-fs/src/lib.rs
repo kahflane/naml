@@ -46,16 +46,17 @@
 //! Browser WASM uses OPFS (not yet implemented).
 //!
 
-use naml_std_core::{naml_exception_set, naml_string_new, NamlString};
+use naml_std_core::{naml_exception_set, naml_stack_capture, naml_string_new, NamlString};
 
 /// Create a new IOError exception on the heap
 ///
 /// Exception layout (matches naml exception codegen):
 /// - Offset 0: message pointer (8 bytes)
-/// - Offset 8: path pointer (8 bytes)
-/// - Offset 16: code (8 bytes)
+/// - Offset 8: stack pointer (8 bytes) - null, captured at throw time
+/// - Offset 16: path pointer (8 bytes)
+/// - Offset 24: code (8 bytes)
 ///
-/// Total size: 24 bytes
+/// Total size: 32 bytes
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_io_error_new(
     message: *const NamlString,
@@ -63,8 +64,8 @@ pub extern "C" fn naml_io_error_new(
     code: i64,
 ) -> *mut u8 {
     unsafe {
-        // Allocate raw memory for exception (message + 2 fields = 24 bytes)
-        let layout = std::alloc::Layout::from_size_align(24, 8).unwrap();
+        // Allocate raw memory for exception (message + stack + 2 fields = 32 bytes)
+        let layout = std::alloc::Layout::from_size_align(32, 8).unwrap();
         let ptr = std::alloc::alloc(layout);
         if ptr.is_null() {
             panic!("Failed to allocate IOError");
@@ -72,10 +73,12 @@ pub extern "C" fn naml_io_error_new(
 
         // Store message at offset 0
         *(ptr as *mut i64) = message as i64;
-        // Store path at offset 8
-        *(ptr.add(8) as *mut i64) = path as i64;
-        // Store code at offset 16
-        *(ptr.add(16) as *mut i64) = code;
+        // Store stack at offset 8 (null, captured at throw time from codegen)
+        *(ptr.add(8) as *mut i64) = 0;
+        // Store path at offset 16
+        *(ptr.add(16) as *mut i64) = path as i64;
+        // Store code at offset 24
+        *(ptr.add(24) as *mut i64) = code;
 
         ptr
     }
@@ -93,6 +96,11 @@ fn throw_io_error(error: std::io::Error, path: &str) -> *mut u8 {
         let message_ptr = naml_string_new(message.as_ptr(), message.len());
         let path_ptr = naml_string_new(path.as_ptr(), path.len());
         let io_error = naml_io_error_new(message_ptr, path_ptr, code);
+
+        // Capture and store the stack trace at offset 8
+        let stack = naml_stack_capture();
+        *(io_error.add(8) as *mut *mut u8) = stack;
+
         naml_exception_set(io_error);
     }
 

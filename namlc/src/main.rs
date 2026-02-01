@@ -107,6 +107,7 @@ fn run_file(file: &PathBuf, cached: bool) {
         &interner,
         &type_result.annotations,
         &type_result.imported_modules,
+        &source_file,
     ) {
         Ok(()) => {}
         Err(e) => {

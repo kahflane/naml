@@ -140,10 +140,13 @@ impl Default for ModuleNamespace {
     }
 }
 
+use std::collections::HashSet;
+
 #[derive(Debug)]
 pub struct SymbolTable {
     types: HashMap<Spur, TypeDef>,
     functions: HashMap<Spur, FunctionSig>,
+    ambiguous_functions: HashSet<Spur>,
     methods: HashMap<Spur, Vec<MethodSig>>,
     modules: HashMap<Spur, ModuleNamespace>,
 }
@@ -153,6 +156,7 @@ impl SymbolTable {
         Self {
             types: HashMap::new(),
             functions: HashMap::new(),
+            ambiguous_functions: HashSet::new(),
             methods: HashMap::new(),
             modules: HashMap::new(),
         }
@@ -184,6 +188,18 @@ impl SymbolTable {
 
     pub fn define_function(&mut self, sig: FunctionSig) {
         self.functions.insert(sig.name, sig);
+    }
+
+    pub fn has_function(&self, name: Spur) -> bool {
+        self.functions.contains_key(&name)
+    }
+
+    pub fn mark_ambiguous(&mut self, name: Spur) {
+        self.ambiguous_functions.insert(name);
+    }
+
+    pub fn is_ambiguous(&self, name: Spur) -> bool {
+        self.ambiguous_functions.contains(&name)
     }
 
     pub fn get_function(&self, name: Spur) -> Option<&FunctionSig> {

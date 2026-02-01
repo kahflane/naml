@@ -1,0 +1,39 @@
+use std::fs::*;
+
+fn helper() throws IOError {
+    var content: string = read("/nonexistent/file.txt");
+    println(content);
+}
+
+fn caller() throws IOError {
+    helper();
+}
+
+fn main() {
+    println("Testing Exception Stack Traces");
+    println("==============================");
+    println("");
+
+    caller() catch e {
+        println("Caught IOError!");
+        println("");
+
+        println("Message:");
+        println(e.message);
+        println("");
+
+        println("Path:");
+        println(e.path);
+        println("");
+
+        println("Code:");
+        println(e.code);
+        println("");
+
+        println("Stack trace:");
+        println(e.stack_string());
+    };
+
+    println("");
+    println("Test completed!");
+}

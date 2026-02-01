@@ -9,6 +9,8 @@ use crate::codegen::CodegenError;
 use crate::codegen::cranelift::CompileContext;
 use crate::codegen::cranelift::heap::HeapType;
 use crate::codegen::cranelift::structs::struct_has_heap_fields;
+use crate::codegen::cranelift::literal::compile_string_literal;
+use crate::codegen::cranelift::strings::call_string_from_cstr;
 
 pub fn rt_func_ref(
     ctx: &mut CompileContext<'_>,
@@ -167,4 +169,37 @@ pub fn call_alloc_closure_data(
     let func_ref = rt_func_ref(ctx, builder, "naml_alloc_closure_data")?;
     let call = builder.ins().call(func_ref, &[size]);
     Ok(builder.inst_results(call)[0])
+}
+
+pub fn emit_stack_pop(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<(), CodegenError> {
+    let stack_pop = rt_func_ref(ctx, builder, "naml_stack_pop")?;
+    builder.ins().call(stack_pop, &[]);
+    Ok(())
+}
+
+pub fn emit_stack_push(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    func_name: &str,
+    file_name: &str,
+    line: u32,
+) -> Result<(), CodegenError> {
+    let stack_push = rt_func_ref(ctx, builder, "naml_stack_push")?;
+
+    // Create function name string
+    let func_name_cstr = compile_string_literal(ctx, builder, func_name)?;
+    let func_name_ptr = call_string_from_cstr(ctx, builder, func_name_cstr)?;
+
+    // Create file name string
+    let file_name_cstr = compile_string_literal(ctx, builder, file_name)?;
+    let file_name_ptr = call_string_from_cstr(ctx, builder, file_name_cstr)?;
+
+    // Line number
+    let line_val = builder.ins().iconst(types::I64, line as i64);
+
+    builder.ins().call(stack_push, &[func_name_ptr, file_name_ptr, line_val]);
+    Ok(())
 }

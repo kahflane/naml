@@ -16,7 +16,9 @@
 pub mod value;
 pub mod array;
 pub mod exception;
+pub mod stack;
 
 pub use value::*;
 pub use array::*;
 pub use exception::*;
+pub use stack::*;

@@ -845,7 +845,7 @@ fn divide(a: int, b: int) -> int throws DivisionByZero {
 
 ```naml
 var result: int = divide(10, 0) catch e {
-    println(e.message());
+    println(e.message);
     return; // stop executing
 } ?? -1;
 ```

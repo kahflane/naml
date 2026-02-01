@@ -51,7 +51,7 @@ use crate::codegen::cranelift::map::call_map_set;
 use crate::codegen::cranelift::stmt::compile_statement;
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::heap::{get_heap_type, HeapType};
-use crate::codegen::cranelift::runtime::emit_cleanup_all_vars;
+use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_stack_push, emit_stack_pop};
 use crate::typechecker::{Type, TypeAnnotations};
 
 #[derive(Clone)]
@@ -137,6 +137,7 @@ const ARRAY_DATA_OFFSET: i32 = 32;
 pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
     annotations: &'a TypeAnnotations,
+    source_info: &'a crate::source::SourceFile,
     module: JITModule,
     ctx: codegen::Context,
     functions: HashMap<String, FuncId>,
@@ -157,6 +158,7 @@ impl<'a> JitCompiler<'a> {
     pub fn new(
         interner: &'a Rodeo,
         annotations: &'a TypeAnnotations,
+        source_info: &'a crate::source::SourceFile,
     ) -> Result<Self, CodegenError> {
         let mut flag_builder = settings::builder();
         flag_builder.set("use_colocated_libcalls", "false").unwrap();
@@ -752,6 +754,28 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_exception_check as *const u8,
         );
 
+        // Stack trace functions
+        builder.symbol(
+            "naml_stack_push",
+            crate::runtime::naml_stack_push as *const u8,
+        );
+        builder.symbol(
+            "naml_stack_pop",
+            crate::runtime::naml_stack_pop as *const u8,
+        );
+        builder.symbol(
+            "naml_stack_capture",
+            crate::runtime::naml_stack_capture as *const u8,
+        );
+        builder.symbol(
+            "naml_stack_clear",
+            crate::runtime::naml_stack_clear as *const u8,
+        );
+        builder.symbol(
+            "naml_stack_format",
+            crate::runtime::naml_stack_format as *const u8,
+        );
+
         // String operations
         builder.symbol(
             "naml_string_from_cstr",
@@ -952,6 +976,7 @@ impl<'a> JitCompiler<'a> {
         let mut compiler = Self {
             interner,
             annotations,
+            source_info,
             module,
             ctx,
             functions: HashMap::new(),
@@ -972,7 +997,7 @@ impl<'a> JitCompiler<'a> {
         Ok(compiler)
     }
 
-    /// Register built-in exception types (like IOError from std::fs)
+    /// Register built-in exception types and struct types
     fn register_builtin_exceptions(&mut self) {
         // IOError exception from std::fs module
         // Fields: path (string), code (int)
@@ -984,6 +1009,21 @@ impl<'a> JitCompiler<'a> {
                 type_id: 0xFFFF_0001, // Reserved type ID for IOError
                 fields: vec!["path".to_string(), "code".to_string()],
                 field_heap_types: vec![Some(HeapType::String), None], // path is string, code is int
+            },
+        );
+
+        // stack_frame built-in type for exception stack traces
+        // Fields: function (string), file (string), line (int)
+        self.struct_defs.insert(
+            "stack_frame".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0002, // Reserved type ID for stack_frame
+                fields: vec![
+                    "function".to_string(),
+                    "file".to_string(),
+                    "line".to_string(),
+                ],
+                field_heap_types: vec![Some(HeapType::String), Some(HeapType::String), None],
             },
         );
     }
@@ -2492,6 +2532,43 @@ impl<'a> JitCompiler<'a> {
             &[i64t],
         )?;
 
+        // Stack trace functions
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_stack_push",
+            &[ptr, ptr, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_stack_pop",
+            &[],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_stack_capture",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_stack_clear",
+            &[],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_stack_format",
+            &[ptr],
+            &[ptr],
+        )?;
+
         Ok(())
     }
 
@@ -3928,6 +4005,12 @@ impl<'a> JitCompiler<'a> {
             ctx.variables.insert(param_name, var);
         }
 
+        // Push function onto shadow stack for stack traces
+        let func_name_str = self.interner.resolve(&func.name.symbol);
+        let (line, _) = self.source_info.line_col(func.span.start);
+        let file_name = &*self.source_info.name;
+        emit_stack_push(&mut ctx, &mut builder, func_name_str, file_name, line as u32)?;
+
         if let Some(ref body) = func.body {
             for stmt in &body.statements {
                 compile_statement(&mut ctx, &mut builder, stmt)?;
@@ -3937,7 +4020,9 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
+        // Pop from shadow stack before implicit return
         if !ctx.block_terminated && func.return_ty.is_none() {
+            emit_stack_pop(&mut ctx, &mut builder)?;
             emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
             builder.ins().return_(&[]);
         }
@@ -4118,6 +4203,11 @@ impl<'a> JitCompiler<'a> {
             ctx.variables.insert(param_name, var);
         }
 
+        // Push method onto shadow stack for stack traces
+        let (line, _) = self.source_info.line_col(func.span.start);
+        let file_name = &*self.source_info.name;
+        emit_stack_push(&mut ctx, &mut builder, &full_name, file_name, line as u32)?;
+
         if let Some(ref body) = func.body {
             for stmt in &body.statements {
                 compile_statement(&mut ctx, &mut builder, stmt)?;
@@ -4127,7 +4217,9 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
+        // Pop from shadow stack before implicit return
         if !ctx.block_terminated && func.return_ty.is_none() {
+            emit_stack_pop(&mut ctx, &mut builder)?;
             emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
             builder.ins().return_(&[]);
         }

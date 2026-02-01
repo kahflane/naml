@@ -164,6 +164,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
             Type::Exception(name) => self.interner.resolve(name).to_string(),
+            Type::StackFrame => "stack_frame".to_string(),
             Type::Function(_) => "fn".to_string(),
             Type::TypeVar(tv) => format!("T{}", tv.id),
             Type::Generic(name, args) => {
@@ -197,6 +198,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
             Type::Exception(name) => self.interner.resolve(name).to_string(),
+            Type::StackFrame => "stack_frame".to_string(),
             Type::Function(f) => {
                 let params = f.params.iter()
                     .map(|p| self.display_type(p))
@@ -302,6 +304,17 @@ impl<'a> TypeInferrer<'a> {
     fn infer_identifier(&mut self, ident: &ast::IdentExpr) -> Type {
         if let Some(binding) = self.env.lookup(ident.ident.symbol) {
             binding.ty.clone()
+        } else if self.symbols.is_ambiguous(ident.ident.symbol) {
+            let name = self.interner.resolve(&ident.ident.symbol).to_string();
+            self.errors.push(TypeError::Custom {
+                message: format!(
+                    "ambiguous function '{}': multiple modules define this function. \
+                    Use a qualified name like 'arrays::{}' or 'maps::{}'.",
+                    name, name, name
+                ),
+                span: ident.span,
+            });
+            Type::Error
         } else if let Some(func) = self.symbols.get_function(ident.ident.symbol) {
             Type::Function(self.symbols.to_function_type(func))
         } else if let Some(def) = self.symbols.get_type(ident.ident.symbol) {
@@ -910,11 +923,11 @@ impl<'a> TypeInferrer<'a> {
                 }
             }
 
-        // Handle built-in exception methods
+        // Exception built-in methods
         if let Type::Exception(_) = &resolved {
             let method_name = self.interner.resolve(&call.method.symbol);
             return match method_name {
-                "message" => {
+                "stack_string" => {
                     if !call.args.is_empty() {
                         self.errors.push(TypeError::WrongArgCount {
                             expected: 0,
@@ -1142,9 +1155,14 @@ impl<'a> TypeInferrer<'a> {
             Type::Exception(name) => {
                 if let Some(TypeDef::Exception(def)) = self.symbols.get_type(name) {
                     let field_name_str = self.interner.resolve(&field.field.symbol);
+                    // Built-in exception fields
                     if field_name_str == "message" {
                         return Type::String;
                     }
+                    if field_name_str == "stack" {
+                        return Type::Array(Box::new(Type::StackFrame));
+                    }
+                    // User-defined exception fields
                     for (f_name, f_ty) in &def.fields {
                         if *f_name == field.field.symbol {
                             return f_ty.clone();
@@ -1158,6 +1176,22 @@ impl<'a> TypeInferrer<'a> {
                     Type::Error
                 } else {
                     Type::Error
+                }
+            }
+            Type::StackFrame => {
+                let field_name = self.interner.resolve(&field.field.symbol);
+                match field_name {
+                    "function" => Type::String,
+                    "file" => Type::String,
+                    "line" => Type::Int,
+                    _ => {
+                        self.errors.push(TypeError::UndefinedField {
+                            ty: "stack_frame".to_string(),
+                            field: field_name.to_string(),
+                            span: field.span,
+                        });
+                        Type::Error
+                    }
                 }
             }
             Type::Error => Type::Error,
@@ -1937,6 +1971,12 @@ impl<'a> TypeInferrer<'a> {
                 Type::Channel(Box::new(self.convert_ast_type(inner)))
             }
             ast::NamlType::Named(ident) => {
+                // Check for built-in types first
+                let name = self.interner.resolve(&ident.symbol);
+                if name == "stack_frame" {
+                    return Type::StackFrame;
+                }
+
                 // Look up the name to see if it's a known type (struct, enum, etc.)
                 if let Some(def) = self.symbols.get_type(ident.symbol) {
                     use super::symbols::TypeDef;

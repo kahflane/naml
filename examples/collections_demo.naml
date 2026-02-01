@@ -1,4 +1,4 @@
-use std::collections::*;
+use std::collections::arrays::*;
 
 fn main() {
     println("=== std::collections Demo ===\n");
@@ -45,7 +45,7 @@ fn main() {
     print("contains(99): ");
     println(contains(nums, 99));
 
-    // Lambda-based functions
+    // Lambda-based functions (qualified calls for ambiguous functions)
     println("\nLambda-based:");
     print("any > 7: ");
     println(any(nums, fn(x: int) -> bool { return x > 7; }));

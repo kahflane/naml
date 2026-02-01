@@ -58,6 +58,7 @@ pub fn tc_type_to_cranelift(ty: &TcType) -> Type {
         TcType::Enum(_) => types::I64,
         TcType::Interface(_) => types::I64,
         TcType::Exception(_) => types::I64,
+        TcType::StackFrame => types::I64,
         TcType::Function(_) => types::I64,
         TcType::TypeVar(_) => types::I64,
         TcType::Generic(_, _) => types::I64,

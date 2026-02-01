@@ -48,6 +48,9 @@ pub enum Type {
     Interface(InterfaceType),
     Exception(Spur),
 
+    // Built-in stack frame type for exception stack traces
+    StackFrame,
+
     Function(FunctionType),
 
     TypeVar(TypeVarRef),
@@ -305,6 +308,7 @@ impl fmt::Display for Type {
             Type::Enum(e) => write!(f, "enum:{:?}", e.name),
             Type::Interface(i) => write!(f, "interface:{:?}", i.name),
             Type::Exception(name) => write!(f, "exception:{:?}", name),
+            Type::StackFrame => write!(f, "stack_frame"),
             Type::Function(func) => {
                 write!(f, "fn(")?;
                 for (i, p) in func.params.iter().enumerate() {

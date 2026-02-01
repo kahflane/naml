@@ -258,11 +258,8 @@ impl<'a> TypeChecker<'a> {
         if let Some(sub_modules) = Self::get_std_submodules(module) {
             if matches!(items, UseItems::All) {
                 for sub_module in sub_modules {
-                    // Build the full sub-module path
                     let full_path = format!("{}::{}", module, sub_module);
-                    // Get the sub-module Spur
                     let sub_spur = self.interner.get_or_intern(sub_module);
-                    // Create path_spurs for the sub-module (append sub-module spur)
                     let mut sub_path_spurs = path_spurs.to_vec();
                     sub_path_spurs.push(sub_spur);
                     self.resolve_std_module(&full_path, &sub_path_spurs, items, span);
@@ -300,12 +297,18 @@ impl<'a> TypeChecker<'a> {
                 for module_fn in &module_fns {
                     let sig = self.create_std_fn_sig(module_fn);
                     if let Some(ref sig) = sig {
+                        // Always register under module namespace for qualified calls
                         self.symbols.register_module(module_spur).add_function(sig.clone());
                         // Also register under the short alias for qualified calls
                         if let Some(alias_spur) = short_alias_spur {
                             self.symbols.register_module(alias_spur).add_function(sig.clone());
                         }
-                        self.symbols.define_function(sig.clone());
+                        // Check for collision - mark as ambiguous if already exists
+                        if self.symbols.has_function(sig.name) {
+                            self.symbols.mark_ambiguous(sig.name);
+                        } else {
+                            self.symbols.define_function(sig.clone());
+                        }
                     }
                 }
             }
@@ -1296,6 +1299,12 @@ impl<'a> TypeChecker<'a> {
             ),
             ast::NamlType::Channel(inner) => Type::Channel(Box::new(self.convert_type(inner))),
             ast::NamlType::Named(ident) => {
+                // Check for built-in types first
+                let name = self.interner.resolve(&ident.symbol);
+                if name == "stack_frame" {
+                    return Type::StackFrame;
+                }
+
                 if let Some(def) = self.symbols.get_type(ident.symbol) {
                     match def {
                         TypeDef::Struct(s) => Type::Struct(self.symbols.to_struct_type(s)),

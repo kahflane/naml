@@ -16,6 +16,7 @@ use lasso::Rodeo;
 use thiserror::Error;
 
 use crate::ast::SourceFile;
+use crate::source::SourceFile as SourceInfo;
 use crate::typechecker::{ImportedModule, TypeAnnotations};
 
 #[derive(Debug, Error)]
@@ -38,8 +39,9 @@ pub fn compile_and_run(
     interner: &Rodeo,
     annotations: &TypeAnnotations,
     imported_modules: &[ImportedModule],
+    source_info: &SourceInfo,
 ) -> Result<(), CodegenError> {
-    let mut jit = cranelift::JitCompiler::new(interner, annotations)?;
+    let mut jit = cranelift::JitCompiler::new(interner, annotations, source_info)?;
     for module in imported_modules {
         jit.compile_module_source(&module.source_text)?;
     }

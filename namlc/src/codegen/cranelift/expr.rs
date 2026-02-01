@@ -311,9 +311,9 @@ pub fn compile_expression(
                     // Exception constructor - allocate on heap (exceptions outlive stack frames)
                     let struct_def = ctx.struct_defs.get(func_name).unwrap();
                     let num_fields = struct_def.fields.len();
-                    // Exception has implicit message field + defined fields
-                    // Total size: 8 bytes for message pointer + 8 bytes per field
-                    let size = 8 + (num_fields * 8);
+                    // Exception layout: message (8) + stack (8) + user fields (8 each)
+                    // Total size: 16 bytes for message + stack pointers + 8 bytes per field
+                    let size = 16 + (num_fields * 8);
 
                     // Allocate on heap since exceptions can escape the current stack frame
                     let size_val = builder
@@ -338,6 +338,10 @@ pub fn compile_expression(
                             .ins()
                             .store(MemFlags::new(), message, exception_ptr, 0);
                     }
+
+                    // Initialize stack to null (captured at throw time)
+                    let null = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    builder.ins().store(MemFlags::new(), null, exception_ptr, 8);
 
                     Ok(exception_ptr)
                 } else {
@@ -601,13 +605,15 @@ pub fn compile_expression(
                 if let crate::typechecker::Type::Exception(exc_name) = type_ann {
                     let exc_name_str = ctx.interner.resolve(exc_name).to_string();
                     if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
-                        // Exception: message at offset 0, fields at 8, 16, ...
+                        // Exception layout: message at 0, stack at 8, user fields at 16+
                         let offset = if field_name == "message" {
                             0
+                        } else if field_name == "stack" {
+                            8
                         } else if let Some(idx) =
                             struct_def.fields.iter().position(|f| f == &field_name)
                         {
-                            8 + (idx * 8) as i32
+                            16 + (idx * 8) as i32
                         } else {
                             return Err(CodegenError::JitCompile(format!(
                                 "Unknown field: {}",
@@ -636,6 +642,26 @@ pub fn compile_expression(
                         );
                         return Ok(value);
                     }
+                } else if let crate::typechecker::Type::StackFrame = type_ann {
+                    // stack_frame: function at 0, file at 8, line at 16
+                    let offset = match field_name.as_str() {
+                        "function" => 0,
+                        "file" => 8,
+                        "line" => 16,
+                        _ => {
+                            return Err(CodegenError::JitCompile(format!(
+                                "Unknown stack_frame field: {}",
+                                field_name
+                            )));
+                        }
+                    };
+                    let value = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        struct_ptr,
+                        offset,
+                    );
+                    return Ok(value);
                 }
             }
 

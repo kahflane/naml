@@ -40,7 +40,7 @@ fn main() {
     // Example 1: Normal division (no exception)
     println("Example 1: Normal division");
     var result1: int = divide(10, 0) catch e {
-        println(e.message());
+        println(e.message);
     };
     println("10 / 2 =");
     println(result1);
@@ -51,7 +51,7 @@ fn main() {
     var result2: int = divide(10, 0) catch e {
         println("Caught exception!");
         println("Exception message:");
-        println(e.message());
+        println(e.message);
         println("Exception dividend field:");
         println(e.dividend);
     };
@@ -63,7 +63,7 @@ fn main() {
     println("Example 3: Negative input");
     var result3: int = safe_divide(-5, 2) catch e {
         println("Caught exception:");
-        println(e.message());
+        println(e.message);
     };
     println("Result (default 0):");
     println(result3);

@@ -7,7 +7,7 @@ fn main() {
     var missing: string = read("/nonexistent/file.txt") catch e {
         println("Caught IOError!");
         println("  message:");
-        println(e.message());
+        println(e.message);
         println("  path:");
         println(e.path);
         println("  code:");

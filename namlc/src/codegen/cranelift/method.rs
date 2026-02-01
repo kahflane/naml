@@ -1,6 +1,7 @@
 use crate::ast::Expression;
 use crate::codegen::cranelift::expr::compile_expression;
 use crate::codegen::cranelift::map::{call_map_contains, call_map_set};
+use crate::codegen::cranelift::runtime::rt_func_ref;
 use crate::codegen::cranelift::CompileContext;
 use crate::codegen::CodegenError;
 use crate::source::Spanned;
@@ -64,19 +65,22 @@ pub fn compile_method_call(
             call_map_set(ctx, builder, recv, key, value)?;
             Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
         }
-        // Exception method (exceptions still use method syntax)
-        "message" => {
+        // Exception method: stack_string()
+        "stack_string" => {
             let receiver_type = ctx.annotations.get_type(receiver.span());
             if matches!(receiver_type, Some(Type::Exception(_))) {
-                // Exception message is stored at offset 0
-                let message_ptr =
+                // Load stack array from offset 8
+                let stack_ptr =
                     builder
                         .ins()
-                        .load(cranelift::prelude::types::I64, MemFlags::new(), recv, 0);
-                Ok(message_ptr)
+                        .load(cranelift::prelude::types::I64, MemFlags::new(), recv, 8);
+                // Call naml_stack_format to get formatted string
+                let format_func = rt_func_ref(ctx, builder, "naml_stack_format")?;
+                let call = builder.ins().call(format_func, &[stack_ptr]);
+                Ok(builder.inst_results(call)[0])
             } else {
                 Err(CodegenError::JitCompile(
-                    "message() is only available on exception types".to_string(),
+                    "stack_string() is only available on exception types".to_string(),
                 ))
             }
         }

@@ -12,7 +12,7 @@ use crate::source::Spanned;
 use crate::typechecker::Type;
 use cranelift::prelude::*;
 use crate::codegen::cranelift::exceptions::call_exception_set;
-use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_decref, emit_incref, get_returned_var_name, rt_func_ref};
+use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_decref, emit_incref, emit_stack_pop, get_returned_var_name, rt_func_ref};
 use crate::codegen::cranelift::strings::{call_string_char_at, call_string_char_len, call_string_from_cstr};
 
 pub fn compile_statement(
@@ -245,7 +245,7 @@ pub fn compile_statement(
                     let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
 
                     // Determine field offset based on struct type
-                    // For exceptions: offset 0 is message, then fields at 8, 16, etc.
+                    // For exceptions: message at 0, stack at 8, user fields at 16, 24, etc.
                     // For structs: fields at 0, 8, 16, etc.
                     if let Expression::Identifier(ident) = field_expr.base {
                         let _var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
@@ -255,13 +255,15 @@ pub fn compile_statement(
                             if let crate::typechecker::Type::Exception(exc_name) = type_ann {
                                 let exc_name_str = ctx.interner.resolve(exc_name).to_string();
                                 if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
-                                    // Find field offset (message at 0, then fields at 8, 16, ...)
+                                    // Find field offset (message at 0, stack at 8, user fields at 16+)
                                     let offset = if field_name == "message" {
                                         0
+                                    } else if field_name == "stack" {
+                                        8
                                     } else if let Some(idx) =
                                         struct_def.fields.iter().position(|f| f == &field_name)
                                     {
-                                        8 + (idx * 8) as i32
+                                        16 + (idx * 8) as i32
                                     } else {
                                         return Err(CodegenError::JitCompile(format!(
                                             "Unknown field: {}",
@@ -318,6 +320,9 @@ pub fn compile_statement(
         }
 
         Statement::Return(ret) => {
+            // Pop from shadow stack before returning
+            emit_stack_pop(ctx, builder)?;
+
             if let Some(ref expr) = ret.value {
                 let mut val = compile_expression(ctx, builder, expr)?;
 
@@ -336,7 +341,7 @@ pub fn compile_statement(
                 }
 
                 // Determine if we're returning a local heap variable (ownership transfer)
-                let returned_var = 
+                let returned_var =
                     get_returned_var_name(expr, ctx.interner);
                 let exclude_var = returned_var.as_ref().and_then(|name| {
                     if ctx.var_heap_types.contains_key(name) {
@@ -905,6 +910,12 @@ pub fn compile_statement(
         Statement::Throw(throw_stmt) => {
             // Compile the exception value
             let exception_ptr = compile_expression(ctx, builder, &throw_stmt.value)?;
+
+            // Capture the current stack trace and store at offset 8
+            let stack_capture_func = rt_func_ref(ctx, builder, "naml_stack_capture")?;
+            let stack_call = builder.ins().call(stack_capture_func, &[]);
+            let stack_ptr = builder.inst_results(stack_call)[0];
+            builder.ins().store(MemFlags::new(), stack_ptr, exception_ptr, 8);
 
             // Set the current exception in thread-local storage
             call_exception_set(ctx, builder, exception_ptr)?;
