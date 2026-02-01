@@ -112,6 +112,11 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "already defined".to_string(),
             Some("rename or remove one of the definitions".to_string()),
         ),
+        TypeError::DuplicateImport { name, .. } => (
+            format!("duplicate import of '{}'", name),
+            "already imported".to_string(),
+            Some("use qualified names like 'hex::encode' and 'base64::encode'".to_string()),
+        ),
         TypeError::InvalidOperation { op, ty, .. } => (
             format!("invalid operation '{}' on type '{}'", op, ty),
             format!("cannot use '{}' here", op),

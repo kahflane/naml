@@ -54,6 +54,9 @@ pub enum TypeError {
     #[error("duplicate definition '{name}'")]
     DuplicateDefinition { name: String, span: Span },
 
+    #[error("duplicate import of '{name}': already imported from another module")]
+    DuplicateImport { name: String, span: Span },
+
     #[error("invalid operation: cannot apply {op} to {ty}")]
     InvalidOperation {
         op: String,
@@ -186,6 +189,7 @@ impl TypeError {
             TypeError::UndefinedField { span, .. } => *span,
             TypeError::UndefinedMethod { span, .. } => *span,
             TypeError::DuplicateDefinition { span, .. } => *span,
+            TypeError::DuplicateImport { span, .. } => *span,
             TypeError::InvalidOperation { span, .. } => *span,
             TypeError::InvalidBinaryOp { span, .. } => *span,
             TypeError::InferenceFailed { span } => *span,

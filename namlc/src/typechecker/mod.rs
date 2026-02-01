@@ -303,6 +303,7 @@ impl<'a> TypeChecker<'a> {
                         if let Some(alias_spur) = short_alias_spur {
                             self.symbols.register_module(alias_spur).add_function(sig.clone());
                         }
+                        // For wildcard imports, just mark ambiguous (allows qualified use)
                         if self.symbols.has_function(sig.name) {
                             self.symbols.mark_ambiguous(sig.name);
                         } else {
@@ -324,9 +325,13 @@ impl<'a> TypeChecker<'a> {
                                 if let Some(alias_spur) = short_alias_spur {
                                     self.symbols.register_module(alias_spur).add_function(sig.clone());
                                 }
-                                // Check for duplicate imports (same fix as UseItems::All)
+                                // Check for duplicate imports and emit error
                                 if self.symbols.has_function(sig.name) {
                                     self.symbols.mark_ambiguous(sig.name);
+                                    self.errors.push(TypeError::DuplicateImport {
+                                        name: entry_name.clone(),
+                                        span: entry.span,
+                                    });
                                 } else {
                                     self.symbols.define_function(sig.clone());
                                 }
@@ -976,10 +981,15 @@ impl<'a> TypeChecker<'a> {
                             is_public: true,
                             is_variadic: *is_variadic,
                             span: crate::source::Span::dummy(),
-                            module: None, 
+                            module: None,
                         };
                         self.symbols.register_module(module_spur).add_function(sig.clone());
-                        self.symbols.define_function(sig);
+                        // For wildcard imports, just mark ambiguous (allows qualified use)
+                        if self.symbols.has_function(sig.name) {
+                            self.symbols.mark_ambiguous(sig.name);
+                        } else {
+                            self.symbols.define_function(sig);
+                        }
                     }
                 }
             }
@@ -1008,9 +1018,13 @@ impl<'a> TypeChecker<'a> {
                                 module: None, 
                             };
                             self.symbols.register_module(module_spur).add_function(sig.clone());
-                            // Check for duplicate imports (same fix as UseItems::All)
+                            // Check for duplicate imports and emit error
                             if self.symbols.has_function(sig.name) {
                                 self.symbols.mark_ambiguous(sig.name);
+                                self.errors.push(TypeError::DuplicateImport {
+                                    name: entry_name.clone(),
+                                    span: entry.span,
+                                });
                             } else {
                                 self.symbols.define_function(sig);
                             }

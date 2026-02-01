@@ -1,10 +1,7 @@
 // Encoding Demo
 // Tests UTF-8, hex, base64, and URL encoding/decoding
 
-use std::encoding::utf8::{encode, is_valid};
-use std::encoding::hex::{encode, decode};
-use std::encoding::base64::{encode, decode};
-use std::encoding::url::{encode, decode};
+use std::encoding::*;
 
 fn main() throws DecodeError {
     var test_string: string = "Hello, World!";
