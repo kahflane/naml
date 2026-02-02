@@ -695,6 +695,64 @@ impl<'a> TypeChecker<'a> {
                     );
                 }
             }
+            m if m.starts_with("net") => {
+                // Register NetworkError exception
+                let network_error_name = self.interner.get_or_intern("NetworkError");
+                let message_field = self.interner.get_or_intern("message");
+                let code_field = self.interner.get_or_intern("code");
+
+                if self.symbols.get_type(network_error_name).is_none() {
+                    self.symbols.define_type(
+                        network_error_name,
+                        TypeDef::Exception(ExceptionDef {
+                            name: network_error_name,
+                            fields: vec![
+                                (message_field, Type::String),
+                                (code_field, Type::Int),
+                            ],
+                            is_public: true,
+                            span: Span::dummy(),
+                        }),
+                    );
+                }
+
+                // Register TimeoutError exception
+                let timeout_error_name = self.interner.get_or_intern("TimeoutError");
+                let timeout_ms_field = self.interner.get_or_intern("timeout_ms");
+
+                if self.symbols.get_type(timeout_error_name).is_none() {
+                    self.symbols.define_type(
+                        timeout_error_name,
+                        TypeDef::Exception(ExceptionDef {
+                            name: timeout_error_name,
+                            fields: vec![
+                                (message_field, Type::String),
+                                (timeout_ms_field, Type::Int),
+                            ],
+                            is_public: true,
+                            span: Span::dummy(),
+                        }),
+                    );
+                }
+
+                // Register ConnectionRefused exception
+                let conn_refused_name = self.interner.get_or_intern("ConnectionRefused");
+                let address_field = self.interner.get_or_intern("address");
+
+                if self.symbols.get_type(conn_refused_name).is_none() {
+                    self.symbols.define_type(
+                        conn_refused_name,
+                        TypeDef::Exception(ExceptionDef {
+                            name: conn_refused_name,
+                            fields: vec![
+                                (address_field, Type::String),
+                            ],
+                            is_public: true,
+                            span: Span::dummy(),
+                        }),
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -801,10 +859,82 @@ impl<'a> TypeChecker<'a> {
         ]
     }
 
+    fn get_net_tcp_server_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing("listen", vec![("address", Type::String)], Type::Int, vec!["NetworkError"]),
+            StdModuleFn::throwing("accept", vec![("listener", Type::Int)], Type::Int, vec!["NetworkError"]),
+            StdModuleFn::new("close", vec![("listener", Type::Int)], Type::Unit),
+            StdModuleFn::new("local_addr", vec![("listener", Type::Int)], Type::String),
+        ]
+    }
+
+    fn get_net_tcp_client_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing("connect", vec![("address", Type::String)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("read", vec![("socket", Type::Int), ("size", Type::Int)], Type::Bytes, vec!["NetworkError"]),
+            StdModuleFn::throwing("read_all", vec![("socket", Type::Int)], Type::Bytes, vec!["NetworkError"]),
+            StdModuleFn::throwing("write", vec![("socket", Type::Int), ("data", Type::Bytes)], Type::Unit, vec!["NetworkError"]),
+            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
+            StdModuleFn::new("set_timeout", vec![("socket", Type::Int), ("ms", Type::Int)], Type::Unit),
+            StdModuleFn::new("peer_addr", vec![("socket", Type::Int)], Type::String),
+        ]
+    }
+
+    fn get_net_udp_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing("bind", vec![("address", Type::String)], Type::Int, vec!["NetworkError"]),
+            StdModuleFn::throwing("send", vec![("socket", Type::Int), ("data", Type::Bytes), ("address", Type::String)], Type::Unit, vec!["NetworkError"]),
+            StdModuleFn::throwing("receive", vec![("socket", Type::Int), ("size", Type::Int)], Type::Bytes, vec!["NetworkError"]),
+            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
+            StdModuleFn::new("local_addr", vec![("socket", Type::Int)], Type::String),
+        ]
+    }
+
+    fn get_net_http_client_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing("get", vec![("url", Type::String)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("post", vec![("url", Type::String), ("body", Type::Bytes)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("put", vec![("url", Type::String), ("body", Type::Bytes)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("patch", vec![("url", Type::String), ("body", Type::Bytes)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("delete", vec![("url", Type::String)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::new("set_timeout", vec![("ms", Type::Int)], Type::Unit),
+        ]
+    }
+
+    fn get_net_http_server_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("open_router", vec![], Type::Int),
+            StdModuleFn::new("get", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
+            StdModuleFn::new("post", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
+            StdModuleFn::new("put", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
+            StdModuleFn::new("patch", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
+            StdModuleFn::new("delete", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
+            StdModuleFn::new("with", vec![("router", Type::Int), ("middleware", Type::Int)], Type::Unit),
+            StdModuleFn::new("group", vec![("router", Type::Int), ("prefix", Type::String)], Type::Int),
+            StdModuleFn::new("mount", vec![("router", Type::Int), ("prefix", Type::String), ("sub_router", Type::Int)], Type::Unit),
+            StdModuleFn::throwing("serve", vec![("address", Type::String), ("router", Type::Int)], Type::Unit, vec!["NetworkError"]),
+        ]
+    }
+
+    fn get_net_http_middleware_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("logger", vec![], Type::Int),
+            StdModuleFn::new("timeout", vec![("ms", Type::Int)], Type::Int),
+            StdModuleFn::new("recover", vec![], Type::Int),
+            StdModuleFn::new("cors", vec![("origins", Type::Array(Box::new(Type::String)))], Type::Int),
+            StdModuleFn::new("rate_limit", vec![("requests_per_second", Type::Int)], Type::Int),
+            StdModuleFn::new("compress", vec![], Type::Int),
+            StdModuleFn::new("request_id", vec![], Type::Int),
+        ]
+    }
+
     fn get_std_submodules(module: &str) -> Option<Vec<&'static str>> {
         match module {
             "collections" => Some(vec!["arrays", "maps"]),
             "encoding" => Some(vec!["utf8", "hex", "base64", "url", "json"]),
+            "net" => Some(vec!["tcp", "udp", "http"]),
+            "net::tcp" => Some(vec!["server", "client"]),
+            "net::http" => Some(vec!["client", "server", "middleware"]),
             _ => None,
         }
     }
@@ -936,6 +1066,21 @@ impl<'a> TypeChecker<'a> {
             "encoding::base64" => Some(Self::get_encoding_base64_functions()),
             "encoding::url" => Some(Self::get_encoding_url_functions()),
             "encoding::json" => Some(Self::get_encoding_json_functions()),
+            // Net module and submodules
+            "net" | "net::tcp" | "net::udp" | "net::http" => {
+                let mut fns = Self::get_net_tcp_server_functions();
+                fns.extend(Self::get_net_tcp_client_functions());
+                fns.extend(Self::get_net_udp_functions());
+                fns.extend(Self::get_net_http_client_functions());
+                fns.extend(Self::get_net_http_server_functions());
+                fns.extend(Self::get_net_http_middleware_functions());
+                Some(fns)
+            }
+            "net::tcp::server" => Some(Self::get_net_tcp_server_functions()),
+            "net::tcp::client" => Some(Self::get_net_tcp_client_functions()),
+            "net::http::client" => Some(Self::get_net_http_client_functions()),
+            "net::http::server" => Some(Self::get_net_http_server_functions()),
+            "net::http::middleware" => Some(Self::get_net_http_middleware_functions()),
             _ => None,
         }
     }

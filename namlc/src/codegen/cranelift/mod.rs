@@ -1075,6 +1075,64 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_json_null", crate::runtime::naml_json_null as *const u8);
         builder.symbol("naml_path_error_new", crate::runtime::naml_path_error_new as *const u8);
 
+        // Networking operations (from naml-std-net)
+        // Exception constructors
+        builder.symbol("naml_network_error_new", crate::runtime::naml_network_error_new as *const u8);
+        builder.symbol("naml_timeout_error_new", crate::runtime::naml_timeout_error_new as *const u8);
+        builder.symbol("naml_connection_refused_new", crate::runtime::naml_connection_refused_new as *const u8);
+
+        // TCP Server
+        builder.symbol("naml_net_tcp_server_listen", crate::runtime::naml_net_tcp_server_listen as *const u8);
+        builder.symbol("naml_net_tcp_server_accept", crate::runtime::naml_net_tcp_server_accept as *const u8);
+        builder.symbol("naml_net_tcp_server_close", crate::runtime::naml_net_tcp_server_close as *const u8);
+        builder.symbol("naml_net_tcp_server_local_addr", crate::runtime::naml_net_tcp_server_local_addr as *const u8);
+
+        // TCP Client
+        builder.symbol("naml_net_tcp_client_connect", crate::runtime::naml_net_tcp_client_connect as *const u8);
+        builder.symbol("naml_net_tcp_client_read", crate::runtime::naml_net_tcp_client_read as *const u8);
+        builder.symbol("naml_net_tcp_client_read_all", crate::runtime::naml_net_tcp_client_read_all as *const u8);
+        builder.symbol("naml_net_tcp_client_write", crate::runtime::naml_net_tcp_client_write as *const u8);
+        builder.symbol("naml_net_tcp_client_close", crate::runtime::naml_net_tcp_client_close as *const u8);
+        builder.symbol("naml_net_tcp_client_set_timeout", crate::runtime::naml_net_tcp_client_set_timeout as *const u8);
+        builder.symbol("naml_net_tcp_socket_peer_addr", crate::runtime::naml_net_tcp_socket_peer_addr as *const u8);
+
+        // UDP
+        builder.symbol("naml_net_udp_bind", crate::runtime::naml_net_udp_bind as *const u8);
+        builder.symbol("naml_net_udp_send", crate::runtime::naml_net_udp_send as *const u8);
+        builder.symbol("naml_net_udp_receive", crate::runtime::naml_net_udp_receive as *const u8);
+        builder.symbol("naml_net_udp_receive_from", crate::runtime::naml_net_udp_receive_from as *const u8);
+        builder.symbol("naml_net_udp_close", crate::runtime::naml_net_udp_close as *const u8);
+        builder.symbol("naml_net_udp_local_addr", crate::runtime::naml_net_udp_local_addr as *const u8);
+
+        // HTTP Client
+        builder.symbol("naml_net_http_client_get", crate::runtime::naml_net_http_client_get as *const u8);
+        builder.symbol("naml_net_http_client_post", crate::runtime::naml_net_http_client_post as *const u8);
+        builder.symbol("naml_net_http_client_put", crate::runtime::naml_net_http_client_put as *const u8);
+        builder.symbol("naml_net_http_client_patch", crate::runtime::naml_net_http_client_patch as *const u8);
+        builder.symbol("naml_net_http_client_delete", crate::runtime::naml_net_http_client_delete as *const u8);
+        builder.symbol("naml_net_http_client_set_timeout", crate::runtime::naml_net_http_client_set_timeout as *const u8);
+
+        // HTTP Server
+        builder.symbol("naml_net_http_server_open_router", crate::runtime::naml_net_http_server_open_router as *const u8);
+        builder.symbol("naml_net_http_server_get", crate::runtime::naml_net_http_server_get as *const u8);
+        builder.symbol("naml_net_http_server_post", crate::runtime::naml_net_http_server_post as *const u8);
+        builder.symbol("naml_net_http_server_put", crate::runtime::naml_net_http_server_put as *const u8);
+        builder.symbol("naml_net_http_server_patch", crate::runtime::naml_net_http_server_patch as *const u8);
+        builder.symbol("naml_net_http_server_delete", crate::runtime::naml_net_http_server_delete as *const u8);
+        builder.symbol("naml_net_http_server_with", crate::runtime::naml_net_http_server_with as *const u8);
+        builder.symbol("naml_net_http_server_group", crate::runtime::naml_net_http_server_group as *const u8);
+        builder.symbol("naml_net_http_server_mount", crate::runtime::naml_net_http_server_mount as *const u8);
+        builder.symbol("naml_net_http_server_serve", crate::runtime::naml_net_http_server_serve as *const u8);
+
+        // HTTP Middleware
+        builder.symbol("naml_net_http_middleware_logger", crate::runtime::naml_net_http_middleware_logger as *const u8);
+        builder.symbol("naml_net_http_middleware_timeout", crate::runtime::naml_net_http_middleware_timeout as *const u8);
+        builder.symbol("naml_net_http_middleware_recover", crate::runtime::naml_net_http_middleware_recover as *const u8);
+        builder.symbol("naml_net_http_middleware_cors", crate::runtime::naml_net_http_middleware_cors as *const u8);
+        builder.symbol("naml_net_http_middleware_rate_limit", crate::runtime::naml_net_http_middleware_rate_limit as *const u8);
+        builder.symbol("naml_net_http_middleware_compress", crate::runtime::naml_net_http_middleware_compress as *const u8);
+        builder.symbol("naml_net_http_middleware_request_id", crate::runtime::naml_net_http_middleware_request_id as *const u8);
+
         let module = JITModule::new(builder);
         let ctx = module.make_context();
 
@@ -2879,6 +2937,64 @@ impl<'a> JitCompiler<'a> {
             &[ptr],
             &[ptr],
         )?;
+
+        // Networking operations (from naml-std-net)
+        // Exception constructors
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_network_error_new", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_timeout_error_new", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_connection_refused_new", &[ptr], &[ptr])?;
+
+        // TCP Server
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_listen", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_accept", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_close", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_local_addr", &[i64t], &[ptr])?;
+
+        // TCP Client
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_connect", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_read", &[i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_read_all", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_write", &[i64t, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_close", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_set_timeout", &[i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_socket_peer_addr", &[i64t], &[ptr])?;
+
+        // UDP
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_bind", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_send", &[i64t, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_receive", &[i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_receive_from", &[i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_close", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_local_addr", &[i64t], &[ptr])?;
+
+        // HTTP Client
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_get", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_post", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_put", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_patch", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_delete", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_set_timeout", &[i64t], &[])?;
+
+        // HTTP Server
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_open_router", &[], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_get", &[i64t, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_post", &[i64t, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_put", &[i64t, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_patch", &[i64t, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_delete", &[i64t, ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_with", &[i64t, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_group", &[i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_mount", &[i64t, ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_serve", &[ptr, i64t], &[])?;
+
+        // HTTP Middleware
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_logger", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_timeout", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_recover", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_cors", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_rate_limit", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_compress", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_request_id", &[], &[ptr])?;
 
         Ok(())
     }

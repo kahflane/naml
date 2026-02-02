@@ -14,6 +14,7 @@
 //! - File system operations (from naml-std-fs)
 //! - Path operations (from naml-std-path)
 //! - Encoding operations (from naml-std-encoding)
+//! - Networking operations (from naml-std-net)
 //! - Map operations (local)
 //! - Bytes operations (local)
 //!
@@ -31,6 +32,7 @@ pub use naml_std_strings::*;
 pub use naml_std_fs::*;
 pub use naml_std_path::*;
 pub use naml_std_encoding::*;
+pub use naml_std_net::*;
 
 // Import collection arrays functions (not the arrays module to avoid conflict with naml_std_core::array)
 pub use naml_std_collections::arrays::*;

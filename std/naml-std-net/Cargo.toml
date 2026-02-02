@@ -1,0 +1,33 @@
+##
+## naml-std-net - Networking operations
+##
+## Provides networking capabilities for naml programs:
+## - TCP client/server (connect, listen, accept, read, write, close)
+## - UDP (bind, send, receive, close)
+## - HTTP client (get, post, put, patch, delete)
+## - HTTP server with router and middleware support
+##
+## Platform: Native and Server WASM (uses tokio for async I/O)
+##
+
+[package]
+name = "naml-std-net"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Networking operations for the naml programming language"
+
+[lib]
+name = "naml_std_net"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
+tokio.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+flate2.workspace = true

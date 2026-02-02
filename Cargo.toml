@@ -20,6 +20,7 @@ members = [
     "std/naml-std-fs",
     "std/naml-std-path",
     "std/naml-std-encoding",
+    "std/naml-std-net",
 ]
 
 [workspace.package]
@@ -88,6 +89,17 @@ hyper-util = { version = "0.1", features = ["full"] }
 http-body-util = "0.1"
 
 ##
+## HTTP middleware (tower ecosystem)
+##
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "timeout", "compression-gzip", "request-id", "trace", "catch-panic", "limit"] }
+
+##
+## Compression
+##
+flate2 = "1"
+
+##
 ## WASM targets
 ##
 wasm-bindgen = "0.2"
@@ -138,6 +150,7 @@ naml-std-collections = { path = "std/naml-std-collections" }
 naml-std-fs = { path = "std/naml-std-fs" }
 naml-std-path = { path = "std/naml-std-path" }
 naml-std-encoding = { path = "std/naml-std-encoding" }
+naml-std-net = { path = "std/naml-std-net" }
 
 [profile.release]
 lto = true
