@@ -1,9 +1,10 @@
 ///
 /// HTTP Client - REST API Consumer
 ///
-/// A comprehensive HTTP client example that:
+/// A  HTTP client example that:
 /// - Demonstrates all HTTP methods (GET, POST, PUT, DELETE)
-/// - Tests against a mock server or real endpoints
+/// - Uses status() and body() to access response data
+/// - Shows both default headers (none) and custom headers (some)
 /// - Uses concurrent requests with spawn
 /// - Verifies responses and aggregates statistics
 ///
@@ -11,7 +12,7 @@
 ///
 
 use std::threads::{join, with_mutex};
-use std::net::{get, post, put, delete};
+use std::net::http::client::{get, post, put, delete, status, body};
 use std::strings::{len, has};
 
 fn main() {
@@ -23,38 +24,41 @@ fn main() {
     var requests_success: mutex<int> = with_mutex(0);
     var requests_failed: mutex<int> = with_mutex(0);
 
-    // Note: HTTP requests use default 30s timeout
-
-    // Test 1: Simple GET request (using httpbin for testing)
-    println("Test 1: Simple GET request");
-    test_get_request("http://httpbin.org/get", requests_made, requests_success, requests_failed);
+    // Test 1: Simple GET request without custom headers
+    println("Test 1: Simple GET request (no custom headers)");
+    test_get_request("http://httpbin.org/get", none, requests_made, requests_success, requests_failed);
     println("");
 
-    // Test 2: POST request
-    println("Test 2: POST request");
-    test_post_request("http://httpbin.org/post", "{\"name\":\"Alice\",\"age\":30}", requests_made, requests_success, requests_failed);
+    // Test 2: Another GET request
+    println("Test 2: GET request to different endpoint");
+    test_get_request("http://httpbin.org/headers", none, requests_made, requests_success, requests_failed);
     println("");
 
-    // Test 3: PUT request
-    println("Test 3: PUT request");
-    test_put_request("http://httpbin.org/put", "{\"name\":\"Bob\",\"age\":25}", requests_made, requests_success, requests_failed);
+    // Test 3: POST request with JSON body
+    println("Test 3: POST request with JSON body");
+    test_post_request("http://httpbin.org/post", `{"name":"Alice","age":30}`, none, requests_made, requests_success, requests_failed);
     println("");
 
-    // Test 4: DELETE request
-    println("Test 4: DELETE request");
-    test_delete_request("http://httpbin.org/delete", requests_made, requests_success, requests_failed);
+    // Test 4: PUT request
+    println("Test 4: PUT request");
+    test_put_request("http://httpbin.org/put", `{"name":"Bob","age":25}`, none, requests_made, requests_success, requests_failed);
     println("");
 
-    // Test 5: Concurrent requests
-    println("Test 5: Concurrent requests (3 parallel GETs)");
+    // Test 5: DELETE request
+    println("Test 5: DELETE request");
+    test_delete_request("http://httpbin.org/delete", none, requests_made, requests_success, requests_failed);
+    println("");
+
+    // Test 6: Concurrent requests
+    println("Test 6: Concurrent requests (3 parallel GETs)");
     spawn {
-        test_get_request("http://httpbin.org/get?id=1", requests_made, requests_success, requests_failed);
+        test_get_request("http://httpbin.org/get?id=1", none, requests_made, requests_success, requests_failed);
     };
     spawn {
-        test_get_request("http://httpbin.org/get?id=2", requests_made, requests_success, requests_failed);
+        test_get_request("http://httpbin.org/get?id=2", none, requests_made, requests_success, requests_failed);
     };
     spawn {
-        test_get_request("http://httpbin.org/get?id=3", requests_made, requests_success, requests_failed);
+        test_get_request("http://httpbin.org/get?id=3", none, requests_made, requests_success, requests_failed);
     };
     join();
     println("");
@@ -82,10 +86,10 @@ fn main() {
     }
 
     println("");
-    if (made == 7) {
-        println("PASS: All 7 requests were attempted");
+    if (made == 8) {
+        println("PASS: All 8 requests were attempted");
     } else {
-        println(fmt("Note: Expected 7 requests, made {}", made));
+        println(fmt("Note: Expected 8 requests, made {}", made));
     }
 
     println("");
@@ -94,6 +98,7 @@ fn main() {
 
 fn test_get_request(
     url: string,
+    headers: option<map<string, string>>,
     requests_made: mutex<int>,
     requests_success: mutex<int>,
     requests_failed: mutex<int>
@@ -104,7 +109,7 @@ fn test_get_request(
 
     println(fmt("  GET {}", url));
 
-    var response: int = get(url) catch e {
+    var response: int = get(url, headers) catch e {
         println(fmt("  ERROR: {}", e.message));
         locked (f: int in requests_failed) {
             f = f + 1;
@@ -112,16 +117,32 @@ fn test_get_request(
         return;
     };
 
-    println(fmt("  Response handle: {}", response));
-    locked (s: int in requests_success) {
-        s = s + 1;
+    // Use accessor functions to get response data
+    var status_code: int = status(response);
+    var body_data: bytes = body(response);
+    var body_str: string = body_data as string;
+    var body_len: int = len(body_str);
+
+    println(fmt("  Status: {}", status_code));
+    println(fmt("  Body length: {} bytes", body_len));
+
+    if (status_code >= 200 && status_code < 300) {
+        locked (s: int in requests_success) {
+            s = s + 1;
+        }
+        println("  SUCCESS");
+    } else {
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        println(fmt("  FAILED: Unexpected status {}", status_code));
     }
-    println("  SUCCESS");
 }
 
 fn test_post_request(
     url: string,
-    body: string,
+    body_content: string,
+    headers: option<map<string, string>>,
     requests_made: mutex<int>,
     requests_success: mutex<int>,
     requests_failed: mutex<int>
@@ -131,10 +152,10 @@ fn test_post_request(
     }
 
     println(fmt("  POST {}", url));
-    println(fmt("  Body: {}", body));
+    println(fmt("  Body: {}", body_content));
 
-    var body_bytes: bytes = body as bytes;
-    var response: int = post(url, body_bytes) catch e {
+    var body_bytes: bytes = body_content as bytes;
+    var response: int = post(url, body_bytes, headers) catch e {
         println(fmt("  ERROR: {}", e.message));
         locked (f: int in requests_failed) {
             f = f + 1;
@@ -142,16 +163,30 @@ fn test_post_request(
         return;
     };
 
-    println(fmt("  Response handle: {}", response));
-    locked (s: int in requests_success) {
-        s = s + 1;
+    var status_code: int = status(response);
+    var response_body: bytes = body(response);
+    var body_len: int = len(response_body as string);
+
+    println(fmt("  Status: {}", status_code));
+    println(fmt("  Response body length: {} bytes", body_len));
+
+    if (status_code >= 200 && status_code < 300) {
+        locked (s: int in requests_success) {
+            s = s + 1;
+        }
+        println("  SUCCESS");
+    } else {
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        println(fmt("  FAILED: Unexpected status {}", status_code));
     }
-    println("  SUCCESS");
 }
 
 fn test_put_request(
     url: string,
-    body: string,
+    body_content: string,
+    headers: option<map<string, string>>,
     requests_made: mutex<int>,
     requests_success: mutex<int>,
     requests_failed: mutex<int>
@@ -161,10 +196,10 @@ fn test_put_request(
     }
 
     println(fmt("  PUT {}", url));
-    println(fmt("  Body: {}", body));
+    println(fmt("  Body: {}", body_content));
 
-    var body_bytes: bytes = body as bytes;
-    var response: int = put(url, body_bytes) catch e {
+    var body_bytes: bytes = body_content as bytes;
+    var response: int = put(url, body_bytes, headers) catch e {
         println(fmt("  ERROR: {}", e.message));
         locked (f: int in requests_failed) {
             f = f + 1;
@@ -172,15 +207,25 @@ fn test_put_request(
         return;
     };
 
-    println(fmt("  Response handle: {}", response));
-    locked (s: int in requests_success) {
-        s = s + 1;
+    var status_code: int = status(response);
+    println(fmt("  Status: {}", status_code));
+
+    if (status_code >= 200 && status_code < 300) {
+        locked (s: int in requests_success) {
+            s = s + 1;
+        }
+        println("  SUCCESS");
+    } else {
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        println(fmt("  FAILED: Unexpected status {}", status_code));
     }
-    println("  SUCCESS");
 }
 
 fn test_delete_request(
     url: string,
+    headers: option<map<string, string>>,
     requests_made: mutex<int>,
     requests_success: mutex<int>,
     requests_failed: mutex<int>
@@ -191,7 +236,7 @@ fn test_delete_request(
 
     println(fmt("  DELETE {}", url));
 
-    var response: int = delete(url) catch e {
+    var response: int = delete(url, headers) catch e {
         println(fmt("  ERROR: {}", e.message));
         locked (f: int in requests_failed) {
             f = f + 1;
@@ -199,9 +244,18 @@ fn test_delete_request(
         return;
     };
 
-    println(fmt("  Response handle: {}", response));
-    locked (s: int in requests_success) {
-        s = s + 1;
+    var status_code: int = status(response);
+    println(fmt("  Status: {}", status_code));
+
+    if (status_code >= 200 && status_code < 300) {
+        locked (s: int in requests_success) {
+            s = s + 1;
+        }
+        println("  SUCCESS");
+    } else {
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        println(fmt("  FAILED: Unexpected status {}", status_code));
     }
-    println("  SUCCESS");
 }

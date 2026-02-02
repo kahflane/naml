@@ -11,7 +11,8 @@
 ///
 
 use std::threads::{join, open_channel, send, receive, with_mutex};
-use std::net::{listen, accept, read, write, close, local_addr, peer_addr};
+use std::net::tcp::listener::{listen, accept, close, local_addr};
+use std::net::tcp::client::{read, write, peer_addr};
 use std::strings::{len, ltrim, rtrim};
 
 fn main() {

@@ -268,11 +268,28 @@ pub unsafe extern "C" fn naml_net_http_response_set_headers(res: *mut NamlStruct
     }
 }
 
-/// Get response body
+/// Get response body as array (for internal/server use)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_response_get_body(res: *const NamlStruct) -> *mut NamlArray {
     unsafe {
         naml_std_core::naml_struct_get_field(res, response_fields::BODY) as *mut NamlArray
+    }
+}
+
+/// Get response body as bytes (for client use)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_net_http_response_get_body_bytes(res: *const NamlStruct) -> *mut NamlBytes {
+    unsafe {
+        let arr = naml_std_core::naml_struct_get_field(res, response_fields::BODY) as *const NamlArray;
+        if arr.is_null() {
+            return create_bytes_from(std::ptr::null(), 0);
+        }
+        let len = naml_std_core::naml_array_len(arr) as usize;
+        let mut bytes = Vec::with_capacity(len);
+        for i in 0..len {
+            bytes.push(naml_std_core::naml_array_get(arr, i as i64) as u8);
+        }
+        create_bytes_from(bytes.as_ptr(), bytes.len())
     }
 }
 

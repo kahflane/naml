@@ -5,14 +5,15 @@
 //!
 //! ## Functions
 //!
-//! - `naml_net_http_client_get` - HTTP GET request
-//! - `naml_net_http_client_post` - HTTP POST request
-//! - `naml_net_http_client_put` - HTTP PUT request
-//! - `naml_net_http_client_patch` - HTTP PATCH request
-//! - `naml_net_http_client_delete` - HTTP DELETE request
-//! - `naml_net_http_client_get_with_headers` - GET with custom headers
-//! - `naml_net_http_client_post_with_headers` - POST with custom headers
+//! - `naml_net_http_client_get` - HTTP GET request with optional headers
+//! - `naml_net_http_client_post` - HTTP POST request with optional headers
+//! - `naml_net_http_client_put` - HTTP PUT request with optional headers
+//! - `naml_net_http_client_patch` - HTTP PATCH request with optional headers
+//! - `naml_net_http_client_delete` - HTTP DELETE request with optional headers
 //! - `naml_net_http_client_set_timeout` - Set default timeout
+//!
+//! All HTTP methods accept an optional headers parameter (`option<map<string, string>>`).
+//! Pass `none` to use default headers, or `some(headers_map)` to set custom headers.
 //!
 //! ## Note
 //!
@@ -29,6 +30,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use tokio::runtime::Runtime;
 
+use naml_std_collections::{MapEntry, NamlMap};
 use naml_std_core::{NamlBytes, NamlString, NamlStruct};
 
 use super::types::{
@@ -47,6 +49,77 @@ unsafe fn bytes_to_vec(bytes: *const NamlBytes) -> Vec<u8> {
         std::slice::from_raw_parts(data, len).to_vec()
     }
 }
+
+/// Represents an option struct layout:
+/// - offset 0: tag (i32) - 0 = none, 1 = some
+/// - offset 8: value (i64) - the actual value pointer when some
+#[repr(C)]
+struct NamlOption {
+    tag: i32,
+    _padding: i32,
+    value: i64,
+}
+
+/// Helper to extract headers from an option<map<string, string>>
+/// Returns a Vec of (header_name, header_value) pairs
+unsafe fn extract_headers(headers_opt: *const NamlOption) -> Vec<(String, String)> {
+    if headers_opt.is_null() {
+        return Vec::new();
+    }
+
+    unsafe {
+        // Check if it's none (tag == 0)
+        let tag = (*headers_opt).tag;
+        if tag == 0 {
+            return Vec::new();
+        }
+
+        // It's some, extract the map pointer from the value field
+        let map = (*headers_opt).value as *const NamlMap;
+        if map.is_null() {
+            return Vec::new();
+        }
+
+        let mut result = Vec::new();
+
+        // Iterate over map entries
+        let capacity = (*map).capacity;
+        let entries = (*map).entries;
+
+        // Sanity check to prevent huge allocations
+        if capacity > 10000 {
+            return Vec::new();
+        }
+
+        for i in 0..capacity {
+            let entry = entries.add(i);
+
+            if (*entry).occupied {
+                // Key and value are pointers to NamlString
+                let key_ptr = (*entry).key as *const NamlString;
+                let val_ptr = (*entry).value as *const NamlString;
+
+                if !key_ptr.is_null() && !val_ptr.is_null() {
+                    // Validate string lengths to detect corrupted pointers
+                    let key_len = (*key_ptr).len;
+                    let val_len = (*val_ptr).len;
+
+                    if key_len > 10000 || val_len > 10000 {
+                        // Skip entries with invalid string lengths
+                        continue;
+                    }
+
+                    let key_str = (*key_ptr).as_str().to_string();
+                    let val_str = (*val_ptr).as_str().to_string();
+                    result.push((key_str, val_str));
+                }
+            }
+        }
+
+        result
+    }
+}
+
 use crate::errors::{string_from_naml, throw_network_error, throw_timeout_error};
 
 /// Default timeout in milliseconds (30 seconds)
@@ -76,6 +149,7 @@ fn do_request(
     method: &str,
     url: &str,
     body: Option<Vec<u8>>,
+    custom_headers: Vec<(String, String)>,
 ) -> *mut NamlStruct {
     let timeout_ms = DEFAULT_TIMEOUT_MS.load(Ordering::SeqCst);
     let timeout = Duration::from_millis(timeout_ms);
@@ -95,13 +169,20 @@ fn do_request(
         let client: Client<_, Full<Bytes>> =
             Client::builder(TokioExecutor::new()).build_http();
 
-        // Build request
+        // Build request with default headers
         let body_bytes = body.unwrap_or_default();
-        let req = Request::builder()
+        let mut req_builder = Request::builder()
             .method(method_clone.as_str())
             .uri(uri)
             .header("User-Agent", "naml-http-client/0.1")
-            .header("Accept", "*/*")
+            .header("Accept", "*/*");
+
+        // Add custom headers (they can override defaults)
+        for (name, value) in custom_headers {
+            req_builder = req_builder.header(name, value);
+        }
+
+        let req = req_builder
             .body(Full::new(Bytes::from(body_bytes)))
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))?;
 
@@ -150,75 +231,66 @@ fn do_request(
     }
 }
 
-/// HTTP GET request
+/// HTTP GET request with optional headers
+/// headers_opt is a pointer to option<map<string, string>> (opaque)
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_net_http_client_get(url: *const NamlString) -> *mut NamlStruct {
+pub unsafe extern "C" fn naml_net_http_client_get(
+    url: *const NamlString,
+    headers_opt: *const u8,
+) -> *mut NamlStruct {
     let url_str = unsafe { string_from_naml(url) };
-    do_request("GET", &url_str, None)
+    let headers = unsafe { extract_headers(headers_opt as *const NamlOption) };
+    do_request("GET", &url_str, None, headers)
 }
 
-/// HTTP POST request
+/// HTTP POST request with optional headers
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_client_post(
     url: *const NamlString,
     body: *const NamlBytes,
+    headers_opt: *const u8,
 ) -> *mut NamlStruct {
     let url_str = unsafe { string_from_naml(url) };
     let body_bytes = unsafe { bytes_to_vec(body) };
-    do_request("POST", &url_str, Some(body_bytes))
+    let headers = unsafe { extract_headers(headers_opt as *const NamlOption) };
+    do_request("POST", &url_str, Some(body_bytes), headers)
 }
 
-/// HTTP PUT request
+/// HTTP PUT request with optional headers
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_client_put(
     url: *const NamlString,
     body: *const NamlBytes,
+    headers_opt: *const u8,
 ) -> *mut NamlStruct {
     let url_str = unsafe { string_from_naml(url) };
     let body_bytes = unsafe { bytes_to_vec(body) };
-    do_request("PUT", &url_str, Some(body_bytes))
+    let headers = unsafe { extract_headers(headers_opt as *const NamlOption) };
+    do_request("PUT", &url_str, Some(body_bytes), headers)
 }
 
-/// HTTP PATCH request
+/// HTTP PATCH request with optional headers
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_client_patch(
     url: *const NamlString,
     body: *const NamlBytes,
+    headers_opt: *const u8,
 ) -> *mut NamlStruct {
     let url_str = unsafe { string_from_naml(url) };
     let body_bytes = unsafe { bytes_to_vec(body) };
-    do_request("PATCH", &url_str, Some(body_bytes))
+    let headers = unsafe { extract_headers(headers_opt as *const NamlOption) };
+    do_request("PATCH", &url_str, Some(body_bytes), headers)
 }
 
-/// HTTP DELETE request
+/// HTTP DELETE request with optional headers
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_net_http_client_delete(url: *const NamlString) -> *mut NamlStruct {
-    let url_str = unsafe { string_from_naml(url) };
-    do_request("DELETE", &url_str, None)
-}
-
-/// HTTP GET request with custom headers
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_net_http_client_get_with_headers(
+pub unsafe extern "C" fn naml_net_http_client_delete(
     url: *const NamlString,
-    _headers: i64,
+    headers_opt: *const u8,
 ) -> *mut NamlStruct {
-    // TODO: Parse headers map and add to request
     let url_str = unsafe { string_from_naml(url) };
-    do_request("GET", &url_str, None)
-}
-
-/// HTTP POST request with custom headers
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_net_http_client_post_with_headers(
-    url: *const NamlString,
-    body: *const NamlBytes,
-    _headers: i64,
-) -> *mut NamlStruct {
-    // TODO: Parse headers map and add to request
-    let url_str = unsafe { string_from_naml(url) };
-    let body_bytes = unsafe { bytes_to_vec(body) };
-    do_request("POST", &url_str, Some(body_bytes))
+    let headers = unsafe { extract_headers(headers_opt as *const NamlOption) };
+    do_request("DELETE", &url_str, None, headers)
 }
 
 #[cfg(test)]
@@ -239,7 +311,13 @@ mod tests {
     fn test_invalid_url() {
         unsafe {
             let url = naml_string_new(b"not-a-valid-url".as_ptr(), 15);
-            let result = naml_net_http_client_get(url);
+            // Create a none option (tag = 0)
+            let none_opt = NamlOption {
+                tag: 0,
+                _padding: 0,
+                value: 0,
+            };
+            let result = naml_net_http_client_get(url, &none_opt as *const NamlOption as *const u8);
             assert!(result.is_null(), "Should fail with invalid URL");
         }
     }

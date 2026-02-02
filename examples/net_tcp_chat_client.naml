@@ -10,7 +10,7 @@
 ///
 
 use std::threads::{join, with_mutex};
-use std::net::{connect, read, write, close, peer_addr};
+use std::net::tcp::client::{connect, read, write, close, peer_addr};
 use std::strings::{len, rtrim};
 
 fn main() {

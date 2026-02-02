@@ -391,7 +391,8 @@ impl<'a> TypeChecker<'a> {
             })
             .collect();
 
-        let module = module_name.split("::").last().map(String::from);
+        // Use full module path for qualified function lookup in codegen
+        let module = Some(module_name.to_string());
 
         Some(FunctionSig {
             name: spur,
@@ -891,13 +892,21 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_net_http_client_functions() -> Vec<StdModuleFn> {
+        // Headers type: option<map<string, string>>
+        let headers_type = Type::Option(Box::new(Type::Map(
+            Box::new(Type::String),
+            Box::new(Type::String),
+        )));
         vec![
-            StdModuleFn::throwing("get", vec![("url", Type::String)], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("post", vec![("url", Type::String), ("body", Type::Bytes)], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("put", vec![("url", Type::String), ("body", Type::Bytes)], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("patch", vec![("url", Type::String), ("body", Type::Bytes)], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("delete", vec![("url", Type::String)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("get", vec![("url", Type::String), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("post", vec![("url", Type::String), ("body", Type::Bytes), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("put", vec![("url", Type::String), ("body", Type::Bytes), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("patch", vec![("url", Type::String), ("body", Type::Bytes), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing("delete", vec![("url", Type::String), ("headers", headers_type)], Type::Int, vec!["NetworkError", "TimeoutError"]),
             StdModuleFn::new("set_timeout", vec![("ms", Type::Int)], Type::Unit),
+            // Response accessors
+            StdModuleFn::new("status", vec![("response", Type::Int)], Type::Int),
+            StdModuleFn::new("body", vec![("response", Type::Int)], Type::Bytes),
         ]
     }
 
@@ -933,8 +942,8 @@ impl<'a> TypeChecker<'a> {
             "collections" => Some(vec!["arrays", "maps"]),
             "encoding" => Some(vec!["utf8", "hex", "base64", "url", "json"]),
             "net" => Some(vec!["tcp", "udp", "http"]),
-            "net::tcp" => Some(vec!["server", "client"]),
-            "net::http" => Some(vec!["client", "server", "middleware"]),
+            "net::tcp" => Some(vec!["listener", "client"]),
+            "net::http" => Some(vec!["client", "serve", "middleware"]),
             _ => None,
         }
     }
@@ -1066,20 +1075,17 @@ impl<'a> TypeChecker<'a> {
             "encoding::base64" => Some(Self::get_encoding_base64_functions()),
             "encoding::url" => Some(Self::get_encoding_url_functions()),
             "encoding::json" => Some(Self::get_encoding_json_functions()),
-            // Net module and submodules
-            "net" | "net::tcp" | "net::udp" | "net::http" => {
-                let mut fns = Self::get_net_tcp_server_functions();
-                fns.extend(Self::get_net_tcp_client_functions());
-                fns.extend(Self::get_net_udp_functions());
-                fns.extend(Self::get_net_http_client_functions());
-                fns.extend(Self::get_net_http_server_functions());
-                fns.extend(Self::get_net_http_middleware_functions());
-                Some(fns)
-            }
-            "net::tcp::server" => Some(Self::get_net_tcp_server_functions()),
+            // Net module hierarchy - strict: parent modules expose only submodules, not functions
+            // Parent modules - no functions, only submodules
+            "net" => Some(vec![]),
+            "net::tcp" => Some(vec![]),
+            "net::http" => Some(vec![]),
+            // Leaf modules - specific functions only
+            "net::udp" => Some(Self::get_net_udp_functions()),
+            "net::tcp::listener" => Some(Self::get_net_tcp_server_functions()),
             "net::tcp::client" => Some(Self::get_net_tcp_client_functions()),
             "net::http::client" => Some(Self::get_net_http_client_functions()),
-            "net::http::server" => Some(Self::get_net_http_server_functions()),
+            "net::http::serve" => Some(Self::get_net_http_server_functions()),
             "net::http::middleware" => Some(Self::get_net_http_middleware_functions()),
             _ => None,
         }
@@ -1181,7 +1187,7 @@ impl<'a> TypeChecker<'a> {
                             is_public: true,
                             is_variadic: *is_variadic,
                             span: crate::source::Span::dummy(),
-                            module: None,
+                            module: Some(path.join("::")),
                         };
                         self.symbols.register_module(module_spur).add_function(sig.clone());
                         // For wildcard imports, just mark ambiguous (allows qualified use)
@@ -1215,7 +1221,7 @@ impl<'a> TypeChecker<'a> {
                                 is_public: true,
                                 is_variadic: *is_variadic,
                                 span: crate::source::Span::dummy(),
-                                module: None, 
+                                module: Some(path.join("::")),
                             };
                             self.symbols.register_module(module_spur).add_function(sig.clone());
                             // Check for duplicate imports and emit error

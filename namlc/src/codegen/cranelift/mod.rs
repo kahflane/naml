@@ -1111,6 +1111,9 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_net_http_client_patch", crate::runtime::naml_net_http_client_patch as *const u8);
         builder.symbol("naml_net_http_client_delete", crate::runtime::naml_net_http_client_delete as *const u8);
         builder.symbol("naml_net_http_client_set_timeout", crate::runtime::naml_net_http_client_set_timeout as *const u8);
+        // HTTP Response accessors
+        builder.symbol("naml_net_http_response_get_status", crate::runtime::naml_net_http_response_get_status as *const u8);
+        builder.symbol("naml_net_http_response_get_body_bytes", crate::runtime::naml_net_http_response_get_body_bytes as *const u8);
 
         // HTTP Server
         builder.symbol("naml_net_http_server_open_router", crate::runtime::naml_net_http_server_open_router as *const u8);
@@ -2967,13 +2970,16 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_close", &[i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_local_addr", &[i64t], &[ptr])?;
 
-        // HTTP Client
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_get", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_post", &[ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_put", &[ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_patch", &[ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_delete", &[ptr], &[ptr])?;
+        // HTTP Client (all methods accept optional headers: url, [body], headers)
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_get", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_post", &[ptr, ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_put", &[ptr, ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_patch", &[ptr, ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_delete", &[ptr, ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_set_timeout", &[i64t], &[])?;
+        // HTTP Response accessors
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_response_get_status", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_response_get_body_bytes", &[ptr], &[ptr])?;
 
         // HTTP Server
         declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_open_router", &[], &[i64t])?;
