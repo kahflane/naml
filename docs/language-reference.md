@@ -1097,36 +1097,54 @@ switch (result) {
 
 ## Modules and Imports
 
-### Standard Library Modules
+naml uses a hierarchical module system where files and directories map to modules.
 
-Import standard library modules with `use std::<module>::*;` or specific items:
+### Declaring Modules
 
+Use the `mod` keyword to declare submodules. 
+
+**File-based modules**:
 ```naml
-use std::random::*;         // random(min, max), random_float()
-use std::io::*;             // read_key(), clear_screen(), set_cursor(), etc.
-use std::threads::*;        // open_channel(), join()
+// In main.naml
+mod math;        // Looks for math.naml or math/mod.naml in the same directory
+mod network;     // Looks for network.naml or network/mod.naml
 ```
 
-Specific imports:
-
+**Inline modules**:
 ```naml
-use std::random::{random};
-use std::threads::{open_channel, join};
+mod utils {
+    pub fn helper() {
+        println("Helper function");
+    }
+}
 ```
 
-### Local Modules
+### Module Paths
 
-Import functions from other `.naml` files in the same directory:
+Paths use `::` as a separator to traverse the module hierarchy:
 
+- `std::io::println` - Absolute path from standard library
+- `self::item` - Reference item in the current module
+- `super::item` - Reference item in the parent module
+- `::item` - Absolute path starting from the root module
+
+### Use Statements
+
+Import functions, structs, enums, interfaces, and exceptions into the current scope:
+
+**Wildcard imports**:
 ```naml
-// Imports all pub fn from ./math.naml
+use std::io::*;
 use math::*;
-
-// Import specific functions
-use helpers::{validate, format_output};
 ```
 
-Only `pub fn` declarations (without receivers) are importable from local modules. Structs, enums, and methods cannot be imported.
+**Specific imports with aliases**:
+```naml
+use std::collections::arrays::{push, count};
+use network::tcp::Client as TcpClient; // Alias support
+```
+
+All public items (marked with `pub`) are eligible for import and cross-module usage.
 
 ---
 

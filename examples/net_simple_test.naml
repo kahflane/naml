@@ -2,7 +2,7 @@
 /// Simple TCP Test - Minimal networking test
 ///
 
-use std::net::{connect, read, write, close};
+use std::net::tcp::client::{connect, read, write, close};
 
 fn main() {
     println("=== Simple TCP Test ===");

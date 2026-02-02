@@ -166,6 +166,14 @@ pub fn walk_item<'ast, V: Visitor<'ast>>(v: &mut V, item: &Item<'ast>) {
         Item::TopLevelStmt(s) => {
             v.visit_stmt(&s.stmt);
         }
+        Item::Mod(m) => {
+            v.visit_ident(&m.name);
+            if let Some(ref body) = m.body {
+                for item in body {
+                    v.visit_item(item);
+                }
+            }
+        }
     }
 }
 

@@ -26,7 +26,7 @@ pub mod unify;
 
 use std::path::PathBuf;
 
-use lasso::Rodeo;
+use lasso::{Rodeo, Spur};
 
 use crate::ast::{self, Item, SourceFile, UseItems};
 use crate::source::Span;
@@ -78,15 +78,46 @@ pub(crate) struct StdModuleFn {
 
 impl StdModuleFn {
     fn new(name: &'static str, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
-        Self { name, type_params: vec![], params, return_ty, throws: vec![], is_variadic: false }
+        Self {
+            name,
+            type_params: vec![],
+            params,
+            return_ty,
+            throws: vec![],
+            is_variadic: false,
+        }
     }
 
-    fn throwing(name: &'static str, params: Vec<(&'static str, Type)>, return_ty: Type, throws: Vec<&'static str>) -> Self {
-        Self { name, type_params: vec![], params, return_ty, throws, is_variadic: false }
+    fn throwing(
+        name: &'static str,
+        params: Vec<(&'static str, Type)>,
+        return_ty: Type,
+        throws: Vec<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            type_params: vec![],
+            params,
+            return_ty,
+            throws,
+            is_variadic: false,
+        }
     }
 
-    fn generic(name: &'static str, type_params: Vec<&'static str>, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
-        Self { name, type_params, params, return_ty, throws: vec![], is_variadic: false }
+    fn generic(
+        name: &'static str,
+        type_params: Vec<&'static str>,
+        params: Vec<(&'static str, Type)>,
+        return_ty: Type,
+    ) -> Self {
+        Self {
+            name,
+            type_params,
+            params,
+            return_ty,
+            throws: vec![],
+            is_variadic: false,
+        }
     }
 }
 
@@ -113,6 +144,7 @@ impl<'a> TypeChecker<'a> {
     fn register_builtins(&mut self) {
         use crate::source::Span;
 
+        // Common functions in root
         let builtins: Vec<(&str, bool, Type)> = vec![
             ("print", true, Type::Unit),
             ("println", true, Type::Unit),
@@ -139,7 +171,7 @@ impl<'a> TypeChecker<'a> {
             }
         }
 
-        // Register sleep(ms: int) -> Unit
+        // Register sleep(ms: int) -> Unit in root
         if let Some(spur) = self.interner.get("sleep") {
             self.symbols.define_function(FunctionSig {
                 name: spur,
@@ -154,6 +186,129 @@ impl<'a> TypeChecker<'a> {
             });
         }
 
+        // Register standard exceptions
+        let io_error_name = self.interner.get_or_intern("IOError");
+        let msg_name = self.interner.get_or_intern("message");
+        let path_name = self.interner.get_or_intern("path");
+        let code_name = self.interner.get_or_intern("code");
+
+        self.symbols.define_type(
+            io_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: io_error_name,
+                fields: vec![
+                    (msg_name, Type::String),
+                    (path_name, Type::String),
+                    (code_name, Type::Int),
+                ],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
+        let decode_error_name = self.interner.get_or_intern("DecodeError");
+        self.symbols.define_type(
+            decode_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: decode_error_name,
+                fields: vec![(msg_name, Type::String)],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
+        let path_error_name = self.interner.get_or_intern("PathError");
+        self.symbols.define_type(
+            path_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: path_error_name,
+                fields: vec![(msg_name, Type::String)],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
+        let network_error_name = self.interner.get_or_intern("NetworkError");
+        self.symbols.define_type(
+            network_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: network_error_name,
+                fields: vec![(msg_name, Type::String)],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
+        let timeout_error_name = self.interner.get_or_intern("TimeoutError");
+        self.symbols.define_type(
+            timeout_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: timeout_error_name,
+                fields: vec![(msg_name, Type::String)],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
+        self.register_std_lib();
+    }
+
+    fn register_std_lib(&mut self) {
+        let std_spur = self.interner.get_or_intern("std");
+        self.symbols.enter_module(std_spur);
+
+        // Populate std submodules from get_std_module_functions_impl
+        let modules = vec![
+            "random",
+            "io",
+            "threads",
+            "datetime",
+            "metrics",
+            "strings",
+            "collections",
+            "collections::arrays",
+            "collections::maps",
+            "fs",
+            "path",
+            "encoding",
+            "encoding::utf8",
+            "encoding::hex",
+            "encoding::base64",
+            "encoding::url",
+            "encoding::json",
+            "net",
+            "net::tcp",
+            "net::tcp::server",
+            "net::tcp::client",
+            "net::udp",
+            "net::http",
+            "net::http::client",
+            "net::http::server",
+            "net::http::middleware",
+        ];
+
+        for module in modules {
+            if let Some(fns) = get_std_module_functions(module) {
+                // Split module name into components for hierarchical entry
+                let parts: Vec<&str> = module.split("::").collect();
+                for &part in &parts {
+                    let part_spur = self.interner.get_or_intern(part);
+                    self.symbols.enter_module(part_spur);
+                }
+
+                for module_fn in fns {
+                    if let Some(sig) = self.create_std_fn_sig(&module_fn, module) {
+                        self.symbols.define_function(sig);
+                    }
+                }
+
+                for _ in &parts {
+                    self.symbols.exit_module();
+                }
+            }
+        }
+
+        self.symbols.exit_module(); // exit std
     }
 
     pub fn check(&mut self, file: &SourceFile) -> Vec<TypeError> {
@@ -164,7 +319,9 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn validate_interface_implementations(&mut self) {
-        let structs: Vec<_> = self.symbols.all_types()
+        let structs: Vec<_> = self
+            .symbols
+            .all_types()
             .filter_map(|(_, def)| {
                 if let TypeDef::Struct(s) = def {
                     Some(s.clone())
@@ -189,7 +346,9 @@ impl<'a> TypeChecker<'a> {
 
                 for required_method in &interface_def.methods {
                     let method_name_str = self.interner.resolve(&required_method.name);
-                    let has_method = self.symbols.get_method(struct_def.name, required_method.name);
+                    let has_method = self
+                        .symbols
+                        .get_method(struct_def.name, required_method.name);
 
                     if has_method.is_none() {
                         let struct_name = self.interner.resolve(&struct_def.name).to_string();
@@ -208,174 +367,253 @@ impl<'a> TypeChecker<'a> {
 
     fn collect_definitions(&mut self, file: &SourceFile) {
         for item in &file.items {
-            match item {
-                Item::Function(func) => {
-                    if func.receiver.is_some() {
-                        self.collect_method(func);
-                    } else {
-                        self.collect_function(func);
-                    }
-                }
-                Item::Struct(s) => self.collect_struct(s),
-                Item::Enum(e) => self.collect_enum(e),
-                Item::Interface(i) => self.collect_interface(i),
-                Item::Exception(e) => self.collect_exception(e),
-                Item::Extern(e) => self.collect_extern(e),
-                Item::Use(u) => self.resolve_use_item(u),
-                Item::TypeAlias(a) => self.collect_type_alias(a),
-                Item::TopLevelStmt(_) => {}
-            }
+            self.collect_item_definition(item);
         }
     }
 
-    fn resolve_use_item(&mut self, use_item: &ast::UseItem) {
-        let path_strs: Vec<String> = use_item.path.iter()
-            .map(|ident| self.interner.resolve(&ident.symbol).to_string())
-            .collect();
-
-        if path_strs.is_empty() {
-            return;
-        }
-
-        if path_strs[0] == "std" {
-            if path_strs.len() < 2 {
-                self.errors.push(TypeError::UnknownModule {
-                    path: path_strs.join("::"),
-                    span: use_item.span,
-                });
-                return;
+    fn collect_item_definition(&mut self, item: &Item) {
+        match item {
+            Item::Function(func) => {
+                if func.receiver.is_some() {
+                    self.collect_method(func);
+                } else {
+                    self.collect_function(func);
+                }
             }
-            let module_path = path_strs[1..].join("::");
-            // Pass the Spurs from the path for module alias registration
-            let path_spurs: Vec<_> = use_item.path.iter().map(|i| i.symbol).collect();
-            self.resolve_std_module(&module_path, &path_spurs[1..], &use_item.items, use_item.span);
+            Item::Struct(s) => self.collect_struct(s),
+            Item::Enum(e) => self.collect_enum(e),
+            Item::Interface(i) => self.collect_interface(i),
+            Item::Exception(e) => self.collect_exception(e),
+            Item::Use(u) => self.resolve_use_item(u),
+            Item::Extern(e) => self.collect_extern(e),
+            Item::TypeAlias(a) => self.collect_type_alias(a),
+            Item::Mod(m) => self.collect_mod(m),
+            Item::TopLevelStmt(_) => {}
+        }
+    }
+
+    fn collect_mod(&mut self, m: &ast::ModuleItem) {
+        let name_spur = m.name.symbol;
+        self.symbols.enter_module(name_spur);
+        if let Some(ref items) = m.body {
+            for item in items {
+                self.collect_item_definition(item);
+            }
         } else {
-            self.resolve_local_module(&path_strs, &use_item.items, use_item.span);
+            self.collect_local_module_as_mod(name_spur, m.span);
         }
+        self.symbols.exit_module();
     }
 
-    fn resolve_std_module(&mut self, module: &str, path_spurs: &[lasso::Spur], items: &UseItems, span: crate::source::Span) {
-        // Check if this is a parent module with sub-modules
-        // If so and using wildcard import, recursively resolve each sub-module
-        if let Some(sub_modules) = Self::get_std_submodules(module) {
-            if matches!(items, UseItems::All) {
-                for sub_module in sub_modules {
-                    let full_path = format!("{}::{}", module, sub_module);
-                    let sub_spur = self.interner.get_or_intern(sub_module);
-                    let mut sub_path_spurs = path_spurs.to_vec();
-                    sub_path_spurs.push(sub_spur);
-                    self.resolve_std_module(&full_path, &sub_path_spurs, items, span);
-                }
-                return;
-            }
-        }
-
-        let module_fns = match get_std_module_functions(module) {
-            Some(fns) => fns,
+    fn collect_local_module_as_mod(&mut self, name: Spur, span: Span) {
+        let name_str = self.interner.resolve(&name).to_string();
+        let source_dir = match &self.source_dir {
+            Some(d) => d.clone(),
             None => {
-                self.errors.push(TypeError::UnknownModule {
-                    path: format!("std::{}", module),
+                self.errors.push(TypeError::ModuleFileError {
+                    path: name_str,
+                    reason: "no source directory".to_string(),
                     span,
                 });
                 return;
             }
         };
 
-        let module_spur = self.interner.get_or_intern(module);
+        let mut file_path = source_dir.clone();
+        file_path.push(&name_str);
+        file_path.set_extension("naml");
 
-        // Get the last segment's Spur as a short alias for qualified calls
-        // e.g., for "use std::collections::arrays::*", allow "arrays::count(...)"
-        let short_alias_spur = if path_spurs.len() > 1 {
-            Some(path_spurs[path_spurs.len() - 1])
-        } else {
-            None
+        if !file_path.exists() {
+            file_path = source_dir;
+            file_path.push(&name_str);
+            file_path.push("mod.naml");
+        }
+
+        if !file_path.exists() {
+            self.errors.push(TypeError::ModuleFileError {
+                path: name_str,
+                reason: "file not found".to_string(),
+                span,
+            });
+            return;
+        }
+
+        let source_text = match std::fs::read_to_string(&file_path) {
+            Ok(s) => s,
+            Err(e) => {
+                self.errors.push(TypeError::ModuleFileError {
+                    path: file_path.display().to_string(),
+                    reason: e.to_string(),
+                    span,
+                });
+                return;
+            }
         };
 
-        // Register module-specific exception types
-        self.register_std_module_exceptions(module);
+        let tokens = crate::lexer::tokenize_with_interner(&source_text, self.interner);
+        let arena = crate::ast::AstArena::new();
+        let parse_result = crate::parser::parse(&tokens, &source_text, &arena);
 
-        match items {
-            UseItems::All => {
-                for module_fn in &module_fns {
-                    let sig = self.create_std_fn_sig(module_fn, module);
-                    if let Some(ref sig) = sig {
-                        self.symbols.register_module(module_spur).add_function(sig.clone());
-                        if let Some(alias_spur) = short_alias_spur {
-                            self.symbols.register_module(alias_spur).add_function(sig.clone());
-                        }
-                        // For wildcard imports, just mark ambiguous (allows qualified use)
-                        if self.symbols.has_function(sig.name) {
-                            self.symbols.mark_ambiguous(sig.name);
-                        } else {
-                            self.symbols.define_function(sig.clone());
-                        }
-                    }
+        if !parse_result.errors.is_empty() {
+            self.errors.push(TypeError::ModuleFileError {
+                path: file_path.display().to_string(),
+                reason: "parse errors in module file".to_string(),
+                span,
+            });
+            return;
+        }
+
+        let old_dir = self.source_dir.clone();
+        if let Some(parent) = file_path.parent() {
+            self.source_dir = Some(parent.to_path_buf());
+        }
+
+        for item in &parse_result.ast.items {
+            self.collect_item_definition(item);
+        }
+
+        self.source_dir = old_dir;
+
+        self.imported_modules.push(ImportedModule {
+            source_text,
+            file_path,
+        });
+    }
+
+    fn resolve_use_item(&mut self, use_item: &ast::UseItem) {
+        let path_spurs: Vec<Spur> = use_item.path.iter().map(|i| i.symbol).collect();
+        if path_spurs.is_empty() {
+            return;
+        }
+
+        let mut functions_to_import = Vec::new();
+        let mut types_to_import = Vec::new();
+        let mut submodules_to_import = Vec::new();
+        let mut import_errors = Vec::new();
+        let mut resolved_module_found = false;
+
+        {
+            // Immutable borrow scope
+            let mut curr_module = &self.symbols.root;
+            let mut resolved = true;
+
+            for &seg in &path_spurs {
+                if let Some(sub) = curr_module.get_submodule(seg) {
+                    curr_module = sub;
+                } else {
+                    resolved = false;
+                    break;
                 }
             }
-            UseItems::Specific(entries) => {
-                for entry in entries {
-                    let entry_name = self.interner.resolve(&entry.name.symbol).to_string();
-                    let found = module_fns.iter().find(|f| f.name == entry_name);
-                    match found {
-                        Some(module_fn) => {
-                            let sig = self.create_std_fn_sig(module_fn, module);
-                            if let Some(ref sig) = sig {
-                                self.symbols.register_module(module_spur).add_function(sig.clone());
-                                // Also register under the short alias
-                                if let Some(alias_spur) = short_alias_spur {
-                                    self.symbols.register_module(alias_spur).add_function(sig.clone());
-                                }
-                                // Check for duplicate imports and emit error
-                                if self.symbols.has_function(sig.name) {
-                                    self.symbols.mark_ambiguous(sig.name);
-                                    self.errors.push(TypeError::DuplicateImport {
-                                        name: entry_name.clone(),
-                                        span: entry.span,
-                                    });
-                                } else {
-                                    self.symbols.define_function(sig.clone());
-                                }
-                            }
+
+            if resolved {
+                resolved_module_found = true;
+                match &use_item.items {
+                    UseItems::All => {
+                        for sig in curr_module.all_functions() {
+                            functions_to_import.push(sig.clone());
                         }
-                        None => {
-                            // Check if this is a submodule
-                            if let Some(sub_modules) = Self::get_std_submodules(module) {
-                                if sub_modules.contains(&entry_name.as_str()) {
-                                    // This is a submodule import, resolve it as a module
-                                    let full_path = format!("{}::{}", module, entry_name);
-                                    let sub_spur = self.interner.get_or_intern(&entry_name);
-                                    let mut sub_path_spurs = path_spurs.to_vec();
-                                    sub_path_spurs.push(sub_spur);
-                                    self.resolve_std_module(&full_path, &sub_path_spurs, &UseItems::All, entry.span);
-                                    continue;
-                                }
+                        for (name, def) in curr_module.all_types() {
+                            types_to_import.push((*name, def.clone()));
+                        }
+                        for (name, sub) in curr_module.all_submodules() {
+                            submodules_to_import.push((*name, sub.clone()));
+                        }
+                    }
+                    UseItems::Specific(entries) => {
+                        for entry in entries {
+                            let name = entry.name.symbol;
+                            let import_name =
+                                entry.alias.as_ref().map(|a| a.symbol).unwrap_or(name);
+                            let mut found = false;
+
+                            if let Some(sig) = curr_module.get_function(name) {
+                                let mut sig = sig.clone();
+                                sig.name = import_name;
+                                functions_to_import.push(sig);
+                                found = true;
                             }
-                            self.errors.push(TypeError::UnknownModuleSymbol {
-                                module: format!("std::{}", module),
-                                symbol: entry_name,
-                                span: entry.span,
-                            });
+                            if let Some(def) = curr_module.get_type(name) {
+                                types_to_import.push((import_name, def.clone()));
+                                found = true;
+                            }
+
+                            if !found {
+                                let name_str = self.interner.resolve(&name).to_string();
+                                let module_name =
+                                    self.interner.resolve(&curr_module.name).to_string();
+                                import_errors.push(TypeError::UnknownModuleSymbol {
+                                    module: module_name,
+                                    symbol: name_str,
+                                    span: entry.span,
+                                });
+                            }
                         }
                     }
                 }
             }
         }
+
+        if resolved_module_found {
+            // Perform the actual imports
+            for sig in functions_to_import {
+                self.symbols.define_function(sig);
+            }
+            for (name, def) in types_to_import {
+                self.symbols.define_type(name, def);
+            }
+            for (name, sub) in submodules_to_import {
+                self.symbols.define_module(name, sub);
+            }
+            for err in import_errors {
+                self.errors.push(err);
+            }
+        } else if path_spurs[0] == self.interner.get_or_intern("std") {
+            // Already tried pre-populated std, if not found then it's an error
+            let path_str = path_spurs
+                .iter()
+                .map(|&s| self.interner.resolve(&s))
+                .collect::<Vec<_>>()
+                .join("::");
+            self.errors.push(TypeError::UnknownModule {
+                path: path_str,
+                span: use_item.span,
+            });
+        } else {
+            // Fallback to local module resolution (which might load files)
+            let path_strs: Vec<String> = path_spurs
+                .iter()
+                .map(|&s| self.interner.resolve(&s).to_string())
+                .collect();
+            self.resolve_local_module(&path_strs, &use_item.items, use_item.span);
+        }
     }
 
-    fn create_std_fn_sig(&mut self, module_fn: &StdModuleFn, module_name: &str) -> Option<FunctionSig> {
+    fn create_std_fn_sig(
+        &mut self,
+        module_fn: &StdModuleFn,
+        module_name: &str,
+    ) -> Option<FunctionSig> {
         let spur = self.interner.get_or_intern(module_fn.name);
 
-        let type_params: Vec<_> = module_fn.type_params.iter()
+        let type_params: Vec<_> = module_fn
+            .type_params
+            .iter()
             .map(|tp_name| {
                 let tp_spur = self.interner.get_or_intern(tp_name);
-                TypeParam { name: tp_spur, bounds: vec![] }
+                TypeParam {
+                    name: tp_spur,
+                    bounds: vec![],
+                }
             })
             .collect();
 
         let mut return_ty = module_fn.return_ty.clone();
         Self::fix_default_generic_spur(&mut return_ty, &type_params);
 
-        let params: Vec<_> = module_fn.params.iter()
+        let params: Vec<_> = module_fn
+            .params
+            .iter()
             .map(|(pname, pty)| {
                 let pspur = self.interner.get_or_intern(pname);
                 let mut param_ty = pty.clone();
@@ -384,7 +622,9 @@ impl<'a> TypeChecker<'a> {
             })
             .collect();
 
-        let throws: Vec<_> = module_fn.throws.iter()
+        let throws: Vec<_> = module_fn
+            .throws
+            .iter()
             .map(|ex_name| {
                 let ex_spur = self.interner.get_or_intern(ex_name);
                 Type::Exception(ex_spur)
@@ -432,394 +672,1043 @@ impl<'a> TypeChecker<'a> {
 
     fn get_collections_array_functions() -> Vec<StdModuleFn> {
         vec![
-                // Basic functions (Go-style)
-                StdModuleFn::new("count", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Int),
-                StdModuleFn::new("push", vec![("arr", Type::Array(Box::new(Type::Int))), ("value", Type::Int)], Type::Unit),
-                StdModuleFn::new("pop", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("shift", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("fill", vec![("arr", Type::Array(Box::new(Type::Int))), ("value", Type::Int)], Type::Unit),
-                StdModuleFn::new("clear", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Unit),
-                StdModuleFn::new("get", vec![("arr", Type::Array(Box::new(Type::Int))), ("index", Type::Int)], Type::Option(Box::new(Type::Int))),
-                // Access functions
-                StdModuleFn::new("first", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("last", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-                // Aggregation
-                StdModuleFn::new("sum", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Int),
-                StdModuleFn::new("min", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("max", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-                // Transformation
-                StdModuleFn::new("reversed", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                // Slicing
-                StdModuleFn::new("take", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("drop", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("slice", vec![("arr", Type::Array(Box::new(Type::Int))), ("start", Type::Int), ("end", Type::Int)], Type::Array(Box::new(Type::Int))),
-                // Search
-                StdModuleFn::new("index_of", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("contains", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Bool),
-                // Lambda-based functions (predicate: fn(int) -> bool)
-                StdModuleFn::new("any", vec![
+            // Basic functions (Go-style)
+            StdModuleFn::new(
+                "count",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "push",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Bool),
-                StdModuleFn::new("all", vec![
+                    ("value", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "pop",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "shift",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "fill",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Bool),
-                StdModuleFn::new("count_if", vec![
+                    ("value", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "clear",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "get",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Int),
-                StdModuleFn::new("apply", vec![
+                    ("index", Type::Int),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            // Access functions
+            StdModuleFn::new(
+                "first",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "last",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            // Aggregation
+            StdModuleFn::new(
+                "sum",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "min",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "max",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            // Transformation
+            StdModuleFn::new(
+                "reversed",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            // Slicing
+            StdModuleFn::new(
+                "take",
+                vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "drop",
+                vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "slice",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("mapper", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("where", vec![
+                    ("start", Type::Int),
+                    ("end", Type::Int),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            // Search
+            StdModuleFn::new(
+                "index_of",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("find", vec![
+                    ("val", Type::Int),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "contains",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("find_index", vec![
+                    ("val", Type::Int),
+                ],
+                Type::Bool,
+            ),
+            // Lambda-based functions (predicate: fn(int) -> bool)
+            StdModuleFn::new(
+                "any",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("fold", vec![
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "all",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "count_if",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "apply",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "mapper",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Int),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "where",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "find",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "find_index",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "fold",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
                     ("initial", Type::Int),
-                    ("reducer", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
-                ], Type::Int),
-                StdModuleFn::new("flatten", vec![("arr", Type::Array(Box::new(Type::Array(Box::new(Type::Int)))))], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("sort", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("sort_by", vec![
+                    (
+                        "reducer",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int, Type::Int],
+                            returns: Box::new(Type::Int),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "flatten",
+                vec![(
+                    "arr",
+                    Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                )],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "sort",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "sort_by",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("comparator", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
-                // Mutation operations
-                StdModuleFn::new("insert", vec![("arr", Type::Array(Box::new(Type::Int))), ("index", Type::Int), ("value", Type::Int)], Type::Unit),
-                StdModuleFn::new("remove_at", vec![("arr", Type::Array(Box::new(Type::Int))), ("index", Type::Int)], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("remove", vec![("arr", Type::Array(Box::new(Type::Int))), ("value", Type::Int)], Type::Bool),
-                StdModuleFn::new("swap", vec![("arr", Type::Array(Box::new(Type::Int))), ("i", Type::Int), ("j", Type::Int)], Type::Unit),
-                // Deduplication
-                StdModuleFn::new("unique", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("compact", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                // Backward search
-                StdModuleFn::new("last_index_of", vec![("arr", Type::Array(Box::new(Type::Int))), ("val", Type::Int)], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("find_last", vec![
+                    (
+                        "comparator",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int, Type::Int],
+                            returns: Box::new(Type::Int),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            // Mutation operations
+            StdModuleFn::new(
+                "insert",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Option(Box::new(Type::Int))),
-                StdModuleFn::new("find_last_index", vec![
+                    ("index", Type::Int),
+                    ("value", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "remove_at",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Option(Box::new(Type::Int))),
-                // Array combination
-                StdModuleFn::new("concat", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("zip", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
-                StdModuleFn::new("unzip", vec![("arr", Type::Array(Box::new(Type::Array(Box::new(Type::Int)))))], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
-                // Splitting
-                StdModuleFn::new("chunk", vec![("arr", Type::Array(Box::new(Type::Int))), ("size", Type::Int)], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
-                StdModuleFn::new("partition", vec![
+                    ("index", Type::Int),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "remove",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
-                // Set operations
-                StdModuleFn::new("intersect", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("diff", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("union", vec![("arr1", Type::Array(Box::new(Type::Int))), ("arr2", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-                // Advanced iteration
-                StdModuleFn::new("take_while", vec![
+                    ("value", Type::Int),
+                ],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "swap",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("drop_while", vec![
+                    ("i", Type::Int),
+                    ("j", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            // Deduplication
+            StdModuleFn::new(
+                "unique",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "compact",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            // Backward search
+            StdModuleFn::new(
+                "last_index_of",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("reject", vec![
+                    ("val", Type::Int),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "find_last",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("predicate", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("flat_apply", vec![
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "find_last_index",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
-                    ("mapper", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Array(Box::new(Type::Int))), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
-                StdModuleFn::new("scan", vec![
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            // Array combination
+            StdModuleFn::new(
+                "concat",
+                vec![
+                    ("arr1", Type::Array(Box::new(Type::Int))),
+                    ("arr2", Type::Array(Box::new(Type::Int))),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "zip",
+                vec![
+                    ("arr1", Type::Array(Box::new(Type::Int))),
+                    ("arr2", Type::Array(Box::new(Type::Int))),
+                ],
+                Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+            ),
+            StdModuleFn::new(
+                "unzip",
+                vec![(
+                    "arr",
+                    Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                )],
+                Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+            ),
+            // Splitting
+            StdModuleFn::new(
+                "chunk",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    ("size", Type::Int),
+                ],
+                Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+            ),
+            StdModuleFn::new(
+                "partition",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+            ),
+            // Set operations
+            StdModuleFn::new(
+                "intersect",
+                vec![
+                    ("arr1", Type::Array(Box::new(Type::Int))),
+                    ("arr2", Type::Array(Box::new(Type::Int))),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "diff",
+                vec![
+                    ("arr1", Type::Array(Box::new(Type::Int))),
+                    ("arr2", Type::Array(Box::new(Type::Int))),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "union",
+                vec![
+                    ("arr1", Type::Array(Box::new(Type::Int))),
+                    ("arr2", Type::Array(Box::new(Type::Int))),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            // Advanced iteration
+            StdModuleFn::new(
+                "take_while",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "drop_while",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "reject",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "flat_apply",
+                vec![
+                    ("arr", Type::Array(Box::new(Type::Int))),
+                    (
+                        "mapper",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Array(Box::new(Type::Int))),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "scan",
+                vec![
                     ("arr", Type::Array(Box::new(Type::Int))),
                     ("initial", Type::Int),
-                    ("reducer", Type::Function(types::FunctionType { params: vec![Type::Int, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
-                ], Type::Array(Box::new(Type::Int))),
+                    (
+                        "reducer",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int, Type::Int],
+                            returns: Box::new(Type::Int),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Array(Box::new(Type::Int)),
+            ),
             // Random
-            StdModuleFn::new("shuffle", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-            StdModuleFn::new("sample", vec![("arr", Type::Array(Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
-            StdModuleFn::new("sample_n", vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)], Type::Array(Box::new(Type::Int))),
+            StdModuleFn::new(
+                "shuffle",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "sample",
+                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "sample_n",
+                vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)],
+                Type::Array(Box::new(Type::Int)),
+            ),
         ]
     }
 
     fn get_collections_map_functions() -> Vec<StdModuleFn> {
         vec![
             // Basic operations
-            StdModuleFn::new("count", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Int),
-            StdModuleFn::new("contains_key", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))), ("key", Type::String)], Type::Bool),
-            StdModuleFn::new("remove", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))), ("key", Type::String)], Type::Option(Box::new(Type::Int))),
-            StdModuleFn::new("clear", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Unit),
+            StdModuleFn::new(
+                "count",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "contains_key",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    ("key", Type::String),
+                ],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "remove",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    ("key", Type::String),
+                ],
+                Type::Option(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "clear",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Unit,
+            ),
             // Extraction
-            StdModuleFn::new("keys", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Array(Box::new(Type::String))),
-            StdModuleFn::new("values", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Array(Box::new(Type::Int))),
-            StdModuleFn::new("entries", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
+            StdModuleFn::new(
+                "keys",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::String)),
+            ),
+            StdModuleFn::new(
+                "values",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "entries",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+            ),
             // Lookup
-            StdModuleFn::new("first_key", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Option(Box::new(Type::String))),
-            StdModuleFn::new("first_value", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Option(Box::new(Type::Int))),
+            StdModuleFn::new(
+                "first_key",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::String)),
+            ),
+            StdModuleFn::new(
+                "first_value",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Option(Box::new(Type::Int)),
+            ),
             // Lambda-based functions
-            StdModuleFn::new("any", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-            ], Type::Bool),
-            StdModuleFn::new("all", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-            ], Type::Bool),
-            StdModuleFn::new("count_if", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-            ], Type::Int),
-            StdModuleFn::new("fold", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("initial", Type::Int),
-                ("reducer", Type::Function(types::FunctionType { params: vec![Type::Int, Type::String, Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
-            ], Type::Int),
+            StdModuleFn::new(
+                "any",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::String, Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "all",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::String, Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "count_if",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::String, Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "fold",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    ("initial", Type::Int),
+                    (
+                        "reducer",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int, Type::String, Type::Int],
+                            returns: Box::new(Type::Int),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Int,
+            ),
             // Transformation
-            StdModuleFn::new("transform", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("mapper", Type::Function(types::FunctionType { params: vec![Type::Int], returns: Box::new(Type::Int), throws: vec![], is_variadic: false })),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new(
+                "transform",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    (
+                        "mapper",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::Int],
+                            returns: Box::new(Type::Int),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
             // Filtering
-            StdModuleFn::new("where", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            StdModuleFn::new("reject", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("predicate", Type::Function(types::FunctionType { params: vec![Type::String, Type::Int], returns: Box::new(Type::Bool), throws: vec![], is_variadic: false })),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new(
+                "where",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::String, Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "reject",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    (
+                        "predicate",
+                        Type::Function(types::FunctionType {
+                            params: vec![Type::String, Type::Int],
+                            returns: Box::new(Type::Bool),
+                            throws: vec![],
+                            is_variadic: false,
+                        }),
+                    ),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
             // Combining
-            StdModuleFn::new("merge", vec![
-                ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            StdModuleFn::new("defaults", vec![
-                ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("defs", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            StdModuleFn::new("intersect", vec![
-                ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            StdModuleFn::new("diff", vec![
-                ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-                ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new(
+                "merge",
+                vec![
+                    ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "defaults",
+                vec![
+                    ("m", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    (
+                        "defs",
+                        Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                    ),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "intersect",
+                vec![
+                    ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "diff",
+                vec![
+                    ("a", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                    ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
             // Conversion
-            StdModuleFn::new("invert", vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))], Type::Map(Box::new(Type::Int), Box::new(Type::String))),
-            StdModuleFn::new("from_arrays", vec![
-                ("keys", Type::Array(Box::new(Type::String))),
-                ("values", Type::Array(Box::new(Type::Int))),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
-            StdModuleFn::new("from_entries", vec![
-                ("pairs", Type::Array(Box::new(Type::Array(Box::new(Type::Int))))),
-            ], Type::Map(Box::new(Type::String), Box::new(Type::Int))),
+            StdModuleFn::new(
+                "invert",
+                vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
+                Type::Map(Box::new(Type::Int), Box::new(Type::String)),
+            ),
+            StdModuleFn::new(
+                "from_arrays",
+                vec![
+                    ("keys", Type::Array(Box::new(Type::String))),
+                    ("values", Type::Array(Box::new(Type::Int))),
+                ],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
+                "from_entries",
+                vec![(
+                    "pairs",
+                    Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                )],
+                Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+            ),
         ]
-    }
-
-    fn register_std_module_exceptions(&mut self, module: &str) {
-        match module {
-            "fs" => {
-                // Register IOError exception
-                let io_error_name = self.interner.get_or_intern("IOError");
-                let message_field = self.interner.get_or_intern("message");
-                let path_field = self.interner.get_or_intern("path");
-                let code_field = self.interner.get_or_intern("code");
-
-                // Only register if not already registered
-                if self.symbols.get_type(io_error_name).is_none() {
-                    self.symbols.define_type(
-                        io_error_name,
-                        TypeDef::Exception(ExceptionDef {
-                            name: io_error_name,
-                            fields: vec![
-                                (message_field, Type::String),
-                                (path_field, Type::String),
-                                (code_field, Type::Int),
-                            ],
-                            is_public: true,
-                            span: Span::dummy(),
-                        }),
-                    );
-                }
-            }
-            "encoding" | "encoding::utf8" | "encoding::hex" | "encoding::base64" | "encoding::url" | "encoding::json" => {
-                // Register DecodeError exception
-                let decode_error_name = self.interner.get_or_intern("DecodeError");
-                let position_field = self.interner.get_or_intern("position");
-
-                // Only register if not already registered
-                if self.symbols.get_type(decode_error_name).is_none() {
-                    self.symbols.define_type(
-                        decode_error_name,
-                        TypeDef::Exception(ExceptionDef {
-                            name: decode_error_name,
-                            fields: vec![
-                                (position_field, Type::Int),
-                            ],
-                            is_public: true,
-                            span: Span::dummy(),
-                        }),
-                    );
-                }
-
-                // Register PathError exception (for json::path)
-                let path_error_name = self.interner.get_or_intern("PathError");
-                let path_field = self.interner.get_or_intern("path");
-
-                if self.symbols.get_type(path_error_name).is_none() {
-                    self.symbols.define_type(
-                        path_error_name,
-                        TypeDef::Exception(ExceptionDef {
-                            name: path_error_name,
-                            fields: vec![
-                                (path_field, Type::String),
-                            ],
-                            is_public: true,
-                            span: Span::dummy(),
-                        }),
-                    );
-                }
-            }
-            m if m.starts_with("net") => {
-                // Register NetworkError exception
-                let network_error_name = self.interner.get_or_intern("NetworkError");
-                let message_field = self.interner.get_or_intern("message");
-                let code_field = self.interner.get_or_intern("code");
-
-                if self.symbols.get_type(network_error_name).is_none() {
-                    self.symbols.define_type(
-                        network_error_name,
-                        TypeDef::Exception(ExceptionDef {
-                            name: network_error_name,
-                            fields: vec![
-                                (message_field, Type::String),
-                                (code_field, Type::Int),
-                            ],
-                            is_public: true,
-                            span: Span::dummy(),
-                        }),
-                    );
-                }
-
-                // Register TimeoutError exception
-                let timeout_error_name = self.interner.get_or_intern("TimeoutError");
-                let timeout_ms_field = self.interner.get_or_intern("timeout_ms");
-
-                if self.symbols.get_type(timeout_error_name).is_none() {
-                    self.symbols.define_type(
-                        timeout_error_name,
-                        TypeDef::Exception(ExceptionDef {
-                            name: timeout_error_name,
-                            fields: vec![
-                                (message_field, Type::String),
-                                (timeout_ms_field, Type::Int),
-                            ],
-                            is_public: true,
-                            span: Span::dummy(),
-                        }),
-                    );
-                }
-
-                // Register ConnectionRefused exception
-                let conn_refused_name = self.interner.get_or_intern("ConnectionRefused");
-                let address_field = self.interner.get_or_intern("address");
-
-                if self.symbols.get_type(conn_refused_name).is_none() {
-                    self.symbols.define_type(
-                        conn_refused_name,
-                        TypeDef::Exception(ExceptionDef {
-                            name: conn_refused_name,
-                            fields: vec![
-                                (address_field, Type::String),
-                            ],
-                            is_public: true,
-                            span: Span::dummy(),
-                        }),
-                    );
-                }
-            }
-            _ => {}
-        }
     }
 
     fn get_fs_functions() -> Vec<StdModuleFn> {
         vec![
             // File reading
-            StdModuleFn::throwing("read", vec![("path", Type::String)], Type::String, vec!["IOError"]),
-            StdModuleFn::throwing("read_bytes", vec![("path", Type::String)], Type::Bytes, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "read",
+                vec![("path", Type::String)],
+                Type::String,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "read_bytes",
+                vec![("path", Type::String)],
+                Type::Bytes,
+                vec!["IOError"],
+            ),
             // File writing
-            StdModuleFn::throwing("write", vec![("path", Type::String), ("content", Type::String)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("write_bytes", vec![("path", Type::String), ("content", Type::Bytes)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("append", vec![("path", Type::String), ("content", Type::String)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("append_bytes", vec![("path", Type::String), ("content", Type::Bytes)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "write",
+                vec![("path", Type::String), ("content", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "write_bytes",
+                vec![("path", Type::String), ("content", Type::Bytes)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "append",
+                vec![("path", Type::String), ("content", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "append_bytes",
+                vec![("path", Type::String), ("content", Type::Bytes)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
             // Existence checks (non-throwing)
             StdModuleFn::new("exists", vec![("path", Type::String)], Type::Bool),
             StdModuleFn::new("is_file", vec![("path", Type::String)], Type::Bool),
             StdModuleFn::new("is_dir", vec![("path", Type::String)], Type::Bool),
             // Directory operations
-            StdModuleFn::throwing("list_dir", vec![("path", Type::String)], Type::Array(Box::new(Type::String)), vec!["IOError"]),
-            StdModuleFn::throwing("mkdir", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("mkdir_all", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "list_dir",
+                vec![("path", Type::String)],
+                Type::Array(Box::new(Type::String)),
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mkdir",
+                vec![("path", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mkdir_all",
+                vec![("path", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
             // Delete operations
-            StdModuleFn::throwing("remove", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("remove_all", vec![("path", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "remove",
+                vec![("path", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "remove_all",
+                vec![("path", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
             // Path operations (non-throwing)
-            StdModuleFn::new("join", vec![("parts", Type::Array(Box::new(Type::String)))], Type::String),
+            StdModuleFn::new(
+                "join",
+                vec![("parts", Type::Array(Box::new(Type::String)))],
+                Type::String,
+            ),
             StdModuleFn::new("dirname", vec![("path", Type::String)], Type::String),
             StdModuleFn::new("basename", vec![("path", Type::String)], Type::String),
             StdModuleFn::new("extension", vec![("path", Type::String)], Type::String),
-            StdModuleFn::throwing("absolute", vec![("path", Type::String)], Type::String, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "absolute",
+                vec![("path", Type::String)],
+                Type::String,
+                vec!["IOError"],
+            ),
             // Metadata
-            StdModuleFn::throwing("size", vec![("path", Type::String)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("modified", vec![("path", Type::String)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "size",
+                vec![("path", Type::String)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "modified",
+                vec![("path", Type::String)],
+                Type::Int,
+                vec!["IOError"],
+            ),
             // Copy/rename
-            StdModuleFn::throwing("copy", vec![("src", Type::String), ("dst", Type::String)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("rename", vec![("src", Type::String), ("dst", Type::String)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "copy",
+                vec![("src", Type::String), ("dst", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "rename",
+                vec![("src", Type::String), ("dst", Type::String)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
             // Memory-mapped file operations
-            StdModuleFn::throwing("mmap_open", vec![("path", Type::String), ("writable", Type::Bool)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("mmap_len", vec![("handle", Type::Int)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("mmap_read_byte", vec![("handle", Type::Int), ("offset", Type::Int)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("mmap_write_byte", vec![("handle", Type::Int), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("mmap_read", vec![("handle", Type::Int), ("offset", Type::Int), ("len", Type::Int)], Type::Bytes, vec!["IOError"]),
-            StdModuleFn::throwing("mmap_write", vec![("handle", Type::Int), ("offset", Type::Int), ("data", Type::Bytes)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("mmap_flush", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("mmap_close", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "mmap_open",
+                vec![("path", Type::String), ("writable", Type::Bool)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mmap_len",
+                vec![("handle", Type::Int)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mmap_read_byte",
+                vec![("handle", Type::Int), ("offset", Type::Int)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mmap_write_byte",
+                vec![
+                    ("handle", Type::Int),
+                    ("offset", Type::Int),
+                    ("value", Type::Int),
+                ],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mmap_read",
+                vec![
+                    ("handle", Type::Int),
+                    ("offset", Type::Int),
+                    ("len", Type::Int),
+                ],
+                Type::Bytes,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mmap_write",
+                vec![
+                    ("handle", Type::Int),
+                    ("offset", Type::Int),
+                    ("data", Type::Bytes),
+                ],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mmap_flush",
+                vec![("handle", Type::Int)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "mmap_close",
+                vec![("handle", Type::Int)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
             // File handle operations
-            StdModuleFn::throwing("file_open", vec![("path", Type::String), ("mode", Type::String)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("file_close", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("file_read", vec![("handle", Type::Int), ("count", Type::Int)], Type::String, vec!["IOError"]),
-            StdModuleFn::throwing("file_read_line", vec![("handle", Type::Int)], Type::String, vec!["IOError"]),
-            StdModuleFn::throwing("file_read_all", vec![("handle", Type::Int)], Type::String, vec!["IOError"]),
-            StdModuleFn::throwing("file_write", vec![("handle", Type::Int), ("content", Type::String)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("file_write_line", vec![("handle", Type::Int), ("content", Type::String)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("file_flush", vec![("handle", Type::Int)], Type::Unit, vec!["IOError"]),
-            StdModuleFn::throwing("file_seek", vec![("handle", Type::Int), ("offset", Type::Int), ("whence", Type::Int)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("file_tell", vec![("handle", Type::Int)], Type::Int, vec!["IOError"]),
-            StdModuleFn::throwing("file_eof", vec![("handle", Type::Int)], Type::Bool, vec!["IOError"]),
-            StdModuleFn::throwing("file_size", vec![("handle", Type::Int)], Type::Int, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "file_open",
+                vec![("path", Type::String), ("mode", Type::String)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_close",
+                vec![("handle", Type::Int)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_read",
+                vec![("handle", Type::Int), ("count", Type::Int)],
+                Type::String,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_read_line",
+                vec![("handle", Type::Int)],
+                Type::String,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_read_all",
+                vec![("handle", Type::Int)],
+                Type::String,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_write",
+                vec![("handle", Type::Int), ("content", Type::String)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_write_line",
+                vec![("handle", Type::Int), ("content", Type::String)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_flush",
+                vec![("handle", Type::Int)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_seek",
+                vec![
+                    ("handle", Type::Int),
+                    ("offset", Type::Int),
+                    ("whence", Type::Int),
+                ],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_tell",
+                vec![("handle", Type::Int)],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_eof",
+                vec![("handle", Type::Int)],
+                Type::Bool,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_size",
+                vec![("handle", Type::Int)],
+                Type::Int,
+                vec!["IOError"],
+            ),
         ]
     }
 
     fn get_encoding_utf8_functions() -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::new("encode", vec![("s", Type::String)], Type::Bytes),
-            StdModuleFn::throwing("decode", vec![("data", Type::Bytes)], Type::String, vec!["DecodeError"]),
+            StdModuleFn::throwing(
+                "decode",
+                vec![("data", Type::Bytes)],
+                Type::String,
+                vec!["DecodeError"],
+            ),
             StdModuleFn::new("is_valid", vec![("data", Type::Bytes)], Type::Bool),
         ]
     }
@@ -827,32 +1716,65 @@ impl<'a> TypeChecker<'a> {
     fn get_encoding_hex_functions() -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String),
-            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::Bytes, vec!["DecodeError"]),
+            StdModuleFn::throwing(
+                "decode",
+                vec![("s", Type::String)],
+                Type::Bytes,
+                vec!["DecodeError"],
+            ),
         ]
     }
 
     fn get_encoding_base64_functions() -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String),
-            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::Bytes, vec!["DecodeError"]),
+            StdModuleFn::throwing(
+                "decode",
+                vec![("s", Type::String)],
+                Type::Bytes,
+                vec!["DecodeError"],
+            ),
         ]
     }
 
     fn get_encoding_url_functions() -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::new("encode", vec![("s", Type::String)], Type::String),
-            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::String, vec!["DecodeError"]),
+            StdModuleFn::throwing(
+                "decode",
+                vec![("s", Type::String)],
+                Type::String,
+                vec!["DecodeError"],
+            ),
         ]
     }
 
     fn get_encoding_json_functions() -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::throwing("decode", vec![("s", Type::String)], Type::Json, vec!["DecodeError"]),
+            StdModuleFn::throwing(
+                "decode",
+                vec![("s", Type::String)],
+                Type::Json,
+                vec!["DecodeError"],
+            ),
             StdModuleFn::new("encode", vec![("value", Type::Json)], Type::String),
             StdModuleFn::new("encode_pretty", vec![("value", Type::Json)], Type::String),
-            StdModuleFn::new("exists", vec![("data", Type::Json), ("key", Type::String)], Type::Bool),
-            StdModuleFn::throwing("path", vec![("data", Type::Json), ("jq_path", Type::String)], Type::Json, vec!["PathError"]),
-            StdModuleFn::new("keys", vec![("data", Type::Json)], Type::Array(Box::new(Type::String))),
+            StdModuleFn::new(
+                "exists",
+                vec![("data", Type::Json), ("key", Type::String)],
+                Type::Bool,
+            ),
+            StdModuleFn::throwing(
+                "path",
+                vec![("data", Type::Json), ("jq_path", Type::String)],
+                Type::Json,
+                vec!["PathError"],
+            ),
+            StdModuleFn::new(
+                "keys",
+                vec![("data", Type::Json)],
+                Type::Array(Box::new(Type::String)),
+            ),
             StdModuleFn::new("count", vec![("data", Type::Json)], Type::Int),
             StdModuleFn::new("get_type", vec![("data", Type::Json)], Type::Int),
             StdModuleFn::new("type_name", vec![("data", Type::Json)], Type::String),
@@ -862,8 +1784,18 @@ impl<'a> TypeChecker<'a> {
 
     fn get_net_tcp_server_functions() -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::throwing("listen", vec![("address", Type::String)], Type::Int, vec!["NetworkError"]),
-            StdModuleFn::throwing("accept", vec![("listener", Type::Int)], Type::Int, vec!["NetworkError"]),
+            StdModuleFn::throwing(
+                "listen",
+                vec![("address", Type::String)],
+                Type::Int,
+                vec!["NetworkError"],
+            ),
+            StdModuleFn::throwing(
+                "accept",
+                vec![("listener", Type::Int)],
+                Type::Int,
+                vec!["NetworkError"],
+            ),
             StdModuleFn::new("close", vec![("listener", Type::Int)], Type::Unit),
             StdModuleFn::new("local_addr", vec![("listener", Type::Int)], Type::String),
         ]
@@ -871,21 +1803,64 @@ impl<'a> TypeChecker<'a> {
 
     fn get_net_tcp_client_functions() -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::throwing("connect", vec![("address", Type::String)], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("read", vec![("socket", Type::Int), ("size", Type::Int)], Type::Bytes, vec!["NetworkError"]),
-            StdModuleFn::throwing("read_all", vec![("socket", Type::Int)], Type::Bytes, vec!["NetworkError"]),
-            StdModuleFn::throwing("write", vec![("socket", Type::Int), ("data", Type::Bytes)], Type::Unit, vec!["NetworkError"]),
+            StdModuleFn::throwing(
+                "connect",
+                vec![("address", Type::String)],
+                Type::Int,
+                vec!["NetworkError", "TimeoutError"],
+            ),
+            StdModuleFn::throwing(
+                "read",
+                vec![("socket", Type::Int), ("size", Type::Int)],
+                Type::Bytes,
+                vec!["NetworkError"],
+            ),
+            StdModuleFn::throwing(
+                "read_all",
+                vec![("socket", Type::Int)],
+                Type::Bytes,
+                vec!["NetworkError"],
+            ),
+            StdModuleFn::throwing(
+                "write",
+                vec![("socket", Type::Int), ("data", Type::Bytes)],
+                Type::Unit,
+                vec!["NetworkError"],
+            ),
             StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
-            StdModuleFn::new("set_timeout", vec![("socket", Type::Int), ("ms", Type::Int)], Type::Unit),
+            StdModuleFn::new(
+                "set_timeout",
+                vec![("socket", Type::Int), ("ms", Type::Int)],
+                Type::Unit,
+            ),
             StdModuleFn::new("peer_addr", vec![("socket", Type::Int)], Type::String),
         ]
     }
 
     fn get_net_udp_functions() -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::throwing("bind", vec![("address", Type::String)], Type::Int, vec!["NetworkError"]),
-            StdModuleFn::throwing("send", vec![("socket", Type::Int), ("data", Type::Bytes), ("address", Type::String)], Type::Unit, vec!["NetworkError"]),
-            StdModuleFn::throwing("receive", vec![("socket", Type::Int), ("size", Type::Int)], Type::Bytes, vec!["NetworkError"]),
+            StdModuleFn::throwing(
+                "bind",
+                vec![("address", Type::String)],
+                Type::Int,
+                vec!["NetworkError"],
+            ),
+            StdModuleFn::throwing(
+                "send",
+                vec![
+                    ("socket", Type::Int),
+                    ("data", Type::Bytes),
+                    ("address", Type::String),
+                ],
+                Type::Unit,
+                vec!["NetworkError"],
+            ),
+            StdModuleFn::throwing(
+                "receive",
+                vec![("socket", Type::Int), ("size", Type::Int)],
+                Type::Bytes,
+                vec!["NetworkError"],
+            ),
             StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
             StdModuleFn::new("local_addr", vec![("socket", Type::Int)], Type::String),
         ]
@@ -898,11 +1873,48 @@ impl<'a> TypeChecker<'a> {
             Box::new(Type::String),
         )));
         vec![
-            StdModuleFn::throwing("get", vec![("url", Type::String), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("post", vec![("url", Type::String), ("body", Type::Bytes), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("put", vec![("url", Type::String), ("body", Type::Bytes), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("patch", vec![("url", Type::String), ("body", Type::Bytes), ("headers", headers_type.clone())], Type::Int, vec!["NetworkError", "TimeoutError"]),
-            StdModuleFn::throwing("delete", vec![("url", Type::String), ("headers", headers_type)], Type::Int, vec!["NetworkError", "TimeoutError"]),
+            StdModuleFn::throwing(
+                "get",
+                vec![("url", Type::String), ("headers", headers_type.clone())],
+                Type::Int,
+                vec!["NetworkError", "TimeoutError"],
+            ),
+            StdModuleFn::throwing(
+                "post",
+                vec![
+                    ("url", Type::String),
+                    ("body", Type::Bytes),
+                    ("headers", headers_type.clone()),
+                ],
+                Type::Int,
+                vec!["NetworkError", "TimeoutError"],
+            ),
+            StdModuleFn::throwing(
+                "put",
+                vec![
+                    ("url", Type::String),
+                    ("body", Type::Bytes),
+                    ("headers", headers_type.clone()),
+                ],
+                Type::Int,
+                vec!["NetworkError", "TimeoutError"],
+            ),
+            StdModuleFn::throwing(
+                "patch",
+                vec![
+                    ("url", Type::String),
+                    ("body", Type::Bytes),
+                    ("headers", headers_type.clone()),
+                ],
+                Type::Int,
+                vec!["NetworkError", "TimeoutError"],
+            ),
+            StdModuleFn::throwing(
+                "delete",
+                vec![("url", Type::String), ("headers", headers_type)],
+                Type::Int,
+                vec!["NetworkError", "TimeoutError"],
+            ),
             StdModuleFn::new("set_timeout", vec![("ms", Type::Int)], Type::Unit),
             // Response accessors
             StdModuleFn::new("status", vec![("response", Type::Int)], Type::Int),
@@ -913,15 +1925,76 @@ impl<'a> TypeChecker<'a> {
     fn get_net_http_server_functions() -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::new("open_router", vec![], Type::Int),
-            StdModuleFn::new("get", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
-            StdModuleFn::new("post", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
-            StdModuleFn::new("put", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
-            StdModuleFn::new("patch", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
-            StdModuleFn::new("delete", vec![("router", Type::Int), ("pattern", Type::String), ("handler", Type::Int)], Type::Unit),
-            StdModuleFn::new("with", vec![("router", Type::Int), ("middleware", Type::Int)], Type::Unit),
-            StdModuleFn::new("group", vec![("router", Type::Int), ("prefix", Type::String)], Type::Int),
-            StdModuleFn::new("mount", vec![("router", Type::Int), ("prefix", Type::String), ("sub_router", Type::Int)], Type::Unit),
-            StdModuleFn::throwing("serve", vec![("address", Type::String), ("router", Type::Int)], Type::Unit, vec!["NetworkError"]),
+            StdModuleFn::new(
+                "get",
+                vec![
+                    ("router", Type::Int),
+                    ("pattern", Type::String),
+                    ("handler", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "post",
+                vec![
+                    ("router", Type::Int),
+                    ("pattern", Type::String),
+                    ("handler", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "put",
+                vec![
+                    ("router", Type::Int),
+                    ("pattern", Type::String),
+                    ("handler", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "patch",
+                vec![
+                    ("router", Type::Int),
+                    ("pattern", Type::String),
+                    ("handler", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "delete",
+                vec![
+                    ("router", Type::Int),
+                    ("pattern", Type::String),
+                    ("handler", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "with",
+                vec![("router", Type::Int), ("middleware", Type::Int)],
+                Type::Unit,
+            ),
+            StdModuleFn::new(
+                "group",
+                vec![("router", Type::Int), ("prefix", Type::String)],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "mount",
+                vec![
+                    ("router", Type::Int),
+                    ("prefix", Type::String),
+                    ("sub_router", Type::Int),
+                ],
+                Type::Unit,
+            ),
+            StdModuleFn::throwing(
+                "serve",
+                vec![("address", Type::String), ("router", Type::Int)],
+                Type::Unit,
+                vec!["NetworkError"],
+            ),
         ]
     }
 
@@ -930,34 +2003,39 @@ impl<'a> TypeChecker<'a> {
             StdModuleFn::new("logger", vec![], Type::Int),
             StdModuleFn::new("timeout", vec![("ms", Type::Int)], Type::Int),
             StdModuleFn::new("recover", vec![], Type::Int),
-            StdModuleFn::new("cors", vec![("origins", Type::Array(Box::new(Type::String)))], Type::Int),
-            StdModuleFn::new("rate_limit", vec![("requests_per_second", Type::Int)], Type::Int),
+            StdModuleFn::new(
+                "cors",
+                vec![("origins", Type::Array(Box::new(Type::String)))],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "rate_limit",
+                vec![("requests_per_second", Type::Int)],
+                Type::Int,
+            ),
             StdModuleFn::new("compress", vec![], Type::Int),
             StdModuleFn::new("request_id", vec![], Type::Int),
         ]
     }
 
-    fn get_std_submodules(module: &str) -> Option<Vec<&'static str>> {
-        match module {
-            "collections" => Some(vec!["arrays", "maps"]),
-            "encoding" => Some(vec!["utf8", "hex", "base64", "url", "json"]),
-            "net" => Some(vec!["tcp", "udp", "http"]),
-            "net::tcp" => Some(vec!["listener", "client"]),
-            "net::http" => Some(vec!["client", "serve", "middleware"]),
-            _ => None,
-        }
-    }
-
     fn get_std_module_functions_impl(module: &str) -> Option<Vec<StdModuleFn>> {
         match module {
             "random" => Some(vec![
-                StdModuleFn::new("random", vec![("min", Type::Int), ("max", Type::Int)], Type::Int),
+                StdModuleFn::new(
+                    "random",
+                    vec![("min", Type::Int), ("max", Type::Int)],
+                    Type::Int,
+                ),
                 StdModuleFn::new("random_float", vec![], Type::Float),
             ]),
             "io" => Some(vec![
                 StdModuleFn::new("read_key", vec![], Type::Int),
                 StdModuleFn::new("clear_screen", vec![], Type::Unit),
-                StdModuleFn::new("set_cursor", vec![("x", Type::Int), ("y", Type::Int)], Type::Unit),
+                StdModuleFn::new(
+                    "set_cursor",
+                    vec![("x", Type::Int), ("y", Type::Int)],
+                    Type::Unit,
+                ),
                 StdModuleFn::new("hide_cursor", vec![], Type::Unit),
                 StdModuleFn::new("show_cursor", vec![], Type::Unit),
                 StdModuleFn::new("terminal_width", vec![], Type::Int),
@@ -965,24 +2043,54 @@ impl<'a> TypeChecker<'a> {
             ]),
             "threads" => Some(vec![
                 StdModuleFn::new("join", vec![], Type::Unit),
-                StdModuleFn::generic("open_channel", vec!["T"], vec![("capacity", Type::Int)],
-                    Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
-                StdModuleFn::generic("send", vec!["T"], vec![
-                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
-                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
-                ], Type::Int),
-                StdModuleFn::generic("receive", vec!["T"], vec![
-                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
-                ], Type::Option(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
-                StdModuleFn::generic("close", vec!["T"], vec![
-                    ("ch", Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))
-                ], Type::Unit),
-                StdModuleFn::generic("with_mutex", vec!["T"], vec![
-                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
-                ], Type::Mutex(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
-                StdModuleFn::generic("with_rwlock", vec!["T"], vec![
-                    ("value", Type::Generic(lasso::Spur::default(), vec![]))
-                ], Type::Rwlock(Box::new(Type::Generic(lasso::Spur::default(), vec![])))),
+                StdModuleFn::generic(
+                    "open_channel",
+                    vec!["T"],
+                    vec![("capacity", Type::Int)],
+                    Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                ),
+                StdModuleFn::generic(
+                    "send",
+                    vec!["T"],
+                    vec![
+                        (
+                            "ch",
+                            Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                        ),
+                        ("value", Type::Generic(lasso::Spur::default(), vec![])),
+                    ],
+                    Type::Int,
+                ),
+                StdModuleFn::generic(
+                    "receive",
+                    vec!["T"],
+                    vec![(
+                        "ch",
+                        Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                    )],
+                    Type::Option(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                ),
+                StdModuleFn::generic(
+                    "close",
+                    vec!["T"],
+                    vec![(
+                        "ch",
+                        Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                    )],
+                    Type::Unit,
+                ),
+                StdModuleFn::generic(
+                    "with_mutex",
+                    vec!["T"],
+                    vec![("value", Type::Generic(lasso::Spur::default(), vec![]))],
+                    Type::Mutex(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                ),
+                StdModuleFn::generic(
+                    "with_rwlock",
+                    vec!["T"],
+                    vec![("value", Type::Generic(lasso::Spur::default(), vec![]))],
+                    Type::Rwlock(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                ),
             ]),
             "datetime" => Some(vec![
                 StdModuleFn::new("now_ms", vec![], Type::Int),
@@ -994,7 +2102,11 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("minute", vec![("timestamp_ms", Type::Int)], Type::Int),
                 StdModuleFn::new("second", vec![("timestamp_ms", Type::Int)], Type::Int),
                 StdModuleFn::new("day_of_week", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("format_date", vec![("timestamp_ms", Type::Int), ("fmt", Type::String)], Type::String),
+                StdModuleFn::new(
+                    "format_date",
+                    vec![("timestamp_ms", Type::Int), ("fmt", Type::String)],
+                    Type::String,
+                ),
             ]),
             "metrics" => Some(vec![
                 StdModuleFn::new("perf_now", vec![], Type::Int),
@@ -1004,24 +2116,103 @@ impl<'a> TypeChecker<'a> {
             ]),
             "strings" => Some(vec![
                 StdModuleFn::new("len", vec![("s", Type::String)], Type::Int),
-                StdModuleFn::new("char_at", vec![("s", Type::String), ("index", Type::Int)], Type::Int),
+                StdModuleFn::new(
+                    "char_at",
+                    vec![("s", Type::String), ("index", Type::Int)],
+                    Type::Int,
+                ),
                 StdModuleFn::new("upper", vec![("s", Type::String)], Type::String),
                 StdModuleFn::new("lower", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("split", vec![("s", Type::String), ("delim", Type::String)], Type::Array(Box::new(Type::String))),
-                StdModuleFn::new("concat", vec![("arr", Type::Array(Box::new(Type::String))), ("delim", Type::String)], Type::String),
-                StdModuleFn::new("has", vec![("s", Type::String), ("substr", Type::String)], Type::Bool),
-                StdModuleFn::new("starts_with", vec![("s", Type::String), ("prefix", Type::String)], Type::Bool),
-                StdModuleFn::new("ends_with", vec![("s", Type::String), ("suffix", Type::String)], Type::Bool),
-                StdModuleFn::new("replace", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
-                StdModuleFn::new("replace_all", vec![("s", Type::String), ("old", Type::String), ("new", Type::String)], Type::String),
+                StdModuleFn::new(
+                    "split",
+                    vec![("s", Type::String), ("delim", Type::String)],
+                    Type::Array(Box::new(Type::String)),
+                ),
+                StdModuleFn::new(
+                    "concat",
+                    vec![
+                        ("arr", Type::Array(Box::new(Type::String))),
+                        ("delim", Type::String),
+                    ],
+                    Type::String,
+                ),
+                StdModuleFn::new(
+                    "has",
+                    vec![("s", Type::String), ("substr", Type::String)],
+                    Type::Bool,
+                ),
+                StdModuleFn::new(
+                    "starts_with",
+                    vec![("s", Type::String), ("prefix", Type::String)],
+                    Type::Bool,
+                ),
+                StdModuleFn::new(
+                    "ends_with",
+                    vec![("s", Type::String), ("suffix", Type::String)],
+                    Type::Bool,
+                ),
+                StdModuleFn::new(
+                    "replace",
+                    vec![
+                        ("s", Type::String),
+                        ("old", Type::String),
+                        ("new", Type::String),
+                    ],
+                    Type::String,
+                ),
+                StdModuleFn::new(
+                    "replace_all",
+                    vec![
+                        ("s", Type::String),
+                        ("old", Type::String),
+                        ("new", Type::String),
+                    ],
+                    Type::String,
+                ),
                 StdModuleFn::new("ltrim", vec![("s", Type::String)], Type::String),
                 StdModuleFn::new("rtrim", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("substr", vec![("s", Type::String), ("start", Type::Int), ("end", Type::Int)], Type::String),
-                StdModuleFn::new("lpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
-                StdModuleFn::new("rpad", vec![("s", Type::String), ("len", Type::Int), ("char", Type::String)], Type::String),
-                StdModuleFn::new("repeat", vec![("s", Type::String), ("n", Type::Int)], Type::String),
-                StdModuleFn::new("lines", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
-                StdModuleFn::new("chars", vec![("s", Type::String)], Type::Array(Box::new(Type::String))),
+                StdModuleFn::new(
+                    "substr",
+                    vec![
+                        ("s", Type::String),
+                        ("start", Type::Int),
+                        ("end", Type::Int),
+                    ],
+                    Type::String,
+                ),
+                StdModuleFn::new(
+                    "lpad",
+                    vec![
+                        ("s", Type::String),
+                        ("len", Type::Int),
+                        ("char", Type::String),
+                    ],
+                    Type::String,
+                ),
+                StdModuleFn::new(
+                    "rpad",
+                    vec![
+                        ("s", Type::String),
+                        ("len", Type::Int),
+                        ("char", Type::String),
+                    ],
+                    Type::String,
+                ),
+                StdModuleFn::new(
+                    "repeat",
+                    vec![("s", Type::String), ("n", Type::Int)],
+                    Type::String,
+                ),
+                StdModuleFn::new(
+                    "lines",
+                    vec![("s", Type::String)],
+                    Type::Array(Box::new(Type::String)),
+                ),
+                StdModuleFn::new(
+                    "chars",
+                    vec![("s", Type::String)],
+                    Type::Array(Box::new(Type::String)),
+                ),
             ]),
             // Collections module and submodules
             "collections" => {
@@ -1034,7 +2225,11 @@ impl<'a> TypeChecker<'a> {
             "fs" => Some(Self::get_fs_functions()),
             "path" => Some(vec![
                 // Path joining and construction
-                StdModuleFn::new("join", vec![("parts", Type::Array(Box::new(Type::String)))], Type::String),
+                StdModuleFn::new(
+                    "join",
+                    vec![("parts", Type::Array(Box::new(Type::String)))],
+                    Type::String,
+                ),
                 // Path normalization
                 StdModuleFn::new("normalize", vec![("path", Type::String)], Type::String),
                 // Path type checks
@@ -1047,19 +2242,39 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("extension", vec![("path", Type::String)], Type::String),
                 StdModuleFn::new("stem", vec![("path", Type::String)], Type::String),
                 // Path modification
-                StdModuleFn::new("with_extension", vec![("path", Type::String), ("ext", Type::String)], Type::String),
+                StdModuleFn::new(
+                    "with_extension",
+                    vec![("path", Type::String), ("ext", Type::String)],
+                    Type::String,
+                ),
                 // Path component splitting
-                StdModuleFn::new("components", vec![("path", Type::String)], Type::Array(Box::new(Type::String))),
+                StdModuleFn::new(
+                    "components",
+                    vec![("path", Type::String)],
+                    Type::Array(Box::new(Type::String)),
+                ),
                 // Platform info
                 StdModuleFn::new("separator", vec![], Type::String),
                 // Slash conversion
                 StdModuleFn::new("to_slash", vec![("path", Type::String)], Type::String),
                 StdModuleFn::new("from_slash", vec![("path", Type::String)], Type::String),
                 // Path comparison
-                StdModuleFn::new("starts_with", vec![("path", Type::String), ("prefix", Type::String)], Type::Bool),
-                StdModuleFn::new("ends_with", vec![("path", Type::String), ("suffix", Type::String)], Type::Bool),
+                StdModuleFn::new(
+                    "starts_with",
+                    vec![("path", Type::String), ("prefix", Type::String)],
+                    Type::Bool,
+                ),
+                StdModuleFn::new(
+                    "ends_with",
+                    vec![("path", Type::String), ("suffix", Type::String)],
+                    Type::Bool,
+                ),
                 // Path manipulation
-                StdModuleFn::new("strip_prefix", vec![("path", Type::String), ("prefix", Type::String)], Type::String),
+                StdModuleFn::new(
+                    "strip_prefix",
+                    vec![("path", Type::String), ("prefix", Type::String)],
+                    Type::String,
+                ),
             ]),
             // Encoding module and submodules
             "encoding" => {
@@ -1091,7 +2306,12 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn resolve_local_module(&mut self, path: &[String], items: &UseItems, span: crate::source::Span) {
+    fn resolve_local_module(
+        &mut self,
+        path: &[String],
+        items: &UseItems,
+        span: crate::source::Span,
+    ) {
         let source_dir = match &self.source_dir {
             Some(d) => d.clone(),
             None => {
@@ -1122,7 +2342,7 @@ impl<'a> TypeChecker<'a> {
             }
         };
 
-        let (tokens, module_interner) = crate::lexer::tokenize(&source_text);
+        let tokens = crate::lexer::tokenize_with_interner(&source_text, self.interner);
         let arena = crate::ast::AstArena::new();
         let parse_result = crate::parser::parse(&tokens, &source_text, &arena);
 
@@ -1140,15 +2360,19 @@ impl<'a> TypeChecker<'a> {
         for item in &parse_result.ast.items {
             if let Item::Function(func) = item {
                 if func.is_public && func.receiver.is_none() {
-                    let name = module_interner.resolve(&func.name.symbol).to_string();
-                    let params: Vec<_> = func.params.iter()
+                    let name = self.interner.resolve(&func.name.symbol).to_string();
+                    let params: Vec<_> = func
+                        .params
+                        .iter()
                         .map(|p| {
-                            let pname = module_interner.resolve(&p.name.symbol).to_string();
+                            let pname = self.interner.resolve(&p.name.symbol).to_string();
                             let pty = self.convert_type(&p.ty);
                             (pname, pty)
                         })
                         .collect();
-                    let return_ty = func.return_ty.as_ref()
+                    let return_ty = func
+                        .return_ty
+                        .as_ref()
                         .map(|t| self.convert_type(t))
                         .unwrap_or(Type::Unit);
                     pub_functions.push((name, params, return_ty, false));
@@ -1172,7 +2396,8 @@ impl<'a> TypeChecker<'a> {
             UseItems::All => {
                 for (name, params, return_ty, is_variadic) in &pub_functions {
                     if let Some(spur) = self.interner.get(name.as_str()) {
-                        let params: Vec<_> = params.iter()
+                        let params: Vec<_> = params
+                            .iter()
                             .map(|(pname, pty)| {
                                 let pspur = self.interner.get(pname.as_str()).unwrap_or(spur);
                                 (pspur, pty.clone())
@@ -1189,11 +2414,14 @@ impl<'a> TypeChecker<'a> {
                             span: crate::source::Span::dummy(),
                             module: Some(path.join("::")),
                         };
-                        self.symbols.register_module(module_spur).add_function(sig.clone());
+                        self.symbols
+                            .register_module(module_spur)
+                            .add_function(sig.clone());
                         // For wildcard imports, just mark ambiguous (allows qualified use)
                         if self.symbols.has_function(sig.name) {
                             self.symbols.mark_ambiguous(sig.name);
                         } else {
+                            let sig: FunctionSig = sig.clone();
                             self.symbols.define_function(sig);
                         }
                     }
@@ -1202,11 +2430,14 @@ impl<'a> TypeChecker<'a> {
             UseItems::Specific(entries) => {
                 for entry in entries {
                     let entry_name = self.interner.resolve(&entry.name.symbol).to_string();
-                    let found = pub_functions.iter().find(|(name, _, _, _)| *name == entry_name);
+                    let found = pub_functions
+                        .iter()
+                        .find(|(name, _, _, _)| *name == entry_name);
                     match found {
                         Some((_, params, return_ty, is_variadic)) => {
                             let spur = entry.name.symbol;
-                            let params: Vec<_> = params.iter()
+                            let params: Vec<_> = params
+                                .iter()
                                 .map(|(pname, pty)| {
                                     let pspur = self.interner.get(pname.as_str()).unwrap_or(spur);
                                     (pspur, pty.clone())
@@ -1223,7 +2454,9 @@ impl<'a> TypeChecker<'a> {
                                 span: crate::source::Span::dummy(),
                                 module: Some(path.join("::")),
                             };
-                            self.symbols.register_module(module_spur).add_function(sig.clone());
+                            self.symbols
+                                .register_module(module_spur)
+                                .add_function(sig.clone());
                             // Check for duplicate imports and emit error
                             if self.symbols.has_function(sig.name) {
                                 self.symbols.mark_ambiguous(sig.name);
@@ -1232,6 +2465,7 @@ impl<'a> TypeChecker<'a> {
                                     span: entry.span,
                                 });
                             } else {
+                                let sig: FunctionSig = sig.clone();
                                 self.symbols.define_function(sig);
                             }
                         }
@@ -1534,11 +2768,27 @@ impl<'a> TypeChecker<'a> {
 
     fn check_items(&mut self, file: &SourceFile) {
         for item in &file.items {
-            match item {
-                Item::Function(func) => self.check_function(func),
-                Item::TopLevelStmt(stmt_item) => self.check_top_level_stmt(stmt_item),
-                _ => {}
+            self.check_item(item);
+        }
+    }
+
+    fn check_mod<'ast>(&mut self, m: &'ast ast::ModuleItem<'ast>) {
+        let name_spur = m.name.symbol;
+        self.symbols.enter_module(name_spur);
+        if let Some(ref items) = m.body {
+            for item in items {
+                self.check_item(item);
             }
+        }
+        self.symbols.exit_module();
+    }
+
+    fn check_item<'ast>(&mut self, item: &'ast Item<'ast>) {
+        match item {
+            Item::Function(func) => self.check_function(func),
+            Item::TopLevelStmt(stmt_item) => self.check_top_level_stmt(stmt_item),
+            Item::Mod(m) => self.check_mod(m),
+            _ => {}
         }
     }
 
@@ -1592,8 +2842,7 @@ impl<'a> TypeChecker<'a> {
                 .unwrap_or_default()
         };
 
-        self.env
-            .enter_function(return_ty, throws, &type_params);
+        self.env.enter_function(return_ty, throws, &type_params);
         self.env.push_scope();
 
         if let Some(recv) = &func.receiver {
@@ -1663,9 +2912,7 @@ impl<'a> TypeChecker<'a> {
                     match def {
                         TypeDef::Struct(s) => Type::Struct(self.symbols.to_struct_type(s)),
                         TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
-                        TypeDef::Interface(i) => {
-                            Type::Interface(self.symbols.to_interface_type(i))
-                        }
+                        TypeDef::Interface(i) => Type::Interface(self.symbols.to_interface_type(i)),
                         TypeDef::Exception(e) => Type::Exception(e.name),
                         TypeDef::TypeAlias(a) => a.aliased_type.clone(),
                     }
@@ -1680,7 +2927,11 @@ impl<'a> TypeChecker<'a> {
                 if let Some(TypeDef::TypeAlias(alias)) = self.symbols.get_type(ident.symbol) {
                     if alias.type_params.len() == converted_args.len() {
                         // Substitute type params with provided args
-                        return self.substitute_type_args(&alias.aliased_type, &alias.type_params, &converted_args);
+                        return self.substitute_type_args(
+                            &alias.aliased_type,
+                            &alias.type_params,
+                            &converted_args,
+                        );
                     }
                 }
 
@@ -1699,7 +2950,12 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn substitute_type_args(&self, ty: &Type, type_params: &[TypeParam], type_args: &[Type]) -> Type {
+    fn substitute_type_args(
+        &self,
+        ty: &Type,
+        type_params: &[TypeParam],
+        type_args: &[Type],
+    ) -> Type {
         match ty {
             Type::Generic(name, args) => {
                 // Check if this is one of the type parameters to substitute
@@ -1709,41 +2965,49 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
                 // Otherwise, recursively substitute in the args
-                let new_args = args.iter()
+                let new_args = args
+                    .iter()
                     .map(|a| self.substitute_type_args(a, type_params, type_args))
                     .collect();
                 Type::Generic(*name, new_args)
             }
-            Type::Array(inner) => {
-                Type::Array(Box::new(self.substitute_type_args(inner, type_params, type_args)))
-            }
-            Type::FixedArray(inner, n) => {
-                Type::FixedArray(Box::new(self.substitute_type_args(inner, type_params, type_args)), *n)
-            }
-            Type::Option(inner) => {
-                Type::Option(Box::new(self.substitute_type_args(inner, type_params, type_args)))
-            }
-            Type::Map(k, v) => {
-                Type::Map(
-                    Box::new(self.substitute_type_args(k, type_params, type_args)),
-                    Box::new(self.substitute_type_args(v, type_params, type_args)),
-                )
-            }
-            Type::Channel(inner) => {
-                Type::Channel(Box::new(self.substitute_type_args(inner, type_params, type_args)))
-            }
-            Type::Function(ft) => {
-                Type::Function(types::FunctionType {
-                    params: ft.params.iter()
-                        .map(|p| self.substitute_type_args(p, type_params, type_args))
-                        .collect(),
-                    returns: Box::new(self.substitute_type_args(&ft.returns, type_params, type_args)),
-                    throws: ft.throws.iter()
-                        .map(|t| self.substitute_type_args(t, type_params, type_args))
-                        .collect(),
-                    is_variadic: ft.is_variadic,
-                })
-            }
+            Type::Array(inner) => Type::Array(Box::new(self.substitute_type_args(
+                inner,
+                type_params,
+                type_args,
+            ))),
+            Type::FixedArray(inner, n) => Type::FixedArray(
+                Box::new(self.substitute_type_args(inner, type_params, type_args)),
+                *n,
+            ),
+            Type::Option(inner) => Type::Option(Box::new(self.substitute_type_args(
+                inner,
+                type_params,
+                type_args,
+            ))),
+            Type::Map(k, v) => Type::Map(
+                Box::new(self.substitute_type_args(k, type_params, type_args)),
+                Box::new(self.substitute_type_args(v, type_params, type_args)),
+            ),
+            Type::Channel(inner) => Type::Channel(Box::new(self.substitute_type_args(
+                inner,
+                type_params,
+                type_args,
+            ))),
+            Type::Function(ft) => Type::Function(types::FunctionType {
+                params: ft
+                    .params
+                    .iter()
+                    .map(|p| self.substitute_type_args(p, type_params, type_args))
+                    .collect(),
+                returns: Box::new(self.substitute_type_args(&ft.returns, type_params, type_args)),
+                throws: ft
+                    .throws
+                    .iter()
+                    .map(|t| self.substitute_type_args(t, type_params, type_args))
+                    .collect(),
+                is_variadic: ft.is_variadic,
+            }),
             // Primitive types and others don't need substitution
             _ => ty.clone(),
         }
@@ -1754,7 +3018,11 @@ pub fn check(file: &SourceFile, interner: &mut Rodeo) -> Vec<TypeError> {
     check_with_types(file, interner, None).errors
 }
 
-pub fn check_with_types(file: &SourceFile, interner: &mut Rodeo, source_dir: Option<PathBuf>) -> TypeCheckResult {
+pub fn check_with_types(
+    file: &SourceFile,
+    interner: &mut Rodeo,
+    source_dir: Option<PathBuf>,
+) -> TypeCheckResult {
     let mut checker = TypeChecker::new(interner, source_dir);
     checker.collect_definitions(file);
     checker.validate_interface_implementations();
@@ -1779,7 +3047,11 @@ mod tests {
         let (tokens, mut interner) = tokenize(source);
         let arena = AstArena::new();
         let result = parse(&tokens, source, &arena);
-        assert!(result.errors.is_empty(), "Parse errors: {:?}", result.errors);
+        assert!(
+            result.errors.is_empty(),
+            "Parse errors: {:?}",
+            result.errors
+        );
         check(&result.ast, &mut interner)
     }
 
@@ -1797,59 +3069,45 @@ mod tests {
 
     #[test]
     fn test_check_valid_arithmetic() {
-        let errors = check_source(
-            "fn add(a: int, b: int) -> int { return a + b; }",
-        );
+        let errors = check_source("fn add(a: int, b: int) -> int { return a + b; }");
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_type_mismatch() {
-        let errors = check_source(
-            "fn main() { var x: int = true; }",
-        );
+        let errors = check_source("fn main() { var x: int = true; }");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_undefined_variable() {
-        let errors = check_source(
-            "fn main() { return x; }",
-        );
+        let errors = check_source("fn main() { return x; }");
         assert!(!errors.is_empty());
         assert!(matches!(errors[0], TypeError::UndefinedVariable { .. }));
     }
 
     #[test]
     fn test_valid_if_statement() {
-        let errors = check_source(
-            "fn main() { if (true) { var x: int = 1; } }",
-        );
+        let errors = check_source("fn main() { if (true) { var x: int = 1; } }");
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_invalid_condition() {
-        let errors = check_source(
-            "fn main() { if (42) { var x: int = 1; } }",
-        );
+        let errors = check_source("fn main() { if (42) { var x: int = 1; } }");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_break_outside_loop() {
-        let errors = check_source(
-            "fn main() { break; }",
-        );
+        let errors = check_source("fn main() { break; }");
         assert!(!errors.is_empty());
         assert!(matches!(errors[0], TypeError::BreakOutsideLoop { .. }));
     }
 
     #[test]
     fn test_valid_loop() {
-        let errors = check_source(
-            "fn main() { while (true) { break; } }",
-        );
+        let errors = check_source("fn main() { while (true) { break; } }");
         assert!(errors.is_empty());
     }
 
@@ -1874,17 +3132,13 @@ mod tests {
 
     #[test]
     fn test_type_annotation_required() {
-        let errors = check_source(
-            "fn main() { var x: int = 42; var y: int = x; }",
-        );
+        let errors = check_source("fn main() { var x: int = 42; var y: int = x; }");
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_array_type() {
-        let errors = check_source(
-            "fn main() { var arr: [int] = [1, 2, 3]; }",
-        );
+        let errors = check_source("fn main() { var arr: [int] = [1, 2, 3]; }");
         assert!(errors.is_empty());
     }
 

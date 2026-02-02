@@ -1,25 +1,35 @@
 use crate::ast::{BinaryOp, Expression, Literal, LiteralExpr, NamlType, TemplateStringPart};
+use crate::codegen::CodegenError;
+use crate::codegen::cranelift::CompileContext;
 use crate::codegen::cranelift::array::{compile_array_literal, compile_direct_array_get_or_panic};
+use crate::codegen::cranelift::binop::{compile_binary_op, compile_unary_op};
+use crate::codegen::cranelift::exceptions::{
+    call_exception_check, call_exception_clear, call_exception_get,
+};
+use crate::codegen::cranelift::externs::compile_extern_call;
 use crate::codegen::cranelift::literal::compile_literal;
+use crate::codegen::cranelift::literal::compile_string_literal;
 use crate::codegen::cranelift::map::{compile_direct_map_get_or_panic, compile_map_literal};
 use crate::codegen::cranelift::method::compile_method_call;
+use crate::codegen::cranelift::options::{
+    compile_option_from_array_get, compile_option_from_map_get,
+};
+use crate::codegen::cranelift::runtime::{call_alloc_closure_data, rt_func_ref};
+use crate::codegen::cranelift::spawns::call_spawn_closure;
 use crate::codegen::cranelift::stmt::compile_statement;
-use crate::codegen::cranelift::CompileContext;
-use crate::codegen::CodegenError;
+use crate::codegen::cranelift::strings::{
+    call_bytes_to_string, call_float_to_string, call_int_to_string, call_string_concat,
+    call_string_equals, call_string_from_cstr, call_string_to_bytes, call_string_to_float,
+    call_string_to_int,
+};
+use crate::codegen::cranelift::structs::{
+    call_struct_get_field, call_struct_new, call_struct_set_field,
+};
+use crate::codegen::cranelift::types::tc_type_to_cranelift;
 use crate::source::Spanned;
 use crate::typechecker::Type;
 use cranelift::prelude::*;
 use cranelift_module::Module;
-use crate::codegen::cranelift::binop::{compile_binary_op, compile_unary_op};
-use crate::codegen::cranelift::exceptions::{call_exception_check, call_exception_clear, call_exception_get};
-use crate::codegen::cranelift::externs::compile_extern_call;
-use crate::codegen::cranelift::options::{compile_option_from_array_get, compile_option_from_map_get};
-use crate::codegen::cranelift::runtime::{call_alloc_closure_data, rt_func_ref};
-use crate::codegen::cranelift::spawns::call_spawn_closure;
-use crate::codegen::cranelift::strings::{call_bytes_to_string, call_float_to_string, call_int_to_string, call_string_concat, call_string_equals, call_string_from_cstr, call_string_to_bytes, call_string_to_float, call_string_to_int};
-use crate::codegen::cranelift::literal::compile_string_literal;
-use crate::codegen::cranelift::structs::{call_struct_get_field, call_struct_new, call_struct_set_field};
-use crate::codegen::cranelift::types::tc_type_to_cranelift;
 
 pub fn compile_expression(
     ctx: &mut CompileContext<'_>,
@@ -145,7 +155,17 @@ pub fn compile_expression(
                 // None block: evaluate and use rhs
                 builder.switch_to_block(none_block);
                 builder.seal_block(none_block);
-                let rhs = compile_expression(ctx, builder, bin.right)?;
+                let mut rhs = compile_expression(ctx, builder, bin.right)?;
+                // Convert string literal to NamlString if needed
+                if matches!(
+                    bin.right,
+                    Expression::Literal(LiteralExpr {
+                        value: Literal::String(_),
+                        ..
+                    })
+                ) {
+                    rhs = call_string_from_cstr(ctx, builder, rhs)?;
+                }
                 builder.ins().jump(merge_block, &[rhs]);
 
                 // Merge block: result is block parameter
@@ -216,7 +236,9 @@ pub fn compile_expression(
                             let func_ref = rt_func_ref(ctx, builder, "naml_json_get_type")?;
                             let call = builder.ins().call(func_ref, &[json]);
                             let actual_type = builder.inst_results(call)[0];
-                            let expected = builder.ins().iconst(cranelift::prelude::types::I64, type_id);
+                            let expected = builder
+                                .ins()
+                                .iconst(cranelift::prelude::types::I64, type_id);
                             let result = builder.ins().icmp(IntCC::Equal, actual_type, expected);
                             return Ok(result);
                         }
@@ -248,15 +270,19 @@ pub fn compile_expression(
                 let is_user_defined = ctx.functions.contains_key(actual_func_name);
 
                 if !is_user_defined {
-                    let qualified_name = if let Some(module) = ctx.annotations.get_resolved_module(call.span) {
-                        format!("{}::{}", module, func_name)
-                    } else {
-                        func_name.to_string()
-                    };
+                    let qualified_name =
+                        if let Some(module) = ctx.annotations.get_resolved_module(call.span) {
+                            format!("{}::{}", module, func_name)
+                        } else {
+                            func_name.to_string()
+                        };
 
                     if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name)
-                        .or_else(|| super::builtins::lookup_builtin(func_name)) {
-                        return super::builtins::compile_builtin_call(ctx, builder, builtin, &call.args);
+                        .or_else(|| super::builtins::lookup_builtin(func_name))
+                    {
+                        return super::builtins::compile_builtin_call(
+                            ctx, builder, builtin, &call.args,
+                        );
                     }
                 }
 
@@ -400,9 +426,11 @@ pub fn compile_expression(
                 // Build qualified name for builtin lookup (e.g., "array::count", "map::count")
                 // Skip "std" and "collections" prefixes for cleaner lookup names
                 let qualified_name: String = {
-                    let segments: Vec<&str> = path_expr.segments.iter()
+                    let segments: Vec<&str> = path_expr
+                        .segments
+                        .iter()
                         .map(|s| ctx.interner.resolve(&s.symbol))
-                        .filter(|&s| s != "std" && s != "collections")
+                        .filter(|&s| s != "std")
                         .collect();
                     segments.join("::")
                 };
@@ -442,8 +470,11 @@ pub fn compile_expression(
 
                 // 2. Check builtin registry - try qualified name first, then simple name
                 if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name)
-                    .or_else(|| super::builtins::lookup_builtin(&func_name)) {
-                    return super::builtins::compile_builtin_call(ctx, builder, builtin, &call.args);
+                    .or_else(|| super::builtins::lookup_builtin(&func_name))
+                {
+                    return super::builtins::compile_builtin_call(
+                        ctx, builder, builtin, &call.args,
+                    );
                 }
 
                 // Check for enum variant constructor: EnumType::Variant(data)
@@ -459,7 +490,7 @@ pub fn compile_expression(
 
                     if let Some(enum_def) = ctx.enum_defs.get(&enum_name)
                         && let Some(variant) =
-                        enum_def.variants.iter().find(|v| v.name == variant_name)
+                            enum_def.variants.iter().find(|v| v.name == variant_name)
                     {
                         // Allocate stack slot for enum
                         let slot = builder.create_sized_stack_slot(StackSlotData::new(
@@ -554,9 +585,9 @@ pub fn compile_expression(
             if matches!(base_type, Some(Type::Json)) {
                 // JSON indexing: data["key"] or data[0]
                 if let Expression::Literal(LiteralExpr {
-                                               value: Literal::String(_),
-                                               ..
-                                           }) = index_expr.index
+                    value: Literal::String(_),
+                    ..
+                }) = index_expr.index
                 {
                     // String key access: json["key"]
                     let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
@@ -575,9 +606,9 @@ pub fn compile_expression(
 
             // Indexing returns option<T> for safety (none if out of bounds / key not found)
             if let Expression::Literal(LiteralExpr {
-                                           value: Literal::String(_),
-                                           ..
-                                       }) = index_expr.index
+                value: Literal::String(_),
+                ..
+            }) = index_expr.index
             {
                 let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
                 let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
@@ -1060,7 +1091,11 @@ pub fn compile_expression(
                     Some(Type::Uint) | Some(Type::Int) => Ok(value),
                     Some(Type::Json) => {
                         // JSON to int cast: call runtime to extract int value
-                        let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+                        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            8,
+                            8,
+                        ));
                         let ptr_type = ctx.module.target_config().pointer_type();
                         let out_ptr = builder.ins().stack_addr(ptr_type, slot, 0);
                         let func_ref = rt_func_ref(ctx, builder, "naml_json_as_int")?;
@@ -1068,7 +1103,12 @@ pub fn compile_expression(
                         let success = builder.inst_results(call)[0];
                         // Load and return the value (panics if not successful in release mode)
                         let _ = success; // TODO: panic if cast fails
-                        Ok(builder.ins().load(cranelift::prelude::types::I64, MemFlags::trusted(), out_ptr, 0))
+                        Ok(builder.ins().load(
+                            cranelift::prelude::types::I64,
+                            MemFlags::trusted(),
+                            out_ptr,
+                            0,
+                        ))
                     }
                     _ => Ok(value),
                 },
@@ -1090,12 +1130,21 @@ pub fn compile_expression(
                     Some(Type::Float) => Ok(value),
                     Some(Type::Json) => {
                         // JSON to float cast
-                        let slot = builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 8));
+                        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                            StackSlotKind::ExplicitSlot,
+                            8,
+                            8,
+                        ));
                         let ptr_type = ctx.module.target_config().pointer_type();
                         let out_ptr = builder.ins().stack_addr(ptr_type, slot, 0);
                         let func_ref = rt_func_ref(ctx, builder, "naml_json_as_float")?;
                         builder.ins().call(func_ref, &[value, out_ptr]);
-                        Ok(builder.ins().load(cranelift::prelude::types::F64, MemFlags::trusted(), out_ptr, 0))
+                        Ok(builder.ins().load(
+                            cranelift::prelude::types::F64,
+                            MemFlags::trusted(),
+                            out_ptr,
+                            0,
+                        ))
                     }
                     _ => Ok(value),
                 },
@@ -1116,7 +1165,13 @@ pub fn compile_expression(
                     Some(Type::String) => {
                         // Convert string literal (C string) to NamlString first
                         let mut str_val = value;
-                        if matches!(cast_expr.expr, Expression::Literal(LiteralExpr { value: Literal::String(_), .. })) {
+                        if matches!(
+                            cast_expr.expr,
+                            Expression::Literal(LiteralExpr {
+                                value: Literal::String(_),
+                                ..
+                            })
+                        ) {
                             str_val = call_string_from_cstr(ctx, builder, value)?;
                         }
                         call_string_to_bytes(ctx, builder, str_val)
@@ -1142,9 +1197,9 @@ pub fn compile_expression(
             // String literals compile to raw C-string pointers, but runtime expects NamlString*
             if matches!(source_type, Some(Type::String)) {
                 if let Expression::Literal(LiteralExpr {
-                                               value: Literal::String(_),
-                                               ..
-                                           }) = cast_expr.expr
+                    value: Literal::String(_),
+                    ..
+                }) = cast_expr.expr
                 {
                     value = call_string_from_cstr(ctx, builder, value)?;
                 }
@@ -1366,9 +1421,9 @@ pub fn compile_expression(
 
                 // Check if this is a map access (string key) or array access (integer index)
                 if let Expression::Literal(LiteralExpr {
-                                               value: Literal::String(_),
-                                               ..
-                                           }) = index_expr.index
+                    value: Literal::String(_),
+                    ..
+                }) = index_expr.index
                 {
                     let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
                     let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
@@ -1429,9 +1484,7 @@ pub fn compile_expression(
             Ok(builder.block_params(merge_block)[0])
         }
 
-        Expression::TemplateString(template) => {
-            compile_template_string(ctx, builder, template)
-        }
+        Expression::TemplateString(template) => compile_template_string(ctx, builder, template),
 
         _ => Err(CodegenError::Unsupported(format!(
             "Expression type not yet implemented: {:?}",
@@ -1462,12 +1515,16 @@ fn compile_template_string(
                 let (tokens, interner) = tokenize(expr_str);
 
                 // Filter out whitespace, newline, and EOF tokens
-                let tokens: Vec<_> = tokens.into_iter()
-                    .filter(|t| !matches!(t.kind,
-                        crate::lexer::TokenKind::Eof |
-                        crate::lexer::TokenKind::Whitespace |
-                        crate::lexer::TokenKind::Newline
-                    ))
+                let tokens: Vec<_> = tokens
+                    .into_iter()
+                    .filter(|t| {
+                        !matches!(
+                            t.kind,
+                            crate::lexer::TokenKind::Eof
+                                | crate::lexer::TokenKind::Whitespace
+                                | crate::lexer::TokenKind::Newline
+                        )
+                    })
                     .collect();
 
                 if tokens.is_empty() {
@@ -1486,7 +1543,7 @@ fn compile_template_string(
                         // Check if this is a heap type (like string)
                         if let Some(heap_type) = ctx.var_heap_types.get(ident_name) {
                             match heap_type {
-                                HeapType::String => val, // Already a string pointer
+                                HeapType::String => val,                     // Already a string pointer
                                 _ => call_int_to_string(ctx, builder, val)?, // Other heap types
                             }
                         } else {
@@ -1507,7 +1564,8 @@ fn compile_template_string(
                         }
                     } else {
                         // Variable not found, return as literal
-                        let ptr = compile_string_literal(ctx, builder, &format!("{{{}}}", expr_str))?;
+                        let ptr =
+                            compile_string_literal(ctx, builder, &format!("{{{}}}", expr_str))?;
                         call_string_from_cstr(ctx, builder, ptr)?
                     }
                 } else {

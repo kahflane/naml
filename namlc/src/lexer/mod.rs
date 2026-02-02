@@ -383,6 +383,7 @@ pub enum Keyword {
     Exception,
     Use,
     Extern,
+    Mod,
     Spawn,
     Throw,
     Throws,
@@ -421,27 +422,31 @@ pub enum Keyword {
 }
 
 pub fn tokenize(source: &str) -> (Vec<Token>, Rodeo) {
-    let mut lexer = Lexer::new(source);
-    let tokens = lexer.tokenize_all();
-    (tokens, lexer.interner)
+    let mut interner = Rodeo::default();
+    let tokens = tokenize_with_interner(source, &mut interner);
+    (tokens, interner)
 }
 
+pub fn tokenize_with_interner(source: &str, interner: &mut Rodeo) -> Vec<Token> {
+    let mut lexer = Lexer::new(source, interner);
+    lexer.tokenize_all()
+}
 
-struct Lexer<'a> {
+struct Lexer<'a, 'r> {
     source: &'a str,
     bytes: &'a [u8],
     pos: usize,
-    interner: Rodeo,
+    interner: &'r mut Rodeo,
     file_id: u32,
 }
 
-impl<'a> Lexer<'a> {
-    fn new(source: &'a str) -> Self {
+impl<'a, 'r> Lexer<'a, 'r> {
+    fn new(source: &'a str, interner: &'r mut Rodeo) -> Self {
         Self {
             source,
             bytes: source.as_bytes(),
             pos: 0,
-            interner: Rodeo::default(),
+            interner,
             file_id: 0,
         }
     }
@@ -717,7 +722,10 @@ impl<'a> Lexer<'a> {
                             Some('\\') => result.push('\\'),
                             Some('"') => result.push('"'),
                             Some('0') => result.push('\0'),
-                            Some(other) => { result.push('\\'); result.push(other); }
+                            Some(other) => {
+                                result.push('\\');
+                                result.push(other);
+                            }
                             None => result.push('\\'),
                         }
                     } else {
@@ -752,7 +760,8 @@ impl<'a> Lexer<'a> {
             match memchr2(b'"', b'\\', &self.bytes[self.pos..]) {
                 Some(offset) => {
                     // Check for newline before the found character
-                    if let Some(nl_offset) = memchr(b'\n', &self.bytes[self.pos..self.pos + offset]) {
+                    if let Some(nl_offset) = memchr(b'\n', &self.bytes[self.pos..self.pos + offset])
+                    {
                         self.pos += nl_offset;
                         return TokenKind::Error; // Unterminated string
                     }
@@ -896,12 +905,12 @@ impl<'a> Lexer<'a> {
     fn match_keyword_2(&self, bytes: &[u8]) -> TokenKind {
         let word = u16::from_le_bytes([bytes[0], bytes[1]]);
         match word {
-            0x6E66 => TokenKind::Keyword(Keyword::Fn),     // "fn"
-            0x6669 => TokenKind::Keyword(Keyword::If),     // "if"
-            0x6E69 => TokenKind::Keyword(Keyword::In),     // "in"
-            0x7369 => TokenKind::Keyword(Keyword::Is),     // "is"
-            0x7361 => TokenKind::Keyword(Keyword::As),     // "as"
-            0x726F => TokenKind::Keyword(Keyword::Or),     // "or"
+            0x6E66 => TokenKind::Keyword(Keyword::Fn), // "fn"
+            0x6669 => TokenKind::Keyword(Keyword::If), // "if"
+            0x6E69 => TokenKind::Keyword(Keyword::In), // "in"
+            0x7369 => TokenKind::Keyword(Keyword::Is), // "is"
+            0x7361 => TokenKind::Keyword(Keyword::As), // "as"
+            0x726F => TokenKind::Keyword(Keyword::Or), // "or"
             _ => TokenKind::Ident,
         }
     }
@@ -911,16 +920,17 @@ impl<'a> Lexer<'a> {
         let b0 = bytes[0];
         let word = u16::from_le_bytes([bytes[1], bytes[2]]);
         match (b0, word) {
-            (b'v', 0x7261) => TokenKind::Keyword(Keyword::Var),   // "var"
-            (b'm', 0x7475) => TokenKind::Keyword(Keyword::Mut),   // "mut"
-            (b'p', 0x6275) => TokenKind::Keyword(Keyword::Pub),   // "pub"
-            (b'f', 0x726F) => TokenKind::Keyword(Keyword::For),   // "for"
-            (b't', 0x7972) => TokenKind::Keyword(Keyword::Try),   // "try"
-            (b'n', 0x746F) => TokenKind::Keyword(Keyword::Not),   // "not"
-            (b'a', 0x646E) => TokenKind::Keyword(Keyword::And),   // "and"
-            (b'i', 0x746E) => TokenKind::Keyword(Keyword::Int),   // "int"
-            (b'm', 0x7061) => TokenKind::Keyword(Keyword::Map),   // "map"
-            (b'u', 0x6573) => TokenKind::Keyword(Keyword::Use),   // "use"
+            (b'v', 0x7261) => TokenKind::Keyword(Keyword::Var), // "var"
+            (b'm', 0x7475) => TokenKind::Keyword(Keyword::Mut), // "mut"
+            (b'p', 0x6275) => TokenKind::Keyword(Keyword::Pub), // "pub"
+            (b'f', 0x726F) => TokenKind::Keyword(Keyword::For), // "for"
+            (b't', 0x7972) => TokenKind::Keyword(Keyword::Try), // "try"
+            (b'n', 0x746F) => TokenKind::Keyword(Keyword::Not), // "not"
+            (b'a', 0x646E) => TokenKind::Keyword(Keyword::And), // "and"
+            (b'i', 0x746E) => TokenKind::Keyword(Keyword::Int), // "int"
+            (b'm', 0x7061) => TokenKind::Keyword(Keyword::Map), // "map"
+            (b'u', 0x6573) => TokenKind::Keyword(Keyword::Use), // "use"
+            (b'm', 0x646F) => TokenKind::Keyword(Keyword::Mod), // "mod"
             _ => TokenKind::Ident,
         }
     }
@@ -929,16 +939,16 @@ impl<'a> Lexer<'a> {
     fn match_keyword_4(&self, bytes: &[u8]) -> TokenKind {
         let word = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         match word {
-            0x65736C65 => TokenKind::Keyword(Keyword::Else),   // "else"
-            0x706F6F6C => TokenKind::Keyword(Keyword::Loop),   // "loop"
-            0x65736163 => TokenKind::Keyword(Keyword::Case),   // "case"
-            0x6D756E65 => TokenKind::Keyword(Keyword::Enum),   // "enum"
-            0x6C6F6F62 => TokenKind::Keyword(Keyword::Bool),   // "bool"
-            0x656D6F73 => TokenKind::Keyword(Keyword::Some),   // "some"
-            0x656E6F6E => TokenKind::Keyword(Keyword::None),   // "none"
-            0x65757274 => TokenKind::Keyword(Keyword::True),   // "true"
-            0x746E6975 => TokenKind::Keyword(Keyword::Uint),   // "uint"
-            0x65707974 => TokenKind::Keyword(Keyword::Type),   // "type"
+            0x65736C65 => TokenKind::Keyword(Keyword::Else), // "else"
+            0x706F6F6C => TokenKind::Keyword(Keyword::Loop), // "loop"
+            0x65736163 => TokenKind::Keyword(Keyword::Case), // "case"
+            0x6D756E65 => TokenKind::Keyword(Keyword::Enum), // "enum"
+            0x6C6F6F62 => TokenKind::Keyword(Keyword::Bool), // "bool"
+            0x656D6F73 => TokenKind::Keyword(Keyword::Some), // "some"
+            0x656E6F6E => TokenKind::Keyword(Keyword::None), // "none"
+            0x65757274 => TokenKind::Keyword(Keyword::True), // "true"
+            0x746E6975 => TokenKind::Keyword(Keyword::Uint), // "uint"
+            0x65707974 => TokenKind::Keyword(Keyword::Type), // "type"
             _ => TokenKind::Ident,
         }
     }
@@ -948,16 +958,16 @@ impl<'a> Lexer<'a> {
         let word = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let b4 = bytes[4];
         match (word, b4) {
-            (0x736E6F63, b't') => TokenKind::Keyword(Keyword::Const),  // "const"
-            (0x6C696877, b'e') => TokenKind::Keyword(Keyword::While),  // "while"
-            (0x61657262, b'k') => TokenKind::Keyword(Keyword::Break),  // "break"
-            (0x6F726874, b'w') => TokenKind::Keyword(Keyword::Throw),  // "throw"
-            (0x77617073, b'n') => TokenKind::Keyword(Keyword::Spawn),  // "spawn"
-            (0x616F6C66, b't') => TokenKind::Keyword(Keyword::Float),  // "float"
-            (0x65747962, b's') => TokenKind::Keyword(Keyword::Bytes),  // "bytes"
-            (0x736C6166, b'e') => TokenKind::Keyword(Keyword::False),  // "false"
-            (0x63746163, b'h') => TokenKind::Keyword(Keyword::Catch),  // "catch"
-            (0x6574756D, b'x') => TokenKind::Keyword(Keyword::Mutex),  // "mutex"
+            (0x736E6F63, b't') => TokenKind::Keyword(Keyword::Const), // "const"
+            (0x6C696877, b'e') => TokenKind::Keyword(Keyword::While), // "while"
+            (0x61657262, b'k') => TokenKind::Keyword(Keyword::Break), // "break"
+            (0x6F726874, b'w') => TokenKind::Keyword(Keyword::Throw), // "throw"
+            (0x77617073, b'n') => TokenKind::Keyword(Keyword::Spawn), // "spawn"
+            (0x616F6C66, b't') => TokenKind::Keyword(Keyword::Float), // "float"
+            (0x65747962, b's') => TokenKind::Keyword(Keyword::Bytes), // "bytes"
+            (0x736C6166, b'e') => TokenKind::Keyword(Keyword::False), // "false"
+            (0x63746163, b'h') => TokenKind::Keyword(Keyword::Catch), // "catch"
+            (0x6574756D, b'x') => TokenKind::Keyword(Keyword::Mutex), // "mutex"
             _ => TokenKind::Ident,
         }
     }
@@ -967,17 +977,17 @@ impl<'a> Lexer<'a> {
         let word1 = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let word2 = u16::from_le_bytes([bytes[4], bytes[5]]);
         match (word1, word2) {
-            (0x75746572, 0x6E72) => TokenKind::Keyword(Keyword::Return),  // "return"
-            (0x74697773, 0x6863) => TokenKind::Keyword(Keyword::Switch),  // "switch"
-            (0x75727473, 0x7463) => TokenKind::Keyword(Keyword::Struct),  // "struct"
-            (0x65747865, 0x6E72) => TokenKind::Keyword(Keyword::Extern),  // "extern"
-            (0x6F726874, 0x7377) => TokenKind::Keyword(Keyword::Throws),  // "throws"
-            (0x69727473, 0x676E) => TokenKind::Keyword(Keyword::String),  // "string"
-            (0x6974616E, 0x6576) => TokenKind::Keyword(Keyword::Native),  // "native"
-            (0x76726573, 0x7265) => TokenKind::Keyword(Keyword::Server),  // "server"
-            (0x6974706F, 0x6E6F) => TokenKind::Keyword(Keyword::Option),  // "option"
-            (0x6B636F6C, 0x6465) => TokenKind::Keyword(Keyword::Locked),  // "locked"
-            (0x6F6C7772, 0x6B63) => TokenKind::Keyword(Keyword::Rwlock),  // "rwlock"
+            (0x75746572, 0x6E72) => TokenKind::Keyword(Keyword::Return), // "return"
+            (0x74697773, 0x6863) => TokenKind::Keyword(Keyword::Switch), // "switch"
+            (0x75727473, 0x7463) => TokenKind::Keyword(Keyword::Struct), // "struct"
+            (0x65747865, 0x6E72) => TokenKind::Keyword(Keyword::Extern), // "extern"
+            (0x6F726874, 0x7377) => TokenKind::Keyword(Keyword::Throws), // "throws"
+            (0x69727473, 0x676E) => TokenKind::Keyword(Keyword::String), // "string"
+            (0x6974616E, 0x6576) => TokenKind::Keyword(Keyword::Native), // "native"
+            (0x76726573, 0x7265) => TokenKind::Keyword(Keyword::Server), // "server"
+            (0x6974706F, 0x6E6F) => TokenKind::Keyword(Keyword::Option), // "option"
+            (0x6B636F6C, 0x6465) => TokenKind::Keyword(Keyword::Locked), // "locked"
+            (0x6F6C7772, 0x6B63) => TokenKind::Keyword(Keyword::Rwlock), // "rwlock"
             _ => TokenKind::Ident,
         }
     }
@@ -988,12 +998,12 @@ impl<'a> Lexer<'a> {
         let word2 = u16::from_le_bytes([bytes[4], bytes[5]]);
         let b6 = bytes[6];
         match (word1, word2, b6) {
-            (0x61666564, 0x6C75, b't') => TokenKind::Keyword(Keyword::Default),  // "default"
-            (0x6E616863, 0x656E, b'l') => TokenKind::Keyword(Keyword::Channel),  // "channel"
-            (0x776F7262, 0x6573, b'r') => TokenKind::Keyword(Keyword::Browser),  // "browser"
-            (0x69636564, 0x616D, b'l') => TokenKind::Keyword(Keyword::Decimal),  // "decimal"
-            (0x636F6C72, 0x656B, b'd') => TokenKind::Keyword(Keyword::Rlocked),  // "rlocked"
-            (0x636F6C77, 0x656B, b'd') => TokenKind::Keyword(Keyword::Wlocked),  // "wlocked"
+            (0x61666564, 0x6C75, b't') => TokenKind::Keyword(Keyword::Default), // "default"
+            (0x6E616863, 0x656E, b'l') => TokenKind::Keyword(Keyword::Channel), // "channel"
+            (0x776F7262, 0x6573, b'r') => TokenKind::Keyword(Keyword::Browser), // "browser"
+            (0x69636564, 0x616D, b'l') => TokenKind::Keyword(Keyword::Decimal), // "decimal"
+            (0x636F6C72, 0x656B, b'd') => TokenKind::Keyword(Keyword::Rlocked), // "rlocked"
+            (0x636F6C77, 0x656B, b'd') => TokenKind::Keyword(Keyword::Wlocked), // "wlocked"
             _ => TokenKind::Ident,
         }
     }
@@ -1003,7 +1013,7 @@ impl<'a> Lexer<'a> {
         let word1 = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let word2 = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         match (word1, word2) {
-            (0x746E6F63, 0x65756E69) => TokenKind::Keyword(Keyword::Continue),   // "continue"
+            (0x746E6F63, 0x65756E69) => TokenKind::Keyword(Keyword::Continue), // "continue"
             _ => TokenKind::Ident,
         }
     }
@@ -1014,9 +1024,9 @@ impl<'a> Lexer<'a> {
         let word2 = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         let b8 = bytes[8];
         match (word1, word2, b8) {
-            (0x65746E69, 0x63616672, b'e') => TokenKind::Keyword(Keyword::Interface),  // "interface"
-            (0x65637865, 0x6F697470, b'n') => TokenKind::Keyword(Keyword::Exception),  // "exception"
-            (0x6D726F66, 0x6D746167, b's') => TokenKind::Keyword(Keyword::Platforms),  // "platforms"
+            (0x65746E69, 0x63616672, b'e') => TokenKind::Keyword(Keyword::Interface), // "interface"
+            (0x65637865, 0x6F697470, b'n') => TokenKind::Keyword(Keyword::Exception), // "exception"
+            (0x6D726F66, 0x6D746167, b's') => TokenKind::Keyword(Keyword::Platforms), // "platforms"
             _ => TokenKind::Ident,
         }
     }
@@ -1027,7 +1037,7 @@ impl<'a> Lexer<'a> {
         let word2 = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
         let word3 = u16::from_le_bytes([bytes[8], bytes[9]]);
         match (word1, word2, word3) {
-            (0x6C706D69, 0x6E656D65, 0x7374) => TokenKind::Keyword(Keyword::Implements),  // "implements"
+            (0x6C706D69, 0x6E656D65, 0x7374) => TokenKind::Keyword(Keyword::Implements), // "implements"
             _ => TokenKind::Ident,
         }
     }
@@ -1088,7 +1098,12 @@ mod tests {
         let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
         assert_eq!(
             kinds,
-            vec![TokenKind::IntLit, TokenKind::FloatLit, TokenKind::IntLit, TokenKind::Eof]
+            vec![
+                TokenKind::IntLit,
+                TokenKind::FloatLit,
+                TokenKind::IntLit,
+                TokenKind::Eof
+            ]
         );
     }
 
@@ -1106,6 +1121,9 @@ mod tests {
         let (tokens, _) = tokenize("x // comment\ny");
         let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
         assert!(!kinds.contains(&TokenKind::Comment));
-        assert_eq!(kinds, vec![TokenKind::Ident, TokenKind::Ident, TokenKind::Eof]);
+        assert_eq!(
+            kinds,
+            vec![TokenKind::Ident, TokenKind::Ident, TokenKind::Eof]
+        );
     }
 }

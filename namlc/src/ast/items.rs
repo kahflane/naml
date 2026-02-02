@@ -19,9 +19,9 @@
 //! - Platform-specific implementations are handled at codegen time
 //!
 
-use crate::source::{Span, Spanned};
 use super::statements::{BlockStmt, Statement};
 use super::types::{Ident, NamlType};
+use crate::source::{Span, Spanned};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item<'ast> {
@@ -33,6 +33,7 @@ pub enum Item<'ast> {
     Use(UseItem),
     Extern(ExternItem),
     TypeAlias(TypeAliasItem),
+    Mod(ModuleItem<'ast>),
     TopLevelStmt(TopLevelStmtItem<'ast>),
 }
 
@@ -47,6 +48,7 @@ impl<'ast> Spanned for Item<'ast> {
             Item::Use(i) => i.span,
             Item::Extern(i) => i.span,
             Item::TypeAlias(i) => i.span,
+            Item::Mod(i) => i.span,
             Item::TopLevelStmt(i) => i.span,
         }
     }
@@ -190,6 +192,14 @@ pub struct ExceptionItem {
 pub struct UseItem {
     pub path: Vec<Ident>,
     pub items: UseItems,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModuleItem<'ast> {
+    pub name: Ident,
+    pub body: Option<Vec<Item<'ast>>>,
+    pub is_public: bool,
     pub span: Span,
 }
 

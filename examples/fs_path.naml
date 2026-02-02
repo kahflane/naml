@@ -24,7 +24,7 @@ fn main() {
     println("");
     println("Joining paths:");
     var parts: [string] = ["/home", "user", "projects", "naml"];
-    var joined: string = fs::join(parts);
+    var joined: string = join(parts);
     print("join([\"/home\", \"user\", \"projects\", \"naml\"]): ");
     println(joined);
 

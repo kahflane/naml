@@ -159,7 +159,9 @@ impl<'a> TypeInferrer<'a> {
             Type::Bytes => "bytes".to_string(),
             Type::Unit => "unit".to_string(),
             Type::Array(inner) => format!("Array_{}", self.mangle_type(inner)),
-            Type::FixedArray(inner, size) => format!("FixedArray_{}_{}", self.mangle_type(inner), size),
+            Type::FixedArray(inner, size) => {
+                format!("FixedArray_{}_{}", self.mangle_type(inner), size)
+            }
             Type::Option(inner) => format!("Option_{}", self.mangle_type(inner)),
             Type::Map(k, v) => format!("Map_{}_{}", self.mangle_type(k), self.mangle_type(v)),
             Type::Channel(inner) => format!("Channel_{}", self.mangle_type(inner)),
@@ -209,7 +211,9 @@ impl<'a> TypeInferrer<'a> {
             Type::StackFrame => "stack_frame".to_string(),
             Type::Json => "json".to_string(),
             Type::Function(f) => {
-                let params = f.params.iter()
+                let params = f
+                    .params
+                    .iter()
                     .map(|p| self.display_type(p))
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -221,7 +225,8 @@ impl<'a> TypeInferrer<'a> {
                 if args.is_empty() {
                     name_str.to_string()
                 } else {
-                    let args_str = args.iter()
+                    let args_str = args
+                        .iter()
                         .map(|a| self.display_type(a))
                         .collect::<Vec<_>>()
                         .join(", ");
@@ -339,8 +344,7 @@ impl<'a> TypeInferrer<'a> {
                 TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
                 _ => {
                     let name = self.interner.resolve(&ident.ident.symbol).to_string();
-                    self.errors
-                        .push(TypeError::undefined_var(name, ident.span));
+                    self.errors.push(TypeError::undefined_var(name, ident.span));
                     Type::Error
                 }
             }
@@ -352,122 +356,98 @@ impl<'a> TypeInferrer<'a> {
                 }
             }
             let name = self.interner.resolve(&ident.ident.symbol).to_string();
-            self.errors
-                .push(TypeError::undefined_var(name, ident.span));
+            self.errors.push(TypeError::undefined_var(name, ident.span));
             Type::Error
         } else {
             let name = self.interner.resolve(&ident.ident.symbol).to_string();
-            self.errors
-                .push(TypeError::undefined_var(name, ident.span));
+            self.errors.push(TypeError::undefined_var(name, ident.span));
             Type::Error
         }
     }
 
     fn infer_path(&mut self, path: &ast::PathExpr) -> Type {
-        if path.segments.is_empty() {
-            return Type::Error;
+        let path_spurs: Vec<lasso::Spur> = path.segments.iter().map(|s| s.symbol).collect();
+
+        // 1. Try hierarchical resolution
+        if let Some(resolved) = self.symbols.resolve_path(&path_spurs, self.interner) {
+            match resolved {
+                super::symbols::ResolvedItem::Function(sig) => {
+                    return Type::Function(self.symbols.to_function_type(sig));
+                }
+                super::symbols::ResolvedItem::Type(def) => {
+                    return self.type_from_def(def);
+                }
+                super::symbols::ResolvedItem::Module(_) => {
+                    // Cannot use a module as an expression
+                    self.errors.push(TypeError::Custom {
+                        message: format!(
+                            "Cannot use module '{}' as an expression",
+                            path_spurs
+                                .iter()
+                                .map(|s| self.interner.resolve(s))
+                                .collect::<Vec<_>>()
+                                .join("::")
+                        ),
+                        span: path.span,
+                    });
+                    return Type::Error;
+                }
+            }
         }
 
-        let first = &path.segments[0];
-
-        // For paths with 2+ segments, try module resolution
-        if path.segments.len() >= 2 {
-            // Function name is always the last segment
-            let func_name = self.interner.resolve(&path.segments.last().unwrap().symbol);
-
-            // Try each segment (except last) as potential module name
-            for i in 0..path.segments.len() - 1 {
-                let potential_module = &path.segments[i];
-
-                // Check registered modules (from imports)
-                if let Some(module) = self.symbols.get_module(potential_module.symbol) {
-                    let func_symbol = path.segments.last().unwrap().symbol;
-                    if let Some(func_sig) = module.get_function(func_symbol) {
-                        return Type::Function(self.symbols.to_function_type(func_sig));
-                    }
-                }
-
-                // Check std library modules
-                let module_name = self.interner.resolve(&potential_module.symbol);
-                if let Some(module_fns) = super::get_std_module_functions(module_name) {
-                    for std_fn in &module_fns {
-                        if std_fn.name == func_name {
-                            // Get interned Spur for type param (if generic)
-                            let type_param_spur = std_fn.type_params.first()
-                                .and_then(|tp_name| self.interner.get(tp_name));
-
-                            // Fix generic Spurs in return type
-                            let mut return_ty = std_fn.return_ty.clone();
-                            if let Some(tp_spur) = type_param_spur {
-                                fix_generic_spur(&mut return_ty, tp_spur);
-                            }
-
-                            // Fix generic Spurs in params
-                            let params: Vec<Type> = std_fn.params.iter()
-                                .map(|(_, ty)| {
-                                    let mut param_ty = ty.clone();
-                                    if let Some(tp_spur) = type_param_spur {
-                                        fix_generic_spur(&mut param_ty, tp_spur);
-                                    }
-                                    param_ty
-                                })
-                                .collect();
-
+        // 2. Special case: Enum variants (if not resolved as a direct path)
+        if path.segments.len() == 2 {
+            let first = &path.segments[0];
+            let variant_name = path.segments[1].symbol;
+            if let Some(super::symbols::TypeDef::Enum(e)) = self.symbols.get_type(first.symbol) {
+                let enum_ty = self.symbols.to_enum_type(e);
+                for (name, fields) in &e.variants {
+                    if *name == variant_name {
+                        if let Some(field_types) = fields {
                             return Type::Function(FunctionType {
-                                params,
-                                returns: Box::new(return_ty),
+                                params: field_types.clone(),
+                                returns: Box::new(Type::Enum(enum_ty)),
                                 throws: vec![],
-                                is_variadic: std_fn.is_variadic,
+                                is_variadic: false,
                             });
                         }
+                        return Type::Enum(enum_ty);
                     }
                 }
             }
         }
 
-        if let Some(def) = self.symbols.get_type(first.symbol) {
-            use super::symbols::TypeDef;
-            match def {
-                TypeDef::Enum(e) => {
-                    let enum_ty = self.symbols.to_enum_type(e);
-                    if path.segments.len() == 2 {
-                        let variant_name = path.segments[1].symbol;
-                        for (name, fields) in &e.variants {
-                            if *name == variant_name {
-                                if let Some(field_types) = fields {
-                                    return Type::Function(FunctionType {
-                                        params: field_types.clone(),
-                                        returns: Box::new(Type::Enum(enum_ty)),
-                                        throws: vec![],
-                                        is_variadic: false,
-                                    });
-                                }
-                                return Type::Enum(enum_ty);
-                            }
-                        }
-                        let variant = self.interner.resolve(&variant_name).to_string();
-                        let enum_name = self.interner.resolve(&first.symbol).to_string();
-                        self.errors.push(TypeError::Custom {
-                            message: format!("unknown variant '{}' for enum '{}'", variant, enum_name),
-                            span: path.span,
-                        });
-                    }
-                    Type::Enum(enum_ty)
-                }
-                _ => {
-                    Type::Generic(first.symbol, Vec::new())
-                }
+        // 3. Fallback: single segment in local scope (functions/types)
+        if path.segments.len() == 1 {
+            let ident = &path.segments[0];
+            if let Some(sig) = self.symbols.get_function(ident.symbol) {
+                return Type::Function(self.symbols.to_function_type(sig));
             }
-        } else {
-            let path_str = path.segments.iter()
-                .map(|s| self.interner.resolve(&s.symbol))
-                .collect::<Vec<_>>()
-                .join("::");
-            self.errors.push(TypeError::Custom {
-                message: format!("undefined path '{}'", path_str),
-                span: path.span,
-            });
-            Type::Error
+            if let Some(def) = self.symbols.get_type(ident.symbol) {
+                return self.type_from_def(def);
+            }
+        }
+
+        let path_str = path_spurs
+            .iter()
+            .map(|s| self.interner.resolve(s))
+            .collect::<Vec<_>>()
+            .join("::");
+        self.errors.push(TypeError::Custom {
+            message: format!("Undefined path '{}'", path_str),
+            span: path.span,
+        });
+        Type::Error
+    }
+
+    fn type_from_def(&self, def: &super::symbols::TypeDef) -> Type {
+        use super::symbols::TypeDef;
+        match def {
+            TypeDef::Struct(s) => Type::Struct(self.symbols.to_struct_type(s)),
+            TypeDef::Enum(e) => Type::Enum(self.symbols.to_enum_type(e)),
+            TypeDef::Interface(i) => Type::Interface(self.symbols.to_interface_type(i)),
+            TypeDef::Exception(e) => Type::Exception(self.symbols.to_exception_type(e)),
+            TypeDef::TypeAlias(a) => a.aliased_type.clone(),
         }
     }
 
@@ -486,7 +466,15 @@ impl<'a> TypeInferrer<'a> {
                 let left_resolved = left_ty.resolve();
                 if matches!(left_resolved, Type::Json) {
                     let type_name = self.interner.resolve(&ident.ident.symbol);
-                    if matches!(type_name, "json_null" | "json_bool" | "json_number" | "json_string" | "json_array" | "json_object") {
+                    if matches!(
+                        type_name,
+                        "json_null"
+                            | "json_bool"
+                            | "json_number"
+                            | "json_string"
+                            | "json_array"
+                            | "json_object"
+                    ) {
                         return Type::Bool;
                     }
                 }
@@ -510,7 +498,12 @@ impl<'a> TypeInferrer<'a> {
                     (Type::String, Type::String) => Type::String,
                     _ if left_resolved.is_numeric() || right_resolved.is_numeric() => {
                         // Handle int/uint coercion for Add as well
-                        let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, bin.left, bin.right);
+                        let coerced = self.coerce_int_uint(
+                            &left_resolved,
+                            &right_resolved,
+                            bin.left,
+                            bin.right,
+                        );
                         if let Some(result_ty) = coerced {
                             return result_ty;
                         }
@@ -548,7 +541,8 @@ impl<'a> TypeInferrer<'a> {
                 let right_resolved = right_ty.resolve();
 
                 // Handle int/uint coercion: if one is uint and other is int, prefer uint
-                let coerced = self.coerce_int_uint(&left_resolved, &right_resolved, bin.left, bin.right);
+                let coerced =
+                    self.coerce_int_uint(&left_resolved, &right_resolved, bin.left, bin.right);
                 if let Some(result_ty) = coerced {
                     return result_ty;
                 }
@@ -708,10 +702,11 @@ impl<'a> TypeInferrer<'a> {
                 }
                 return Type::Exception(exc_def.name);
             }
-            
+
             if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
                 if let Some(ref module) = func_sig.module {
-                    self.annotations.record_resolved_module(call.span, module.clone());
+                    self.annotations
+                        .record_resolved_module(call.span, module.clone());
                 }
                 if !func_sig.type_params.is_empty() {
                     return self.infer_generic_call(call, func_sig);
@@ -730,7 +725,9 @@ impl<'a> TypeInferrer<'a> {
                     let module_symbol = path.segments[i].symbol;
 
                     // Check registered modules (from imports)
-                    if let Some(func_sig) = self.symbols.get_module_function(module_symbol, func_symbol) {
+                    if let Some(func_sig) =
+                        self.symbols.get_module_function(module_symbol, func_symbol)
+                    {
                         if !func_sig.type_params.is_empty() {
                             return self.infer_generic_call(call, func_sig);
                         }
@@ -868,8 +865,12 @@ impl<'a> TypeInferrer<'a> {
         // Generate mangled name: func_TypeArg1_TypeArg2
         let func_name = self.interner.resolve(&func_sig.name);
         let mangled_name = self.mangle_generic_function(func_name, &resolved_type_args);
-        self.annotations
-            .record_monomorphization(call.span, func_sig.name, resolved_type_args, mangled_name);
+        self.annotations.record_monomorphization(
+            call.span,
+            func_sig.name,
+            resolved_type_args,
+            mangled_name,
+        );
 
         // Check for uncaught exceptions
         if !self.in_catch_context && !func_sig.throws.is_empty() {
@@ -925,32 +926,36 @@ impl<'a> TypeInferrer<'a> {
         // Check if receiver is a bare type parameter (T with no type args)
         // If so, look up methods from its bounds
         if let Type::Generic(param_name, type_args) = &resolved
-            && type_args.is_empty() {
-                // This might be a type parameter - check if it has bounds with this method
-                if let Some(method_type) =
-                    super::generics::find_method_from_bounds(*param_name, call.method.symbol, self.env, self.symbols)
-                {
-                    // Check argument count
-                    if call.args.len() != method_type.params.len() {
-                        self.errors.push(TypeError::WrongArgCount {
-                            expected: method_type.params.len(),
-                            found: call.args.len(),
-                            span: call.span,
-                        });
-                        return Type::Error;
-                    }
-
-                    // Check argument types
-                    for (arg, param_ty) in call.args.iter().zip(method_type.params.iter()) {
-                        let arg_ty = self.infer_expr(arg);
-                        if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
-                            self.errors.push(e);
-                        }
-                    }
-
-                    return method_type.returns;
+            && type_args.is_empty()
+        {
+            // This might be a type parameter - check if it has bounds with this method
+            if let Some(method_type) = super::generics::find_method_from_bounds(
+                *param_name,
+                call.method.symbol,
+                self.env,
+                self.symbols,
+            ) {
+                // Check argument count
+                if call.args.len() != method_type.params.len() {
+                    self.errors.push(TypeError::WrongArgCount {
+                        expected: method_type.params.len(),
+                        found: call.args.len(),
+                        span: call.span,
+                    });
+                    return Type::Error;
                 }
+
+                // Check argument types
+                for (arg, param_ty) in call.args.iter().zip(method_type.params.iter()) {
+                    let arg_ty = self.infer_expr(arg);
+                    if let Err(e) = unify(&arg_ty, param_ty, arg.span()) {
+                        self.errors.push(e);
+                    }
+                }
+
+                return method_type.returns;
             }
+        }
 
         // Exception built-in methods
         if let Type::Exception(_) = &resolved {
@@ -1016,19 +1021,22 @@ impl<'a> TypeInferrer<'a> {
 
             // Build substitution map for generic type arguments
             use std::collections::HashMap;
-            let substitutions: HashMap<lasso::Spur, Type> = if let Type::Generic(_, type_args) = &resolved {
-                // Look up the struct definition to get type parameter names
-                if let Some(TypeDef::Struct(struct_def)) = self.symbols.get_type(type_name) {
-                    struct_def.type_params.iter()
-                        .zip(type_args.iter())
-                        .map(|(param, arg)| (param.name, arg.clone()))
-                        .collect()
+            let substitutions: HashMap<lasso::Spur, Type> =
+                if let Type::Generic(_, type_args) = &resolved {
+                    // Look up the struct definition to get type parameter names
+                    if let Some(TypeDef::Struct(struct_def)) = self.symbols.get_type(type_name) {
+                        struct_def
+                            .type_params
+                            .iter()
+                            .zip(type_args.iter())
+                            .map(|(param, arg)| (param.name, arg.clone()))
+                            .collect()
+                    } else {
+                        HashMap::new()
+                    }
                 } else {
                     HashMap::new()
-                }
-            } else {
-                HashMap::new()
-            };
+                };
 
             for (arg, (_, param_ty)) in call.args.iter().zip(method.params.iter()) {
                 let arg_ty = self.infer_expr(arg);
@@ -1311,16 +1319,21 @@ impl<'a> TypeInferrer<'a> {
                         .collect();
 
                     for field_lit in &lit.fields {
-                        let field_def = struct_ty.fields.iter().find(|f| f.name == field_lit.name.symbol);
+                        let field_def = struct_ty
+                            .fields
+                            .iter()
+                            .find(|f| f.name == field_lit.name.symbol);
                         if let Some(field_def) = field_def {
                             let value_ty = self.infer_expr(&field_lit.value);
                             // Apply substitution to field type to replace type params with type vars
                             let substituted_field_ty = field_def.ty.substitute(&substitution);
-                            if let Err(e) = unify(&value_ty, &substituted_field_ty, field_lit.span) {
+                            if let Err(e) = unify(&value_ty, &substituted_field_ty, field_lit.span)
+                            {
                                 self.errors.push(e);
                             }
                         } else {
-                            let field_name = self.interner.resolve(&field_lit.name.symbol).to_string();
+                            let field_name =
+                                self.interner.resolve(&field_lit.name.symbol).to_string();
                             self.errors.push(TypeError::UndefinedField {
                                 ty: format!("{:?}", lit.name.symbol),
                                 field: field_name,
@@ -1335,7 +1348,12 @@ impl<'a> TypeInferrer<'a> {
                         let type_args: Vec<Type> = struct_ty
                             .type_params
                             .iter()
-                            .map(|tp| substitution.get(&tp.name).cloned().unwrap_or_else(|| fresh_type_var(self.next_var_id)))
+                            .map(|tp| {
+                                substitution
+                                    .get(&tp.name)
+                                    .cloned()
+                                    .unwrap_or_else(|| fresh_type_var(self.next_var_id))
+                            })
                             .collect();
                         Type::Generic(lit.name.symbol, type_args)
                     } else {
@@ -1345,14 +1363,18 @@ impl<'a> TypeInferrer<'a> {
                 TypeDef::Exception(exc) => {
                     // Handle exception types like struct literals
                     for field_lit in &lit.fields {
-                        let field_def = exc.fields.iter().find(|(name, _)| *name == field_lit.name.symbol);
+                        let field_def = exc
+                            .fields
+                            .iter()
+                            .find(|(name, _)| *name == field_lit.name.symbol);
                         if let Some((_, field_ty)) = field_def {
                             let value_ty = self.infer_expr(&field_lit.value);
                             if let Err(e) = unify(&value_ty, field_ty, field_lit.span) {
                                 self.errors.push(e);
                             }
                         } else {
-                            let field_name = self.interner.resolve(&field_lit.name.symbol).to_string();
+                            let field_name =
+                                self.interner.resolve(&field_lit.name.symbol).to_string();
                             self.errors.push(TypeError::UndefinedField {
                                 ty: format!("{:?}", lit.name.symbol),
                                 field: field_name,
@@ -1450,9 +1472,10 @@ impl<'a> TypeInferrer<'a> {
 
         let return_ty = if lambda.return_ty.is_some() {
             if let Err(e) = unify(&body_ty, &expected_return_ty, lambda.span)
-                && !matches!(body_ty, Type::Unit) {
-                    self.errors.push(e);
-                }
+                && !matches!(body_ty, Type::Unit)
+            {
+                self.errors.push(e);
+            }
             expected_return_ty
         } else if unify(&body_ty, &expected_return_ty, lambda.span).is_err() {
             body_ty
@@ -1480,7 +1503,9 @@ impl<'a> TypeInferrer<'a> {
     fn infer_try(&mut self, try_expr: &ast::TryExpr) -> Type {
         // Check for redundant try+catch combination
         if let Expression::Catch(_) = try_expr.expr {
-            self.errors.push(TypeError::TryWithCatch { span: try_expr.span });
+            self.errors.push(TypeError::TryWithCatch {
+                span: try_expr.span,
+            });
         }
 
         // Set catch context so the inner expression doesn't report uncaught exceptions
@@ -1494,7 +1519,6 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_catch(&mut self, catch: &ast::CatchExpr) -> Type {
-
         // Set catch context so the inner expression doesn't report uncaught exceptions
         let prev_catch_context = self.in_catch_context;
         self.in_catch_context = true;
@@ -1528,9 +1552,10 @@ impl<'a> TypeInferrer<'a> {
                 // Check if callee is a function with throws
                 if let Expression::Identifier(ident) = call.callee
                     && let Some(func_sig) = self.symbols.get_function(ident.ident.symbol)
-                        && let Some(first_throw) = func_sig.throws.first() {
-                            return first_throw.clone();
-                        }
+                    && let Some(first_throw) = func_sig.throws.first()
+                {
+                    return first_throw.clone();
+                }
                 Type::Error
             }
             Expression::MethodCall(_method_call) => {
@@ -1639,7 +1664,8 @@ impl<'a> TypeInferrer<'a> {
                     }
                 }
                 // Otherwise it's a binding that captures the scrutinee value
-                self.env.define(ident.ident.symbol, scrutinee_ty.clone(), false);
+                self.env
+                    .define(ident.ident.symbol, scrutinee_ty.clone(), false);
                 scrutinee_ty.clone()
             }
 
@@ -1662,7 +1688,11 @@ impl<'a> TypeInferrer<'a> {
                                 if let Some(ref fields) = var.fields {
                                     for (i, binding) in variant.bindings.iter().enumerate() {
                                         if i < fields.len() {
-                                            self.env.define(binding.symbol, fields[i].clone(), false);
+                                            self.env.define(
+                                                binding.symbol,
+                                                fields[i].clone(),
+                                                false,
+                                            );
                                         }
                                     }
                                 }
@@ -1692,7 +1722,11 @@ impl<'a> TypeInferrer<'a> {
                                 if let Some(ref fields) = var.fields {
                                     for (i, binding) in variant.bindings.iter().enumerate() {
                                         if i < fields.len() {
-                                            self.env.define(binding.symbol, fields[i].clone(), false);
+                                            self.env.define(
+                                                binding.symbol,
+                                                fields[i].clone(),
+                                                false,
+                                            );
                                         }
                                     }
                                 }
@@ -1781,10 +1815,9 @@ impl<'a> TypeInferrer<'a> {
                         let init_ty = self.infer_expr(init);
                         // Allow int literals to be assigned to uint (non-negative int → uint coercion)
                         let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, init);
-                        if should_unify
-                            && let Err(e) = unify(&init_ty, &ty, init.span()) {
-                                self.errors.push(e);
-                            }
+                        if should_unify && let Err(e) = unify(&init_ty, &ty, init.span()) {
+                            self.errors.push(e);
+                        }
                     }
 
                     self.env.define(var.name.symbol, ty, var.mutable);
@@ -1800,10 +1833,9 @@ impl<'a> TypeInferrer<'a> {
                 let init_ty = self.infer_expr(&c.init);
                 // Allow int literals to be assigned to uint (non-negative int → uint coercion)
                 let should_unify = !self.is_int_to_uint_coercion(&init_ty, &ty, &c.init);
-                if should_unify
-                    && let Err(e) = unify(&init_ty, &ty, c.init.span()) {
-                        self.errors.push(e);
-                    }
+                if should_unify && let Err(e) = unify(&init_ty, &ty, c.init.span()) {
+                    self.errors.push(e);
+                }
 
                 self.env.define(c.name.symbol, ty, false);
             }
@@ -1851,9 +1883,10 @@ impl<'a> TypeInferrer<'a> {
                 if let Some(value) = &ret.value {
                     let ret_ty = self.infer_expr(value);
                     if let Some(expected) = self.env.expected_return_type()
-                        && let Err(e) = unify(&ret_ty, expected, value.span()) {
-                            self.errors.push(e);
-                        }
+                        && let Err(e) = unify(&ret_ty, expected, value.span())
+                    {
+                        self.errors.push(e);
+                    }
                 }
             }
             Throw(throw) => {
@@ -1973,7 +2006,8 @@ impl<'a> TypeInferrer<'a> {
             }
             Break(brk) => {
                 if !self.env.in_loop() {
-                    self.errors.push(TypeError::BreakOutsideLoop { span: brk.span });
+                    self.errors
+                        .push(TypeError::BreakOutsideLoop { span: brk.span });
                 }
             }
             Continue(cont) => {
@@ -2050,15 +2084,9 @@ impl<'a> TypeInferrer<'a> {
                 Box::new(self.convert_ast_type(k)),
                 Box::new(self.convert_ast_type(v)),
             ),
-            ast::NamlType::Channel(inner) => {
-                Type::Channel(Box::new(self.convert_ast_type(inner)))
-            }
-            ast::NamlType::Mutex(inner) => {
-                Type::Mutex(Box::new(self.convert_ast_type(inner)))
-            }
-            ast::NamlType::Rwlock(inner) => {
-                Type::Rwlock(Box::new(self.convert_ast_type(inner)))
-            }
+            ast::NamlType::Channel(inner) => Type::Channel(Box::new(self.convert_ast_type(inner))),
+            ast::NamlType::Mutex(inner) => Type::Mutex(Box::new(self.convert_ast_type(inner))),
+            ast::NamlType::Rwlock(inner) => Type::Rwlock(Box::new(self.convert_ast_type(inner))),
             ast::NamlType::Named(ident) => {
                 // Check for built-in types first
                 let name = self.interner.resolve(&ident.symbol);
@@ -2085,14 +2113,19 @@ impl<'a> TypeInferrer<'a> {
                 }
             }
             ast::NamlType::Generic(ident, args) => {
-                let converted_args: Vec<Type> = args.iter().map(|a| self.convert_ast_type(a)).collect();
+                let converted_args: Vec<Type> =
+                    args.iter().map(|a| self.convert_ast_type(a)).collect();
 
                 // Check if this is a type alias with type params
                 if let Some(def) = self.symbols.get_type(ident.symbol) {
                     use super::symbols::TypeDef;
                     if let TypeDef::TypeAlias(alias) = def {
                         if alias.type_params.len() == converted_args.len() {
-                            return self.substitute_type_args(&alias.aliased_type, &alias.type_params, &converted_args);
+                            return self.substitute_type_args(
+                                &alias.aliased_type,
+                                &alias.type_params,
+                                &converted_args,
+                            );
                         }
                     }
                 }
@@ -2143,7 +2176,12 @@ impl<'a> TypeInferrer<'a> {
         }
     }
 
-    fn substitute_type_args(&self, ty: &Type, type_params: &[TypeParam], type_args: &[Type]) -> Type {
+    fn substitute_type_args(
+        &self,
+        ty: &Type,
+        type_params: &[TypeParam],
+        type_args: &[Type],
+    ) -> Type {
         match ty {
             Type::Generic(name, args) => {
                 // Check if this is one of the type parameters to substitute
@@ -2153,54 +2191,68 @@ impl<'a> TypeInferrer<'a> {
                     }
                 }
                 // Otherwise, recursively substitute in the args
-                let new_args = args.iter()
+                let new_args = args
+                    .iter()
                     .map(|a| self.substitute_type_args(a, type_params, type_args))
                     .collect();
                 Type::Generic(*name, new_args)
             }
-            Type::Array(inner) => {
-                Type::Array(Box::new(self.substitute_type_args(inner, type_params, type_args)))
-            }
-            Type::FixedArray(inner, n) => {
-                Type::FixedArray(Box::new(self.substitute_type_args(inner, type_params, type_args)), *n)
-            }
-            Type::Option(inner) => {
-                Type::Option(Box::new(self.substitute_type_args(inner, type_params, type_args)))
-            }
-            Type::Map(k, v) => {
-                Type::Map(
-                    Box::new(self.substitute_type_args(k, type_params, type_args)),
-                    Box::new(self.substitute_type_args(v, type_params, type_args)),
-                )
-            }
-            Type::Channel(inner) => {
-                Type::Channel(Box::new(self.substitute_type_args(inner, type_params, type_args)))
-            }
-            Type::Function(ft) => {
-                Type::Function(FunctionType {
-                    params: ft.params.iter()
-                        .map(|p| self.substitute_type_args(p, type_params, type_args))
-                        .collect(),
-                    returns: Box::new(self.substitute_type_args(&ft.returns, type_params, type_args)),
-                    throws: ft.throws.iter()
-                        .map(|t| self.substitute_type_args(t, type_params, type_args))
-                        .collect(),
-                    is_variadic: ft.is_variadic,
-                })
-            }
+            Type::Array(inner) => Type::Array(Box::new(self.substitute_type_args(
+                inner,
+                type_params,
+                type_args,
+            ))),
+            Type::FixedArray(inner, n) => Type::FixedArray(
+                Box::new(self.substitute_type_args(inner, type_params, type_args)),
+                *n,
+            ),
+            Type::Option(inner) => Type::Option(Box::new(self.substitute_type_args(
+                inner,
+                type_params,
+                type_args,
+            ))),
+            Type::Map(k, v) => Type::Map(
+                Box::new(self.substitute_type_args(k, type_params, type_args)),
+                Box::new(self.substitute_type_args(v, type_params, type_args)),
+            ),
+            Type::Channel(inner) => Type::Channel(Box::new(self.substitute_type_args(
+                inner,
+                type_params,
+                type_args,
+            ))),
+            Type::Function(ft) => Type::Function(FunctionType {
+                params: ft
+                    .params
+                    .iter()
+                    .map(|p| self.substitute_type_args(p, type_params, type_args))
+                    .collect(),
+                returns: Box::new(self.substitute_type_args(&ft.returns, type_params, type_args)),
+                throws: ft
+                    .throws
+                    .iter()
+                    .map(|t| self.substitute_type_args(t, type_params, type_args))
+                    .collect(),
+                is_variadic: ft.is_variadic,
+            }),
             // Primitive types and others don't need substitution
             _ => ty.clone(),
         }
     }
 
     /// Create a temporary FunctionSig from a StdModuleFn for generic inference
-    fn create_temp_function_sig(&self, std_fn: &super::StdModuleFn) -> Option<super::symbols::FunctionSig> {
+    fn create_temp_function_sig(
+        &self,
+        std_fn: &super::StdModuleFn,
+    ) -> Option<super::symbols::FunctionSig> {
         let spur = self.interner.get(std_fn.name)?;
 
-        let type_params: Vec<_> = std_fn.type_params.iter()
+        let type_params: Vec<_> = std_fn
+            .type_params
+            .iter()
             .filter_map(|tp_name| {
-                self.interner.get(tp_name).map(|tp_spur| {
-                    TypeParam { name: tp_spur, bounds: vec![] }
+                self.interner.get(tp_name).map(|tp_spur| TypeParam {
+                    name: tp_spur,
+                    bounds: vec![],
                 })
             })
             .collect();
@@ -2210,7 +2262,9 @@ impl<'a> TypeInferrer<'a> {
             fix_generic_spur(&mut return_ty, tp.name);
         }
 
-        let params: Vec<_> = std_fn.params.iter()
+        let params: Vec<_> = std_fn
+            .params
+            .iter()
             .filter_map(|(pname, pty)| {
                 let pspur = self.interner.get(pname)?;
                 let mut param_ty = pty.clone();

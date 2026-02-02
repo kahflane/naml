@@ -41,6 +41,9 @@ pub fn compile_option_from_array_access(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(nonempty_block);
@@ -106,6 +109,9 @@ pub fn compile_option_from_array_get(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(valid_block);
@@ -158,6 +164,9 @@ pub fn compile_option_from_map_get(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(found_block);
@@ -212,6 +221,9 @@ pub fn compile_option_from_index_of(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(found_block);
@@ -263,6 +275,9 @@ pub fn compile_option_from_last_index_of(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(found_block);
@@ -318,6 +333,9 @@ pub fn compile_option_from_remove_at(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(valid_block);
@@ -383,6 +401,9 @@ pub fn compile_option_from_map_remove(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(found_block);
@@ -445,6 +466,9 @@ pub fn compile_option_from_map_first(
     builder
         .ins()
         .store(MemFlags::new(), none_tag, option_ptr, 0);
+    // Initialize value to 0 to prevent undefined behavior
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
     builder.ins().jump(merge_block, &[]);
 
     builder.switch_to_block(found_block);

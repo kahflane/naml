@@ -44,6 +44,7 @@ pub fn parse_item<'a, 'ast>(
         Some(TokenKind::Keyword(Keyword::Exception)) => parse_exception_item(input, is_public),
         Some(TokenKind::Keyword(Keyword::Use)) => parse_use_item(input),
         Some(TokenKind::Keyword(Keyword::Extern)) => parse_extern_item(input),
+        Some(TokenKind::Keyword(Keyword::Mod)) => parse_mod_item(arena, input, is_public),
         Some(TokenKind::Keyword(Keyword::Type)) => parse_type_alias_item(input, is_public),
         _ => parse_top_level_stmt(arena, input),
     }
@@ -260,10 +261,7 @@ fn parse_parameter<'a>(input: TokenStream<'a>) -> PResult<'a, Parameter> {
     ))
 }
 
-fn parse_struct_item<'a, 'ast>(
-    input: TokenStream<'a>,
-    is_public: bool,
-) -> PResult<'a, Item<'ast>> {
+fn parse_struct_item<'a, 'ast>(input: TokenStream<'a>, is_public: bool) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Struct)(input)?;
     let (input, name) = ident(input)?;
 
@@ -557,7 +555,6 @@ fn parse_exception_item<'a, 'ast>(
     ))
 }
 
-
 fn parse_use_item<'a, 'ast>(input: TokenStream<'a>) -> PResult<'a, Item<'ast>> {
     let (input, start) = keyword(Keyword::Use)(input)?;
 
@@ -743,8 +740,47 @@ fn parse_top_level_stmt<'a, 'ast>(
 ) -> PResult<'a, Item<'ast>> {
     let (input, stmt) = parse_statement(arena, input)?;
     let span = stmt.span();
-    Ok((
-        input,
-        Item::TopLevelStmt(TopLevelStmtItem { stmt, span }),
-    ))
+    Ok((input, Item::TopLevelStmt(TopLevelStmtItem { stmt, span })))
+}
+fn parse_mod_item<'a, 'ast>(
+    arena: &'ast AstArena,
+    input: TokenStream<'a>,
+    is_public: bool,
+) -> PResult<'a, Item<'ast>> {
+    let (input, start) = keyword(Keyword::Mod)(input)?;
+    let (input, name) = ident(input)?;
+
+    if check(TokenKind::Semicolon)(input) {
+        let (input, end) = token(TokenKind::Semicolon)(input)?;
+        Ok((
+            input,
+            Item::Mod(ModuleItem {
+                name,
+                body: None,
+                is_public,
+                span: start.span.merge(end.span),
+            }),
+        ))
+    } else {
+        let (input, _) = token(TokenKind::LBrace)(input)?;
+        let mut items = Vec::new();
+        let mut input = input;
+
+        while !check(TokenKind::RBrace)(input) && !input.is_empty() {
+            let (new_input, item) = parse_item(arena, input)?;
+            items.push(item);
+            input = new_input;
+        }
+
+        let (input, end) = token(TokenKind::RBrace)(input)?;
+        Ok((
+            input,
+            Item::Mod(ModuleItem {
+                name,
+                body: Some(items),
+                is_public,
+                span: start.span.merge(end.span),
+            }),
+        ))
+    }
 }

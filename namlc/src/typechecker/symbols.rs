@@ -112,13 +112,19 @@ pub struct TypeAliasDef {
 
 #[derive(Debug, Clone)]
 pub struct ModuleNamespace {
+    pub name: Spur,
     pub functions: HashMap<Spur, FunctionSig>,
+    pub types: HashMap<Spur, TypeDef>,
+    pub submodules: HashMap<Spur, ModuleNamespace>,
 }
 
 impl ModuleNamespace {
-    pub fn new() -> Self {
+    pub fn new(name: Spur) -> Self {
         Self {
+            name,
             functions: HashMap::new(),
+            types: HashMap::new(),
+            submodules: HashMap::new(),
         }
     }
 
@@ -130,55 +136,6 @@ impl ModuleNamespace {
         self.functions.get(&name)
     }
 
-    pub fn all_functions(&self) -> impl Iterator<Item = &FunctionSig> {
-        self.functions.values()
-    }
-}
-
-impl Default for ModuleNamespace {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-use std::collections::HashSet;
-
-#[derive(Debug)]
-pub struct SymbolTable {
-    types: HashMap<Spur, TypeDef>,
-    functions: HashMap<Spur, FunctionSig>,
-    ambiguous_functions: HashSet<Spur>,
-    methods: HashMap<Spur, Vec<MethodSig>>,
-    modules: HashMap<Spur, ModuleNamespace>,
-}
-
-impl SymbolTable {
-    pub fn new() -> Self {
-        Self {
-            types: HashMap::new(),
-            functions: HashMap::new(),
-            ambiguous_functions: HashSet::new(),
-            methods: HashMap::new(),
-            modules: HashMap::new(),
-        }
-    }
-
-    pub fn register_module(&mut self, name: Spur) -> &mut ModuleNamespace {
-        self.modules.entry(name).or_default()
-    }
-
-    pub fn get_module(&self, name: Spur) -> Option<&ModuleNamespace> {
-        self.modules.get(&name)
-    }
-
-    pub fn get_module_function(&self, module: Spur, func: Spur) -> Option<&FunctionSig> {
-        self.modules.get(&module)?.get_function(func)
-    }
-
-    pub fn has_module(&self, name: Spur) -> bool {
-        self.modules.contains_key(&name)
-    }
-
     pub fn define_type(&mut self, name: Spur, def: TypeDef) {
         self.types.insert(name, def);
     }
@@ -187,8 +144,185 @@ impl SymbolTable {
         self.types.get(&name)
     }
 
+    pub fn submodule(&mut self, name: Spur) -> &mut ModuleNamespace {
+        self.submodules
+            .entry(name)
+            .or_insert_with(|| ModuleNamespace::new(name))
+    }
+
+    pub fn define_submodule(&mut self, name: Spur, module: ModuleNamespace) {
+        self.submodules.insert(name, module);
+    }
+
+    pub fn get_submodule(&self, name: Spur) -> Option<&ModuleNamespace> {
+        self.submodules.get(&name)
+    }
+
+    pub fn all_functions(&self) -> impl Iterator<Item = &FunctionSig> {
+        self.functions.values()
+    }
+
+    pub fn all_types(&self) -> impl Iterator<Item = (&Spur, &TypeDef)> {
+        self.types.iter()
+    }
+
+    pub fn all_submodules(&self) -> impl Iterator<Item = (&Spur, &ModuleNamespace)> {
+        self.submodules.iter()
+    }
+}
+
+impl Default for ModuleNamespace {
+    fn default() -> Self {
+        Self::new(Spur::default())
+    }
+}
+
+use std::collections::HashSet;
+
+#[derive(Debug, Clone)]
+pub enum ResolvedItem<'a> {
+    Function(&'a FunctionSig),
+    Type(&'a TypeDef),
+    Module(&'a ModuleNamespace),
+}
+
+#[derive(Debug)]
+pub struct SymbolTable {
+    pub root: ModuleNamespace,
+    // Global maps for backward compatibility and fast lookup of unqualified names
+    // (though in a proper module system, these should be scoped)
+    types: HashMap<Spur, TypeDef>,
+    functions: HashMap<Spur, FunctionSig>,
+    ambiguous_functions: HashSet<Spur>,
+    methods: HashMap<Spur, Vec<MethodSig>>,
+    pub current_path: Vec<Spur>,
+}
+
+impl SymbolTable {
+    pub fn new() -> Self {
+        Self {
+            root: ModuleNamespace::new(Spur::default()),
+            types: HashMap::new(),
+            functions: HashMap::new(),
+            ambiguous_functions: HashSet::new(),
+            methods: HashMap::new(),
+            current_path: Vec::new(),
+        }
+    }
+
+    pub fn enter_module(&mut self, name: Spur) {
+        self.current_path.push(name);
+    }
+
+    pub fn exit_module(&mut self) {
+        self.current_path.pop();
+    }
+
+    fn get_current_module_mut(&mut self) -> &mut ModuleNamespace {
+        let mut curr = &mut self.root;
+        for &seg in &self.current_path {
+            curr = curr.submodule(seg);
+        }
+        curr
+    }
+
+    pub fn register_module(&mut self, name: Spur) -> &mut ModuleNamespace {
+        self.root.submodule(name)
+    }
+
+    pub fn get_module(&self, name: Spur) -> Option<&ModuleNamespace> {
+        self.root.get_submodule(name)
+    }
+
+    pub fn get_module_function(&self, module: Spur, func: Spur) -> Option<&FunctionSig> {
+        self.root.get_submodule(module)?.get_function(func)
+    }
+
+    pub fn has_module(&self, name: Spur) -> bool {
+        self.root.get_submodule(name).is_some()
+    }
+
+    pub fn define_type(&mut self, name: Spur, def: TypeDef) {
+        self.types.insert(name, def.clone());
+        self.get_current_module_mut().define_type(name, def);
+    }
+
+    pub fn define_module(&mut self, name: Spur, module: ModuleNamespace) {
+        self.get_current_module_mut().define_submodule(name, module);
+    }
+
+    pub fn resolve_path(&self, path: &[Spur], interner: &lasso::Rodeo) -> Option<ResolvedItem<'_>> {
+        if path.is_empty() {
+            return None;
+        }
+
+        let mut curr_module = &self.root;
+        let mut start_idx = 0;
+
+        // Special handling for self and super
+        let first = path[0];
+        let first_str = interner.resolve(&first);
+        if first_str == "self" {
+            curr_module = self.get_current_module();
+            start_idx = 1;
+        } else if first_str == "super" {
+            curr_module = self.get_parent_module()?;
+            start_idx = 1;
+        } else {
+            // Check if first segment is a submodule of current module
+            if let Some(sub) = self.get_current_module().get_submodule(first) {
+                curr_module = sub;
+                start_idx = 1;
+            } else if let Some(sub) = self.root.get_submodule(first) {
+                curr_module = sub;
+                start_idx = 1;
+            }
+        }
+
+        for &seg in &path[start_idx..path.len().saturating_sub(1)] {
+            curr_module = curr_module.get_submodule(seg)?;
+        }
+
+        let last = path.last()?;
+        if let Some(sig) = curr_module.get_function(*last) {
+            return Some(ResolvedItem::Function(sig));
+        }
+        if let Some(def) = curr_module.get_type(*last) {
+            return Some(ResolvedItem::Type(def));
+        }
+        if let Some(sub) = curr_module.get_submodule(*last) {
+            return Some(ResolvedItem::Module(sub));
+        }
+
+        None
+    }
+
+    fn get_current_module(&self) -> &ModuleNamespace {
+        let mut curr = &self.root;
+        for &seg in &self.current_path {
+            curr = curr.get_submodule(seg).expect("Path must be valid");
+        }
+        curr
+    }
+
+    fn get_parent_module(&self) -> Option<&ModuleNamespace> {
+        if self.current_path.is_empty() {
+            return None;
+        }
+        let mut curr = &self.root;
+        for &seg in &self.current_path[..self.current_path.len() - 1] {
+            curr = curr.get_submodule(seg).expect("Path must be valid");
+        }
+        Some(curr)
+    }
+
+    pub fn get_type(&self, name: Spur) -> Option<&TypeDef> {
+        self.types.get(&name)
+    }
+
     pub fn define_function(&mut self, sig: FunctionSig) {
-        self.functions.insert(sig.name, sig);
+        self.functions.insert(sig.name, sig.clone());
+        self.get_current_module_mut().add_function(sig);
     }
 
     pub fn has_function(&self, name: Spur) -> bool {
@@ -283,6 +417,10 @@ impl SymbolTable {
             throws: sig.throws.clone(),
             is_variadic: sig.is_variadic,
         }
+    }
+
+    pub fn to_exception_type(&self, def: &ExceptionDef) -> Spur {
+        def.name
     }
 }
 

@@ -2,7 +2,7 @@
 /// JSON Test - Matching json_demo structure
 ///
 
-use std::encoding::json;
+use std::encoding::json::*;
 
 fn extract_user_name(user: json) -> string {
     var name_json: json = user["name"];
@@ -21,8 +21,8 @@ fn extract_user_age(user: json) -> int {
 }
 
 fn count_active_users(users: json) -> int {
-    var count: int = 0;
-    var total: int = json::count(users);
+    var active_count: int = 0;
+    var total: int = count(users);
     var i: int = 0;
     while (i < total) {
         var user: json = users[i];
@@ -30,17 +30,17 @@ fn count_active_users(users: json) -> int {
         if (active is json_bool) {
             var is_active: int = active as int;
             if (is_active == 1) {
-                count = count + 1;
+                active_count = active_count + 1;
             }
         }
         i = i + 1;
     }
-    return count;
+    return active_count;
 }
 
 fn sum_all_ages(users: json) -> int {
     var sum: int = 0;
-    var total: int = json::count(users);
+    var total: int = count(users);
     var i: int = 0;
     while (i < total) {
         var user: json = users[i];
@@ -51,9 +51,9 @@ fn sum_all_ages(users: json) -> int {
 }
 
 fn process_nested_data(data: json) -> string throws PathError {
-    var settings: json = json::path(data, ".settings");
+    var settings: json = path(data, ".settings");
     var theme: json = settings["theme"];
-    var font_size: json = json::path(data, ".settings.font_size");
+    var font_size: json = path(data, ".settings.font_size");
 
     var theme_str: string = "unknown";
     if (theme is json_string) {
@@ -75,13 +75,13 @@ fn main() {
     // Test 1: Basic parsing and encoding
     println("Test 1: Basic JSON parsing and encoding");
     var json_str: string = "{\"name\": \"Alice\", \"age\": 30, \"active\": true}";
-    var user: json = json::decode(json_str) catch e {
+    var user: json = decode(json_str) catch e {
         println("Failed to decode JSON");
     };
-    println(fmt("  Decoded JSON, type = {}", json::type_name(user)));
-    println(fmt("  Re-encoded: {}", json::encode(user)));
+    println(fmt("  Decoded JSON, type = {}", type_name(user)));
+    println(fmt("  Re-encoded: {}", encode(user)));
 
-    var actual_type: string = json::type_name(user);
+    var actual_type: string = type_name(user);
     if (actual_type == "object") {
         println("  PASS: Type is object");
     } else {
@@ -96,10 +96,10 @@ fn main() {
     var active: json = user["active"];
     var missing: json = user["missing"];
 
-    println(fmt("  name type: {}", json::type_name(name)));
-    println(fmt("  age type: {}", json::type_name(age)));
-    println(fmt("  active type: {}", json::type_name(active)));
-    println(fmt("  missing type: {}", json::type_name(missing)));
+    println(fmt("  name type: {}", type_name(name)));
+    println(fmt("  age type: {}", type_name(age)));
+    println(fmt("  active type: {}", type_name(active)));
+    println(fmt("  missing type: {}", type_name(missing)));
 
     if (name is json_string) {
         println("  PASS: name is json_string");
@@ -149,12 +149,12 @@ fn main() {
     // Test 4: User-defined functions with json parameters
     println("Test 4: User-defined functions with json");
     var complex_json: string = "{\"users\": [{\"name\": \"Alice\", \"age\": 30, \"active\": true}, {\"name\": \"Bob\", \"age\": 25, \"active\": false}, {\"name\": \"Charlie\", \"age\": 35, \"active\": true}], \"settings\": {\"theme\": \"dark\", \"font_size\": 14}}";
-    var data: json = json::decode(complex_json) catch e {
+    var data: json = decode(complex_json) catch e {
         println("Failed to decode complex JSON");
     };
 
     var users: json = data["users"];
-    println(fmt("  Users count: {}", json::count(users)));
+    println(fmt("  Users count: {}", count(users)));
 
     var alice_name: string = extract_user_name(users[0]);
     println(fmt("  First user name: {}", alice_name));
@@ -191,10 +191,10 @@ fn main() {
 
     // Test 5: Path-based navigation (jq-style)
     println("Test 5: Path navigation (jq-style)");
-    var first_name: json = json::path(data, ".users[0].name") catch e {
+    var first_name: json = path(data, ".users[0].name") catch e {
         println("Path error");
     };
-    var theme: json = json::path(data, ".settings.theme") catch e {
+    var theme: json = path(data, ".settings.theme") catch e {
         println("Path error");
     };
 
@@ -230,9 +230,9 @@ fn main() {
     // Test 7: JSON keys
     println("Test 7: JSON object keys");
     var settings2: json = data["settings"];
-    var setting_keys: [string] = json::keys(settings2);
-    var has_theme: bool = json::exists(settings2, "theme");
-    var has_font: bool = json::exists(settings2, "font_size");
+    var setting_keys: [string] = keys(settings2);
+    var has_theme: bool = exists(settings2, "theme");
+    var has_font: bool = exists(settings2, "font_size");
     println(fmt("  has 'theme': {}", has_theme));
     println(fmt("  has 'font_size': {}", has_font));
     if (has_theme && has_font) {
@@ -244,15 +244,15 @@ fn main() {
 
     // Test 8: Pretty printing
     println("Test 8: Pretty printing");
-    var pretty: string = json::encode_pretty(user);
+    var pretty: string = encode_pretty(user);
     println("  Pretty JSON:");
     println(pretty);
     println("");
 
     // Test 9: Exists check
     println("Test 9: Exists check");
-    var has_name2: bool = json::exists(user, "name");
-    var has_email: bool = json::exists(user, "email");
+    var has_name2: bool = exists(user, "name");
+    var has_email: bool = exists(user, "email");
     println(fmt("  has 'name': {}", has_name2));
     println(fmt("  has 'email': {}", has_email));
     if (has_name2 && !has_email) {
@@ -265,11 +265,11 @@ fn main() {
     // Test 10: Array access
     println("Test 10: Array access");
     var arr_json: string = "[10, 20, 30, 40, 50]";
-    var arr: json = json::decode(arr_json) catch e {
+    var arr: json = decode(arr_json) catch e {
         println("Failed to decode array");
     };
-    println(fmt("  Array type: {}", json::type_name(arr)));
-    println(fmt("  Array count: {}", json::count(arr)));
+    println(fmt("  Array type: {}", type_name(arr)));
+    println(fmt("  Array count: {}", count(arr)));
 
     var third: json = arr[2];
     var third_val: int = third as int;

@@ -230,7 +230,19 @@ pub fn compile_statement(
                     {
                         let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
                         let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
-                        call_map_set(ctx, builder, base, naml_str, value)?;
+
+                        // Convert value to NamlString if it's a string literal
+                        let final_value = if let Expression::Literal(LiteralExpr {
+                            value: Literal::String(_),
+                            ..
+                        }) = &assign.value
+                        {
+                            call_string_from_cstr(ctx, builder, value)?
+                        } else {
+                            value
+                        };
+
+                        call_map_set(ctx, builder, base, naml_str, final_value)?;
                     } else {
                         // Default to array set for integer indices
                         let index = compile_expression(ctx, builder, index_expr.index)?;
