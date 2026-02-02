@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Ant icon for naml language -->
+  <!-- Antennae -->
+  <path d="M5.5 3.5 Q4 2 3 1" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+  <path d="M6.5 3.5 Q7 2 8 1" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+
+  <!-- Head -->
+  <ellipse cx="6" cy="4.5" rx="2" ry="1.5" fill="#c9510c"/>
+
+  <!-- Thorax -->
+  <ellipse cx="6" cy="7" rx="1.5" ry="1.8" fill="#c9510c"/>
+
+  <!-- Abdomen -->
+  <ellipse cx="6" cy="11" rx="2.5" ry="3" fill="#c9510c"/>
+
+  <!-- Front legs -->
+  <path d="M4.5 6 Q2.5 5.5 1.5 4" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+  <path d="M7.5 6 Q9.5 5.5 10.5 4" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+
+  <!-- Middle legs -->
+  <path d="M4.5 7.5 Q2 8 1 9" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+  <path d="M7.5 7.5 Q10 8 11 9" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+
+  <!-- Back legs -->
+  <path d="M4.5 10 Q2 11 1 13" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+  <path d="M7.5 10 Q10 11 11 13" stroke="#c9510c" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+
+  <!-- Eyes -->
+  <circle cx="5" cy="4" r="0.4" fill="#000"/>
+  <circle cx="7" cy="4" r="0.4" fill="#000"/>
+</svg>

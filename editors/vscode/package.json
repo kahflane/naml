@@ -1,0 +1,84 @@
+{
+  "name": "naml",
+  "displayName": "naml Language Support",
+  "description": "Language support for the naml programming language",
+  "version": "0.1.0",
+  "publisher": "naml-lang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kahflane/naml"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:naml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "naml",
+        "aliases": [
+          "naml",
+          "Naml"
+        ],
+        "extensions": [
+          ".naml"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "naml",
+        "scopeName": "source.naml",
+        "path": "./syntaxes/naml.tmLanguage.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "naml-icons",
+        "label": "naml File Icons",
+        "path": "./icons/naml-icon-theme.json"
+      }
+    ],
+    "configuration": {
+      "title": "naml",
+      "properties": {
+        "naml.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to naml-lsp executable. If empty, uses bundled version or searches PATH."
+        },
+        "naml.lsp.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the naml language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

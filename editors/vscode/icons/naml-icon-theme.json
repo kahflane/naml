@@ -1,0 +1,13 @@
+{
+  "iconDefinitions": {
+    "_naml_file": {
+      "iconPath": "./images/naml.svg"
+    }
+  },
+  "fileExtensions": {
+    "naml": "_naml_file"
+  },
+  "languageIds": {
+    "naml": "_naml_file"
+  }
+}

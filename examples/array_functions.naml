@@ -9,7 +9,7 @@ use std::collections::arrays::{
 
 fn main() {
     println("=== Array Functions Demo ===\n");
-
+    
     var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Basic operations

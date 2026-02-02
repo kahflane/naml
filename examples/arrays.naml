@@ -2,7 +2,6 @@ use std::collections::arrays::{count, push, pop};
 
 fn main() {
     println("Testing arrays with for loop:");
-
     var arr: [int] = [10, 20, 30, 40, 50];
 
     print("Array length: ");

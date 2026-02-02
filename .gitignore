@@ -25,3 +25,5 @@ settings.local.json
 .worktrees/
 benches/
 scripts/
+
+node_modules/

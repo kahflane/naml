@@ -21,6 +21,7 @@ members = [
     "std/naml-std-path",
     "std/naml-std-encoding",
     "std/naml-std-net",
+    "tools/naml-lsp",
 ]
 
 [workspace.package]
@@ -115,6 +116,13 @@ insta = { version = "1.41", features = ["json"] }
 ## Parser combinators
 ##
 nom = "7"
+
+##
+## Language Server Protocol
+##
+tower-lsp = "0.20"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 ##
 ## Small vector optimization (stack-allocated for small sizes)

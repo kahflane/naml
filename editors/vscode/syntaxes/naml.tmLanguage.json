@@ -1,0 +1,310 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "naml",
+  "scopeName": "source.naml",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#template-strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#attributes" },
+    { "include": "#operators" },
+    { "include": "#function-definition" },
+    { "include": "#method-definition" },
+    { "include": "#function-call" },
+    { "include": "#struct-literal" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.naml",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.naml",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.naml",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            { "include": "#comments" }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.naml",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.naml",
+              "match": "\\\\[ntr\\\\\"0]"
+            }
+          ]
+        }
+      ]
+    },
+    "template-strings": {
+      "patterns": [
+        {
+          "name": "string.template.naml",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            {
+              "name": "constant.character.escape.naml",
+              "match": "\\\\`"
+            },
+            {
+              "name": "meta.template.expression.naml",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.begin.naml" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.end.naml" }
+              },
+              "patterns": [
+                { "include": "$self" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.naml",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*(?:[eE][+-]?[0-9_]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.naml",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.naml",
+          "match": "\\b(if|else|while|for|loop|break|continue|return|switch|case|default|in)\\b"
+        },
+        {
+          "name": "keyword.declaration.naml",
+          "match": "\\b(fn|var|const|pub|type)\\b"
+        },
+        {
+          "name": "keyword.structure.naml",
+          "match": "\\b(struct|enum|interface|exception|implements)\\b"
+        },
+        {
+          "name": "keyword.concurrency.naml",
+          "match": "\\b(spawn|locked|rlocked|wlocked)\\b"
+        },
+        {
+          "name": "keyword.error.naml",
+          "match": "\\b(throw|throws|try|catch)\\b"
+        },
+        {
+          "name": "keyword.module.naml",
+          "match": "\\b(use|mod|extern)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.naml",
+          "match": "\\b(and|or|not)\\b"
+        },
+        {
+          "name": "keyword.operator.cast.naml",
+          "match": "\\b(as)\\b"
+        },
+        {
+          "name": "keyword.operator.type-check.naml",
+          "match": "\\b(is)\\b"
+        },
+        {
+          "name": "constant.language.boolean.naml",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.option.naml",
+          "match": "\\b(some|none)\\b"
+        },
+        {
+          "name": "variable.language.self.naml",
+          "match": "\\b(self|super)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.naml",
+          "match": "\\b(int|uint|float|decimal|bool|string|bytes)\\b"
+        },
+        {
+          "name": "storage.type.generic.naml",
+          "match": "\\b(option|map|channel|mutex|rwlock)\\b"
+        },
+        {
+          "name": "entity.name.type.naml",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.naml",
+          "begin": "#\\[",
+          "end": "\\]",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.attribute.begin.naml" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.attribute.end.naml" }
+          },
+          "patterns": [
+            {
+              "name": "entity.other.attribute-name.naml",
+              "match": "\\b(platforms|native|server|browser)\\b"
+            },
+            { "include": "#identifiers" }
+          ]
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.assignment.compound.naml",
+          "match": "(\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=)"
+        },
+        {
+          "name": "keyword.operator.assignment.naml",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.comparison.naml",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.naml",
+          "match": "(\\+|-|\\*|/|%)"
+        },
+        {
+          "name": "keyword.operator.logical.naml",
+          "match": "(&&|\\|\\|)"
+        },
+        {
+          "name": "keyword.operator.bitwise.naml",
+          "match": "(<<|>>|&|\\||\\^|~)"
+        },
+        {
+          "name": "keyword.operator.arrow.naml",
+          "match": "(->|=>)"
+        },
+        {
+          "name": "keyword.operator.namespace.naml",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.range.naml",
+          "match": "(\\.\\.\\.|\\.\\.|\\.\\.=)"
+        },
+        {
+          "name": "keyword.operator.null-coalesce.naml",
+          "match": "(\\?\\?|\\?:)"
+        },
+        {
+          "name": "keyword.operator.ternary.naml",
+          "match": "[?:]"
+        },
+        {
+          "name": "keyword.operator.unwrap.naml",
+          "match": "!"
+        }
+      ]
+    },
+    "function-definition": {
+      "patterns": [
+        {
+          "match": "\\b(pub)\\s+(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?:<|\\()",
+          "captures": {
+            "1": { "name": "keyword.declaration.naml" },
+            "2": { "name": "keyword.declaration.naml" },
+            "3": { "name": "entity.name.function.naml" }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?:<|\\()",
+          "captures": {
+            "1": { "name": "keyword.declaration.naml" },
+            "2": { "name": "entity.name.function.naml" }
+          }
+        }
+      ]
+    },
+    "method-definition": {
+      "patterns": [
+        {
+          "match": "\\b(pub)\\s+(fn)\\s*\\(\\s*(self)\\s*:\\s*([A-Z][a-zA-Z0-9_]*)(?:<[^>]*>)?\\s*\\)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.naml" },
+            "2": { "name": "keyword.declaration.naml" },
+            "3": { "name": "variable.language.self.naml" },
+            "4": { "name": "entity.name.type.naml" },
+            "5": { "name": "entity.name.function.method.naml" }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s*\\(\\s*(self)\\s*:\\s*([A-Z][a-zA-Z0-9_]*)(?:<[^>]*>)?\\s*\\)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.naml" },
+            "2": { "name": "variable.language.self.naml" },
+            "3": { "name": "entity.name.type.naml" },
+            "4": { "name": "entity.name.function.method.naml" }
+          }
+        }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "match": "\\b([a-z_][a-zA-Z0-9_]*)\\s*(?:<[^>]*>)?\\s*\\(",
+          "captures": {
+            "1": { "name": "entity.name.function.call.naml" }
+          }
+        }
+      ]
+    },
+    "struct-literal": {
+      "patterns": [
+        {
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)(?:<[^>]*>)?\\s*\\{",
+          "captures": {
+            "1": { "name": "entity.name.type.naml" }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.naml",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}
