@@ -86,30 +86,37 @@ pub unsafe extern "C" fn naml_net_tcp_server_listen(address: *const NamlString) 
 /// * `listener_handle` - Handle to the TCP listener from `listen()`
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_net_tcp_server_accept(listener_handle: i64) -> i64 {
-    let listeners = get_listeners().lock().unwrap();
-
-    let listener = match listeners.get(&listener_handle) {
-        Some(l) => l,
-        None => {
-            let err = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid listener handle",
-            );
-            drop(listeners);
-            throw_network_error(err);
-            return -1;
+    // Clone the listener to avoid holding the lock during the blocking accept
+    let listener_clone = {
+        let listeners = get_listeners().lock().unwrap();
+        match listeners.get(&listener_handle) {
+            Some(l) => match l.try_clone() {
+                Ok(cloned) => cloned,
+                Err(e) => {
+                    drop(listeners);
+                    throw_network_error(e);
+                    return -1;
+                }
+            },
+            None => {
+                let err = std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Invalid listener handle",
+                );
+                drop(listeners);
+                throw_network_error(err);
+                return -1;
+            }
         }
     };
 
-    match listener.accept() {
+    match listener_clone.accept() {
         Ok((stream, _addr)) => {
-            drop(listeners);
             let handle = next_handle();
             get_sockets().lock().unwrap().insert(handle, stream);
             handle
         }
         Err(e) => {
-            drop(listeners);
             throw_network_error(e);
             -1
         }

@@ -74,45 +74,44 @@ pub unsafe extern "C" fn naml_net_tcp_client_connect(address: *const NamlString)
 
 /// Read up to `size` bytes from the socket
 ///
-/// Returns a pointer to NamlArray containing the data read, or null on error.
+/// Returns a pointer to NamlBytes containing the data read, or null on error.
 /// On error, a NetworkError exception is set.
 ///
 /// # Arguments
 /// * `socket_handle` - Handle to the TCP socket
 /// * `size` - Maximum number of bytes to read
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_net_tcp_client_read(socket_handle: i64, size: i64) -> *mut NamlArray {
-    let mut sockets = get_sockets().lock().unwrap();
-
-    let stream = match sockets.get_mut(&socket_handle) {
-        Some(s) => s,
-        None => {
-            let err = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid socket handle",
-            );
-            drop(sockets);
-            throw_network_error(err);
-            return std::ptr::null_mut();
+pub extern "C" fn naml_net_tcp_client_read(socket_handle: i64, size: i64) -> *mut NamlBytes {
+    // Clone the stream to avoid holding the lock during the blocking read
+    let mut stream_clone = {
+        let sockets = get_sockets().lock().unwrap();
+        match sockets.get(&socket_handle) {
+            Some(s) => match s.try_clone() {
+                Ok(cloned) => cloned,
+                Err(e) => {
+                    drop(sockets);
+                    throw_network_error(e);
+                    return std::ptr::null_mut();
+                }
+            },
+            None => {
+                let err = std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Invalid socket handle",
+                );
+                drop(sockets);
+                throw_network_error(err);
+                return std::ptr::null_mut();
+            }
         }
     };
 
     let size = size.max(0) as usize;
     let mut buffer = vec![0u8; size];
 
-    match stream.read(&mut buffer) {
-        Ok(n) => {
-            drop(sockets);
-            unsafe {
-                let arr = naml_std_core::naml_array_new(n);
-                for &byte in buffer[..n].iter() {
-                    naml_std_core::naml_array_push(arr, byte as i64);
-                }
-                arr
-            }
-        }
+    match stream_clone.read(&mut buffer) {
+        Ok(n) => create_bytes_from(buffer.as_ptr(), n),
         Err(e) => {
-            drop(sockets);
             throw_network_error(e);
             std::ptr::null_mut()
         }
@@ -121,43 +120,42 @@ pub extern "C" fn naml_net_tcp_client_read(socket_handle: i64, size: i64) -> *mu
 
 /// Read all available data from the socket until EOF
 ///
-/// Returns a pointer to NamlArray containing all data read, or null on error.
+/// Returns a pointer to NamlBytes containing all data read, or null on error.
 /// On error, a NetworkError exception is set.
 ///
 /// # Arguments
 /// * `socket_handle` - Handle to the TCP socket
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_net_tcp_client_read_all(socket_handle: i64) -> *mut NamlArray {
-    let mut sockets = get_sockets().lock().unwrap();
-
-    let stream = match sockets.get_mut(&socket_handle) {
-        Some(s) => s,
-        None => {
-            let err = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid socket handle",
-            );
-            drop(sockets);
-            throw_network_error(err);
-            return std::ptr::null_mut();
+pub extern "C" fn naml_net_tcp_client_read_all(socket_handle: i64) -> *mut NamlBytes {
+    // Clone the stream to avoid holding the lock during the blocking read
+    let mut stream_clone = {
+        let sockets = get_sockets().lock().unwrap();
+        match sockets.get(&socket_handle) {
+            Some(s) => match s.try_clone() {
+                Ok(cloned) => cloned,
+                Err(e) => {
+                    drop(sockets);
+                    throw_network_error(e);
+                    return std::ptr::null_mut();
+                }
+            },
+            None => {
+                let err = std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Invalid socket handle",
+                );
+                drop(sockets);
+                throw_network_error(err);
+                return std::ptr::null_mut();
+            }
         }
     };
 
     let mut buffer = Vec::new();
 
-    match stream.read_to_end(&mut buffer) {
-        Ok(_) => {
-            drop(sockets);
-            unsafe {
-                let arr = naml_std_core::naml_array_new(buffer.len());
-                for &byte in buffer.iter() {
-                    naml_std_core::naml_array_push(arr, byte as i64);
-                }
-                arr
-            }
-        }
+    match stream_clone.read_to_end(&mut buffer) {
+        Ok(_) => create_bytes_from(buffer.as_ptr(), buffer.len()),
         Err(e) => {
-            drop(sockets);
             throw_network_error(e);
             std::ptr::null_mut()
         }

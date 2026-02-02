@@ -1,0 +1,104 @@
+///
+/// UDP Metrics Worker - Sends Metrics to Aggregator
+///
+/// A worker that:
+/// - Spawns multiple worker threads
+/// - Each worker sends periodic metrics via UDP
+/// - Demonstrates concurrent UDP sending
+/// - Verifies metrics were sent successfully
+///
+/// Protocol: worker_id|metric_value (e.g., "1|42")
+///
+/// Usage: First start net_udp_metrics_server.naml, then run this worker
+///
+
+use std::threads::{join, with_mutex};
+use std::net::{bind, send, close, local_addr};
+use std::strings::len;
+
+fn main() {
+    println("=== UDP Metrics Worker ===");
+    println("");
+
+    // Shared counters for verification
+    var total_sent: mutex<int> = with_mutex(0);
+
+    // Bind local socket for sending
+    var socket: int = bind("127.0.0.1:0") catch e {
+        println(fmt("Failed to bind local socket: {}", e.message));
+        return;
+    };
+
+    var local: string = local_addr(socket);
+    println(fmt("Worker bound to {}", local));
+    println("Sending metrics to localhost:9999...");
+    println("");
+
+    // Spawn 3 worker threads
+    spawn {
+        worker_send_loop(1, socket, total_sent);
+    };
+
+    spawn {
+        worker_send_loop(2, socket, total_sent);
+    };
+
+    spawn {
+        worker_send_loop(3, socket, total_sent);
+    };
+
+    // Also send from main thread
+    worker_send_loop(0, socket, total_sent);
+
+    // Wait for all workers
+    join();
+
+    // Print final count
+    println("");
+    println("=== Worker Statistics ===");
+    locked (sent: int in total_sent) {
+        println(fmt("Total metrics sent: {}", sent));
+        if (sent == 100) {
+            println("PASS: All 100 metrics sent successfully!");
+        } else {
+            println(fmt("FAIL: Expected 100, got {}", sent));
+        }
+    }
+
+    close(socket);
+    println("Worker finished.");
+}
+
+fn worker_send_loop(worker_id: int, socket: int, total_sent: mutex<int>) {
+    println(fmt("[Worker {}] Starting", worker_id));
+
+    var server_addr: string = "127.0.0.1:9999";
+
+    // Send 25 metrics (values 0-9, with some repeats to get to 25)
+    var i: int = 0;
+    while (i < 25) {
+        // Metric value cycles 0-9
+        var value: int = i % 10;
+
+        // Format: "worker_id|value"
+        var message: string = fmt("{}|{}", worker_id, value);
+
+        // Send via UDP
+        send(socket, message as bytes, server_addr) catch e {
+            println(fmt("[Worker {}] Send error: {}", worker_id, e.message));
+            i = i + 1;
+            continue;
+        };
+
+        // Update counter
+        locked (sent: int in total_sent) {
+            sent = sent + 1;
+        }
+
+        // Small delay to avoid flooding
+        sleep(20);
+        i = i + 1;
+    }
+
+    println(fmt("[Worker {}] Finished sending 25 metrics", worker_id));
+}

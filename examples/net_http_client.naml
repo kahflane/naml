@@ -1,0 +1,207 @@
+///
+/// HTTP Client - REST API Consumer
+///
+/// A comprehensive HTTP client example that:
+/// - Demonstrates all HTTP methods (GET, POST, PUT, DELETE)
+/// - Tests against a mock server or real endpoints
+/// - Uses concurrent requests with spawn
+/// - Verifies responses and aggregates statistics
+///
+/// Usage: Run a local HTTP server on port 8080 first, or use httpbin.org
+///
+
+use std::threads::{join, with_mutex};
+use std::net::{get, post, put, delete};
+use std::strings::{len, has};
+
+fn main() {
+    println("=== HTTP Client Demo ===");
+    println("");
+
+    // Statistics
+    var requests_made: mutex<int> = with_mutex(0);
+    var requests_success: mutex<int> = with_mutex(0);
+    var requests_failed: mutex<int> = with_mutex(0);
+
+    // Note: HTTP requests use default 30s timeout
+
+    // Test 1: Simple GET request (using httpbin for testing)
+    println("Test 1: Simple GET request");
+    test_get_request("http://httpbin.org/get", requests_made, requests_success, requests_failed);
+    println("");
+
+    // Test 2: POST request
+    println("Test 2: POST request");
+    test_post_request("http://httpbin.org/post", "{\"name\":\"Alice\",\"age\":30}", requests_made, requests_success, requests_failed);
+    println("");
+
+    // Test 3: PUT request
+    println("Test 3: PUT request");
+    test_put_request("http://httpbin.org/put", "{\"name\":\"Bob\",\"age\":25}", requests_made, requests_success, requests_failed);
+    println("");
+
+    // Test 4: DELETE request
+    println("Test 4: DELETE request");
+    test_delete_request("http://httpbin.org/delete", requests_made, requests_success, requests_failed);
+    println("");
+
+    // Test 5: Concurrent requests
+    println("Test 5: Concurrent requests (3 parallel GETs)");
+    spawn {
+        test_get_request("http://httpbin.org/get?id=1", requests_made, requests_success, requests_failed);
+    };
+    spawn {
+        test_get_request("http://httpbin.org/get?id=2", requests_made, requests_success, requests_failed);
+    };
+    spawn {
+        test_get_request("http://httpbin.org/get?id=3", requests_made, requests_success, requests_failed);
+    };
+    join();
+    println("");
+
+    // Print final statistics
+    println("=== HTTP Client Statistics ===");
+    locked (made: int in requests_made) {
+        println(fmt("Total requests made: {}", made));
+    }
+    locked (success: int in requests_success) {
+        println(fmt("Successful requests: {}", success));
+    }
+    locked (failed: int in requests_failed) {
+        println(fmt("Failed requests: {}", failed));
+    }
+
+    // Verify
+    var made: int = 0;
+    var success: int = 0;
+    locked (m: int in requests_made) {
+        made = m;
+    }
+    locked (s: int in requests_success) {
+        success = s;
+    }
+
+    println("");
+    if (made == 7) {
+        println("PASS: All 7 requests were attempted");
+    } else {
+        println(fmt("Note: Expected 7 requests, made {}", made));
+    }
+
+    println("");
+    println("HTTP Client demo finished.");
+}
+
+fn test_get_request(
+    url: string,
+    requests_made: mutex<int>,
+    requests_success: mutex<int>,
+    requests_failed: mutex<int>
+) {
+    locked (m: int in requests_made) {
+        m = m + 1;
+    }
+
+    println(fmt("  GET {}", url));
+
+    var response: int = get(url) catch e {
+        println(fmt("  ERROR: {}", e.message));
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        return;
+    };
+
+    println(fmt("  Response handle: {}", response));
+    locked (s: int in requests_success) {
+        s = s + 1;
+    }
+    println("  SUCCESS");
+}
+
+fn test_post_request(
+    url: string,
+    body: string,
+    requests_made: mutex<int>,
+    requests_success: mutex<int>,
+    requests_failed: mutex<int>
+) {
+    locked (m: int in requests_made) {
+        m = m + 1;
+    }
+
+    println(fmt("  POST {}", url));
+    println(fmt("  Body: {}", body));
+
+    var body_bytes: bytes = body as bytes;
+    var response: int = post(url, body_bytes) catch e {
+        println(fmt("  ERROR: {}", e.message));
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        return;
+    };
+
+    println(fmt("  Response handle: {}", response));
+    locked (s: int in requests_success) {
+        s = s + 1;
+    }
+    println("  SUCCESS");
+}
+
+fn test_put_request(
+    url: string,
+    body: string,
+    requests_made: mutex<int>,
+    requests_success: mutex<int>,
+    requests_failed: mutex<int>
+) {
+    locked (m: int in requests_made) {
+        m = m + 1;
+    }
+
+    println(fmt("  PUT {}", url));
+    println(fmt("  Body: {}", body));
+
+    var body_bytes: bytes = body as bytes;
+    var response: int = put(url, body_bytes) catch e {
+        println(fmt("  ERROR: {}", e.message));
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        return;
+    };
+
+    println(fmt("  Response handle: {}", response));
+    locked (s: int in requests_success) {
+        s = s + 1;
+    }
+    println("  SUCCESS");
+}
+
+fn test_delete_request(
+    url: string,
+    requests_made: mutex<int>,
+    requests_success: mutex<int>,
+    requests_failed: mutex<int>
+) {
+    locked (m: int in requests_made) {
+        m = m + 1;
+    }
+
+    println(fmt("  DELETE {}", url));
+
+    var response: int = delete(url) catch e {
+        println(fmt("  ERROR: {}", e.message));
+        locked (f: int in requests_failed) {
+            f = f + 1;
+        }
+        return;
+    };
+
+    println(fmt("  Response handle: {}", response));
+    locked (s: int in requests_success) {
+        s = s + 1;
+    }
+    println("  SUCCESS");
+}

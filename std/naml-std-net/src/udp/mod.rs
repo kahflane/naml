@@ -25,9 +25,30 @@ use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::{Mutex, OnceLock};
 
-use naml_std_core::{naml_string_new, NamlArray, NamlBytes, NamlString, NamlStruct};
+use std::alloc::Layout;
+use naml_std_core::{naml_string_new, HeapHeader, HeapTag, NamlBytes, NamlString, NamlStruct};
 
 use crate::errors::{string_from_naml, throw_network_error};
+
+/// Create a NamlBytes from raw data
+fn create_bytes_from(data: *const u8, len: usize) -> *mut NamlBytes {
+    unsafe {
+        let cap = if len == 0 { 8 } else { len };
+        let layout = Layout::from_size_align(
+            std::mem::size_of::<NamlBytes>() + cap,
+            std::mem::align_of::<NamlBytes>(),
+        )
+        .unwrap();
+        let ptr = std::alloc::alloc(layout) as *mut NamlBytes;
+        (*ptr).header = HeapHeader::new(HeapTag::Bytes);
+        (*ptr).len = len;
+        (*ptr).capacity = cap;
+        if len > 0 && !data.is_null() {
+            std::ptr::copy_nonoverlapping(data, (*ptr).data.as_mut_ptr(), len);
+        }
+        ptr
+    }
+}
 
 /// Global registry for UDP sockets
 static UDP_SOCKETS: OnceLock<Mutex<HashMap<i64, UdpSocket>>> = OnceLock::new();
@@ -126,45 +147,44 @@ pub unsafe extern "C" fn naml_net_udp_send(
 
 /// Receive data from the socket
 ///
-/// Returns a pointer to NamlArray containing the data, or null on error.
+/// Returns a pointer to NamlBytes containing the data, or null on error.
 /// On error, a NetworkError exception is set.
 ///
 /// # Arguments
 /// * `socket_handle` - Handle to the UDP socket
 /// * `size` - Maximum number of bytes to receive
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_net_udp_receive(socket_handle: i64, size: i64) -> *mut NamlArray {
-    let sockets = get_udp_sockets().lock().unwrap();
-
-    let socket = match sockets.get(&socket_handle) {
-        Some(s) => s,
-        None => {
-            let err = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid UDP socket handle",
-            );
-            drop(sockets);
-            throw_network_error(err);
-            return std::ptr::null_mut();
+pub extern "C" fn naml_net_udp_receive(socket_handle: i64, size: i64) -> *mut NamlBytes {
+    // Clone the socket to avoid holding the lock during the blocking recv
+    let socket_clone = {
+        let sockets = get_udp_sockets().lock().unwrap();
+        match sockets.get(&socket_handle) {
+            Some(s) => match s.try_clone() {
+                Ok(cloned) => cloned,
+                Err(e) => {
+                    drop(sockets);
+                    throw_network_error(e);
+                    return std::ptr::null_mut();
+                }
+            },
+            None => {
+                let err = std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Invalid UDP socket handle",
+                );
+                drop(sockets);
+                throw_network_error(err);
+                return std::ptr::null_mut();
+            }
         }
     };
 
     let size = size.max(0) as usize;
     let mut buffer = vec![0u8; size];
 
-    match socket.recv(&mut buffer) {
-        Ok(n) => {
-            drop(sockets);
-            unsafe {
-                let arr = naml_std_core::naml_array_new(n);
-                for &byte in buffer[..n].iter() {
-                    naml_std_core::naml_array_push(arr, byte as i64);
-                }
-                arr
-            }
-        }
+    match socket_clone.recv(&mut buffer) {
+        Ok(n) => create_bytes_from(buffer.as_ptr(), n),
         Err(e) => {
-            drop(sockets);
             throw_network_error(e);
             std::ptr::null_mut()
         }
@@ -185,27 +205,35 @@ pub extern "C" fn naml_net_udp_receive(socket_handle: i64, size: i64) -> *mut Na
 /// * `size` - Maximum number of bytes to receive
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_net_udp_receive_from(socket_handle: i64, size: i64) -> *mut NamlStruct {
-    let sockets = get_udp_sockets().lock().unwrap();
-
-    let socket = match sockets.get(&socket_handle) {
-        Some(s) => s,
-        None => {
-            let err = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid UDP socket handle",
-            );
-            drop(sockets);
-            throw_network_error(err);
-            return std::ptr::null_mut();
+    // Clone the socket to avoid holding the lock during the blocking recv_from
+    let socket_clone = {
+        let sockets = get_udp_sockets().lock().unwrap();
+        match sockets.get(&socket_handle) {
+            Some(s) => match s.try_clone() {
+                Ok(cloned) => cloned,
+                Err(e) => {
+                    drop(sockets);
+                    throw_network_error(e);
+                    return std::ptr::null_mut();
+                }
+            },
+            None => {
+                let err = std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Invalid UDP socket handle",
+                );
+                drop(sockets);
+                throw_network_error(err);
+                return std::ptr::null_mut();
+            }
         }
     };
 
     let size = size.max(0) as usize;
     let mut buffer = vec![0u8; size];
 
-    match socket.recv_from(&mut buffer) {
+    match socket_clone.recv_from(&mut buffer) {
         Ok((n, addr)) => {
-            drop(sockets);
             unsafe {
                 // Create data array
                 let data_arr = naml_std_core::naml_array_new(n);
@@ -227,7 +255,6 @@ pub extern "C" fn naml_net_udp_receive_from(socket_handle: i64, size: i64) -> *m
             }
         }
         Err(e) => {
-            drop(sockets);
             throw_network_error(e);
             std::ptr::null_mut()
         }

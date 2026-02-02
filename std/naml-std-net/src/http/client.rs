@@ -29,12 +29,24 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use tokio::runtime::Runtime;
 
-use naml_std_core::{NamlArray, NamlString, NamlStruct};
+use naml_std_core::{NamlBytes, NamlString, NamlStruct};
 
 use super::types::{
-    array_to_vec, naml_net_http_response_new, naml_net_http_response_set_body,
+    naml_net_http_response_new, naml_net_http_response_set_body,
     naml_net_http_response_set_status, vec_to_array,
 };
+
+/// Helper to convert NamlBytes to Vec<u8>
+unsafe fn bytes_to_vec(bytes: *const NamlBytes) -> Vec<u8> {
+    if bytes.is_null() {
+        return Vec::new();
+    }
+    unsafe {
+        let len = (*bytes).len;
+        let data = (*bytes).data.as_ptr();
+        std::slice::from_raw_parts(data, len).to_vec()
+    }
+}
 use crate::errors::{string_from_naml, throw_network_error, throw_timeout_error};
 
 /// Default timeout in milliseconds (30 seconds)
@@ -149,10 +161,10 @@ pub unsafe extern "C" fn naml_net_http_client_get(url: *const NamlString) -> *mu
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_client_post(
     url: *const NamlString,
-    body: *const NamlArray,
+    body: *const NamlBytes,
 ) -> *mut NamlStruct {
     let url_str = unsafe { string_from_naml(url) };
-    let body_bytes = unsafe { array_to_vec(body) };
+    let body_bytes = unsafe { bytes_to_vec(body) };
     do_request("POST", &url_str, Some(body_bytes))
 }
 
@@ -160,10 +172,10 @@ pub unsafe extern "C" fn naml_net_http_client_post(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_client_put(
     url: *const NamlString,
-    body: *const NamlArray,
+    body: *const NamlBytes,
 ) -> *mut NamlStruct {
     let url_str = unsafe { string_from_naml(url) };
-    let body_bytes = unsafe { array_to_vec(body) };
+    let body_bytes = unsafe { bytes_to_vec(body) };
     do_request("PUT", &url_str, Some(body_bytes))
 }
 
@@ -171,10 +183,10 @@ pub unsafe extern "C" fn naml_net_http_client_put(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_client_patch(
     url: *const NamlString,
-    body: *const NamlArray,
+    body: *const NamlBytes,
 ) -> *mut NamlStruct {
     let url_str = unsafe { string_from_naml(url) };
-    let body_bytes = unsafe { array_to_vec(body) };
+    let body_bytes = unsafe { bytes_to_vec(body) };
     do_request("PATCH", &url_str, Some(body_bytes))
 }
 
@@ -200,12 +212,12 @@ pub unsafe extern "C" fn naml_net_http_client_get_with_headers(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_client_post_with_headers(
     url: *const NamlString,
-    body: *const NamlArray,
+    body: *const NamlBytes,
     _headers: i64,
 ) -> *mut NamlStruct {
     // TODO: Parse headers map and add to request
     let url_str = unsafe { string_from_naml(url) };
-    let body_bytes = unsafe { array_to_vec(body) };
+    let body_bytes = unsafe { bytes_to_vec(body) };
     do_request("POST", &url_str, Some(body_bytes))
 }
 

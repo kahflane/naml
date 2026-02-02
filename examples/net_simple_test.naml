@@ -1,0 +1,53 @@
+///
+/// Simple TCP Test - Minimal networking test
+///
+
+use std::net::{connect, read, write, close};
+
+fn main() {
+    println("=== Simple TCP Test ===");
+
+    // Connect to the server
+    var socket: int = connect("127.0.0.1:8888") catch e {
+        println(fmt("Failed to connect: {}", e.message));
+        return;
+    };
+
+    println("Connected!");
+
+    // Read welcome
+    var welcome: bytes = read(socket, 1024) catch e {
+        println(fmt("Read error: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    var welcome_str: string = welcome as string;
+    println(fmt("Got: {}", welcome_str));
+
+    // Send a simple message
+    var msg: string = "Hello server!";
+    println(fmt("Sending: {}", msg));
+
+    var msg_bytes: bytes = msg as bytes;
+    write(socket, msg_bytes) catch e {
+        println(fmt("Write error: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    println("Sent successfully!");
+
+    // Read response
+    var response: bytes = read(socket, 1024) catch e {
+        println(fmt("Read error: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    var response_str: string = response as string;
+    println(fmt("Response: {}", response_str));
+
+    close(socket);
+    println("Done!");
+}

@@ -1,0 +1,127 @@
+///
+/// TCP Chat Client
+///
+/// A client that connects to the TCP chat server and:
+/// - Sends test messages
+/// - Receives and displays responses
+/// - Tests the full round-trip communication
+///
+/// Usage: First start net_tcp_chat_server.naml, then run this client
+///
+
+use std::threads::{join, with_mutex};
+use std::net::{connect, read, write, close, peer_addr};
+use std::strings::{len, rtrim};
+
+fn main() {
+    println("=== TCP Chat Client ===");
+    println("");
+
+    // Statistics
+    var messages_sent: mutex<int> = with_mutex(0);
+    var messages_received: mutex<int> = with_mutex(0);
+
+    // Connect to the server
+    println("Connecting to localhost:8888...");
+    var socket: int = connect("127.0.0.1:8888") catch e {
+        println(fmt("Failed to connect: {}", e.message));
+        println("Make sure the server is running first!");
+        return;
+    };
+
+    println("Connected successfully!");
+    println("");
+
+    // Read welcome message
+    var welcome: bytes = read(socket, 1024) catch e {
+        println(fmt("Failed to read welcome: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    var welcome_str: string = welcome as string;
+    println(fmt("Server says: {}", rtrim(welcome_str)));
+    println("");
+
+    // Send test messages
+    println("Sending test messages...");
+    println("");
+
+    var test_messages: [string] = [
+        "Hello from naml client!",
+        "Testing TCP communication",
+        "Message number three",
+        "Unicode test: naml",
+        "Final message - goodbye!"
+    ];
+
+    var i: int = 0;
+    while (i < 5) {
+        var msg: string = test_messages[i] ?? "";
+        send_message(socket, msg, messages_sent);
+
+        // Read response
+        var response: bytes = read(socket, 1024) catch e {
+            println(fmt("Failed to read response: {}", e.message));
+            i = i + 1;
+            continue;
+        };
+
+        var response_str: string = rtrim(response as string);
+        println(fmt("  Response: {}", response_str));
+
+        locked (cnt: int in messages_received) {
+            cnt = cnt + 1;
+        }
+
+        // Small delay between messages
+        sleep(100);
+        i = i + 1;
+    }
+
+    println("");
+
+    // Print statistics
+    println("=== Statistics ===");
+    locked (sent: int in messages_sent) {
+        println(fmt("Messages sent: {}", sent));
+    }
+    locked (recv: int in messages_received) {
+        println(fmt("Messages received: {}", recv));
+    }
+
+    // Verify
+    var sent_count: int = 0;
+    var recv_count: int = 0;
+    locked (s: int in messages_sent) {
+        sent_count = s;
+    }
+    locked (r: int in messages_received) {
+        recv_count = r;
+    }
+
+    if (sent_count == recv_count && sent_count == 5) {
+        println("PASS: All messages sent and responses received!");
+    } else {
+        println(fmt("FAIL: Expected 5/5, got {}/{}", sent_count, recv_count));
+    }
+
+    // Cleanup
+    close(socket);
+    println("");
+    println("Client finished.");
+}
+
+fn send_message(socket: int, message: string, counter: mutex<int>) {
+    var msg_with_newline: string = message + "\n";
+    println(fmt("  Sending: {}", message));
+
+    write(socket, msg_with_newline as bytes) catch e {
+        println(fmt("  Failed to send: {}", e.message));
+        return;
+    };
+
+    locked (cnt: int in counter) {
+        cnt = cnt + 1;
+    }
+}

@@ -1,0 +1,159 @@
+///
+/// TCP Chat Server - Multi-Client Broadcasting
+///
+/// A real-world chat server that:
+/// - Accepts multiple client connections concurrently
+/// - Tracks connected clients with mutex-protected state
+/// - Echoes messages back to clients
+/// - Handles client disconnection gracefully
+///
+/// Usage: Run this server, then connect with: nc localhost 8888
+///
+
+use std::threads::{join, open_channel, send, receive, with_mutex};
+use std::net::{listen, accept, read, write, close, local_addr, peer_addr};
+use std::strings::{len, ltrim, rtrim};
+
+fn main() {
+    println("=== TCP Chat Server ===");
+    println("");
+
+    // Shared state: count of connected clients
+    var client_count: mutex<int> = with_mutex(0);
+
+    // Channel for collecting messages (for logging/stats)
+    var message_log: channel<string> = open_channel(100);
+
+    // Start the server
+    var listener: int = listen(":8888") catch e {
+        println(fmt("Failed to start server: {}", e.message));
+        return;
+    };
+
+    var addr: string = local_addr(listener);
+    println(fmt("Server listening on {}", addr));
+    println("Waiting for clients... (Connect with: nc localhost 8888)");
+    println("");
+
+    // Spawn a logger thread
+    spawn {
+        log_messages(message_log);
+    };
+
+    // Main accept loop - accept up to 5 clients for demo
+    var accepted: int = 0;
+    while (accepted < 5) {
+        println("Waiting for client connection...");
+
+        var client_socket: int = accept(listener) catch e {
+            println(fmt("Accept error: {}", e.message));
+            continue;
+        };
+
+        var peer: string = peer_addr(client_socket);
+        println(fmt("Client connected from {}", peer));
+
+        // Update client count
+        locked (cnt: int in client_count) {
+            cnt = cnt + 1;
+            println(fmt("Active clients: {}", cnt));
+        }
+
+        // Spawn handler for this client
+        spawn {
+            handle_client(client_socket, peer, message_log, client_count);
+        };
+
+        accepted = accepted + 1;
+    }
+
+    println("Maximum clients reached. Waiting for handlers to finish...");
+    join();
+    close(listener);
+    println("Server stopped.");
+}
+
+fn handle_client(
+    socket: int,
+    peer_address: string,
+    message_log: channel<string>,
+    client_count: mutex<int>
+) {
+    // Send welcome message
+    var welcome: string = fmt("Welcome! You are connected from {}\n", peer_address);
+    write(socket, welcome as bytes) catch e {
+        println(fmt("Failed to send welcome: {}", e.message));
+    };
+
+    // Read loop
+    var nickname: string = peer_address;
+    var running: bool = true;
+
+    while (running) {
+        // Read data from client
+        var data: bytes = read(socket, 1024) catch e {
+            println(fmt("Client {} read error", nickname));
+            running = false;
+            continue;
+        };
+
+        // Convert bytes to string
+        var raw_message: string = data as string;
+
+        // Check if client disconnected (empty read)
+        var msg_len: int = len(raw_message);
+        if (msg_len == 0) {
+            println(fmt("Client {} disconnected (empty read)", nickname));
+            running = false;
+            continue;
+        }
+
+        // Trim whitespace
+        var message: string = rtrim(ltrim(raw_message));
+        msg_len = len(message);
+
+        if (msg_len == 0) {
+            continue;
+        }
+
+        println(fmt("[{}] Received: {}", nickname, message));
+
+        // Log message
+        var log_entry: string = fmt("[{}]: {}", nickname, message);
+        send(message_log, log_entry);
+
+        // Echo back to client
+        var echo: string = fmt("You said: {}\n", message);
+        write(socket, echo as bytes) catch e {
+            println(fmt("Failed to echo: {}", e.message));
+            running = false;
+        };
+    }
+
+    // Cleanup
+    locked (cnt: int in client_count) {
+        cnt = cnt - 1;
+        println(fmt("Client disconnected. Active clients: {}", cnt));
+    }
+
+    close(socket);
+    println(fmt("Handler for {} finished", peer_address));
+}
+
+fn log_messages(message_log: channel<string>) {
+    println("[Logger] Started");
+    var count: int = 0;
+
+    while (count < 100) {
+        var msg: string = receive(message_log) ?? "";
+        var msg_len: int = len(msg);
+        if (msg_len > 0) {
+            println(fmt("[LOG] {}", msg));
+            count = count + 1;
+        } else {
+            sleep(100);
+        }
+    }
+
+    println("[Logger] Finished after 100 messages");
+}

@@ -358,6 +358,61 @@ pub enum BuiltinStrategy {
     Fmt,
     /// Read line from stdin
     ReadLine,
+
+    // ========================================
+    // Networking module strategies
+    // ========================================
+    // TCP Server
+    /// (address: string) -> int throws NetworkError
+    NetTcpListen,
+    /// (listener: int) -> int throws NetworkError
+    NetTcpAccept,
+    /// (listener: int) -> unit
+    NetTcpServerClose,
+    /// (listener: int) -> string
+    NetTcpServerLocalAddr,
+
+    // TCP Client
+    /// (address: string) -> int throws NetworkError, TimeoutError
+    NetTcpConnect,
+    /// (socket: int, size: int) -> bytes throws NetworkError
+    NetTcpRead,
+    /// (socket: int) -> bytes throws NetworkError
+    NetTcpReadAll,
+    /// (socket: int, data: bytes) -> unit throws NetworkError
+    NetTcpWrite,
+    /// (socket: int) -> unit
+    NetTcpClientClose,
+    /// (socket: int, ms: int) -> unit
+    NetTcpSetTimeout,
+    /// (socket: int) -> string
+    NetTcpPeerAddr,
+
+    // UDP
+    /// (address: string) -> int throws NetworkError
+    NetUdpBind,
+    /// (socket: int, data: bytes, address: string) -> unit throws NetworkError
+    NetUdpSend,
+    /// (socket: int, size: int) -> bytes throws NetworkError
+    NetUdpReceive,
+    /// (socket: int) -> unit
+    NetUdpClose,
+    /// (socket: int) -> string
+    NetUdpLocalAddr,
+
+    // HTTP Client
+    /// (url: string) -> int throws NetworkError, TimeoutError
+    NetHttpGet,
+    /// (url: string, body: bytes) -> int throws NetworkError, TimeoutError
+    NetHttpPost,
+    /// (url: string, body: bytes) -> int throws NetworkError, TimeoutError
+    NetHttpPut,
+    /// (url: string, body: bytes) -> int throws NetworkError, TimeoutError
+    NetHttpPatch,
+    /// (url: string) -> int throws NetworkError, TimeoutError
+    NetHttpDelete,
+    /// (ms: int) -> unit
+    NetHttpSetTimeout,
 }
 
 /// Registry entry for a built-in function
@@ -659,6 +714,38 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "json::get_type", strategy: BuiltinStrategy::JsonGetType },
         BuiltinFunction { name: "json::type_name", strategy: BuiltinStrategy::JsonTypeName },
         BuiltinFunction { name: "json::is_null", strategy: BuiltinStrategy::JsonIsNull },
+
+        // ========================================
+        // Networking module
+        // ========================================
+        // TCP Server
+        BuiltinFunction { name: "listen", strategy: BuiltinStrategy::NetTcpListen },
+        BuiltinFunction { name: "accept", strategy: BuiltinStrategy::NetTcpAccept },
+        BuiltinFunction { name: "tcp::server::close", strategy: BuiltinStrategy::NetTcpServerClose },
+        // TCP Client (using qualified names for functions that conflict with FS)
+        BuiltinFunction { name: "connect", strategy: BuiltinStrategy::NetTcpConnect },
+        BuiltinFunction { name: "net::read", strategy: BuiltinStrategy::NetTcpRead },
+        BuiltinFunction { name: "net::read_all", strategy: BuiltinStrategy::NetTcpReadAll },
+        BuiltinFunction { name: "net::write", strategy: BuiltinStrategy::NetTcpWrite },
+        BuiltinFunction { name: "set_timeout", strategy: BuiltinStrategy::NetTcpSetTimeout },
+        BuiltinFunction { name: "peer_addr", strategy: BuiltinStrategy::NetTcpPeerAddr },
+        BuiltinFunction { name: "tcp::client::close", strategy: BuiltinStrategy::NetTcpClientClose },
+        // Shared net functions - used for both TCP and UDP when imported from std::net
+        BuiltinFunction { name: "local_addr", strategy: BuiltinStrategy::NetTcpServerLocalAddr },
+        BuiltinFunction { name: "net::local_addr", strategy: BuiltinStrategy::NetUdpLocalAddr },
+        // UDP (using qualified names for functions that conflict with channels)
+        BuiltinFunction { name: "bind", strategy: BuiltinStrategy::NetUdpBind },
+        BuiltinFunction { name: "net::send", strategy: BuiltinStrategy::NetUdpSend },
+        BuiltinFunction { name: "net::receive", strategy: BuiltinStrategy::NetUdpReceive },
+        BuiltinFunction { name: "net::close", strategy: BuiltinStrategy::NetUdpClose },
+        BuiltinFunction { name: "udp::close", strategy: BuiltinStrategy::NetUdpClose },
+        // HTTP Client
+        BuiltinFunction { name: "get", strategy: BuiltinStrategy::NetHttpGet },
+        BuiltinFunction { name: "post", strategy: BuiltinStrategy::NetHttpPost },
+        BuiltinFunction { name: "put", strategy: BuiltinStrategy::NetHttpPut },
+        BuiltinFunction { name: "patch", strategy: BuiltinStrategy::NetHttpPatch },
+        BuiltinFunction { name: "delete", strategy: BuiltinStrategy::NetHttpDelete },
+        BuiltinFunction { name: "http::set_timeout", strategy: BuiltinStrategy::NetHttpSetTimeout },
     ];
     REGISTRY
 }
@@ -1746,6 +1833,162 @@ pub fn compile_builtin_call(
             let result = builder.inst_results(inst)[0];
             // Truncate i64 to i8 for bool type
             Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+        }
+
+        // ========================================
+        // Networking strategies
+        // ========================================
+        // TCP Server
+        BuiltinStrategy::NetTcpListen => {
+            let addr = compile_expression(ctx, builder, &args[0])?;
+            let addr = ensure_naml_string(ctx, builder, addr, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_tcp_server_listen", addr)
+        }
+
+        BuiltinStrategy::NetTcpAccept => {
+            let listener = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_tcp_server_accept", listener)
+        }
+
+        BuiltinStrategy::NetTcpServerClose => {
+            use super::runtime::rt_func_ref;
+            let listener = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tcp_server_close")?;
+            builder.ins().call(func_ref, &[listener]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetTcpServerLocalAddr => {
+            let listener = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_net_tcp_server_local_addr", listener)
+        }
+
+        // TCP Client
+        BuiltinStrategy::NetTcpConnect => {
+            let addr = compile_expression(ctx, builder, &args[0])?;
+            let addr = ensure_naml_string(ctx, builder, addr, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_tcp_client_connect", addr)
+        }
+
+        BuiltinStrategy::NetTcpRead => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let size = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, "naml_net_tcp_client_read", socket, size)
+        }
+
+        BuiltinStrategy::NetTcpReadAll => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_net_tcp_client_read_all", socket)
+        }
+
+        BuiltinStrategy::NetTcpWrite => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let data = compile_expression(ctx, builder, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tcp_client_write")?;
+            builder.ins().call(func_ref, &[socket, data]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetTcpClientClose => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tcp_client_close")?;
+            builder.ins().call(func_ref, &[socket]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetTcpSetTimeout => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let ms = compile_expression(ctx, builder, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tcp_client_set_timeout")?;
+            builder.ins().call(func_ref, &[socket, ms]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetTcpPeerAddr => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_net_tcp_socket_peer_addr", socket)
+        }
+
+        // UDP
+        BuiltinStrategy::NetUdpBind => {
+            let addr = compile_expression(ctx, builder, &args[0])?;
+            let addr = ensure_naml_string(ctx, builder, addr, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_udp_bind", addr)
+        }
+
+        BuiltinStrategy::NetUdpSend => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let data = compile_expression(ctx, builder, &args[1])?;
+            let addr = compile_expression(ctx, builder, &args[2])?;
+            let addr = ensure_naml_string(ctx, builder, addr, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_udp_send")?;
+            builder.ins().call(func_ref, &[socket, data, addr]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetUdpReceive => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let size = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, "naml_net_udp_receive", socket, size)
+        }
+
+        BuiltinStrategy::NetUdpClose => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_udp_close")?;
+            builder.ins().call(func_ref, &[socket]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetUdpLocalAddr => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_net_udp_local_addr", socket)
+        }
+
+        // HTTP Client
+        BuiltinStrategy::NetHttpGet => {
+            let url = compile_expression(ctx, builder, &args[0])?;
+            let url = ensure_naml_string(ctx, builder, url, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_http_client_get", url)
+        }
+
+        BuiltinStrategy::NetHttpPost => {
+            let url = compile_expression(ctx, builder, &args[0])?;
+            let url = ensure_naml_string(ctx, builder, url, &args[0])?;
+            let body = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_net_http_client_post", url, body)
+        }
+
+        BuiltinStrategy::NetHttpPut => {
+            let url = compile_expression(ctx, builder, &args[0])?;
+            let url = ensure_naml_string(ctx, builder, url, &args[0])?;
+            let body = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_net_http_client_put", url, body)
+        }
+
+        BuiltinStrategy::NetHttpPatch => {
+            let url = compile_expression(ctx, builder, &args[0])?;
+            let url = ensure_naml_string(ctx, builder, url, &args[0])?;
+            let body = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_net_http_client_patch", url, body)
+        }
+
+        BuiltinStrategy::NetHttpDelete => {
+            let url = compile_expression(ctx, builder, &args[0])?;
+            let url = ensure_naml_string(ctx, builder, url, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_http_client_delete", url)
+        }
+
+        BuiltinStrategy::NetHttpSetTimeout => {
+            use super::runtime::rt_func_ref;
+            let ms = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_http_client_set_timeout")?;
+            builder.ins().call(func_ref, &[ms]);
+            Ok(builder.ins().iconst(types::I64, 0))
         }
     }
 }
