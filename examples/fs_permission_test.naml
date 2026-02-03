@@ -1,0 +1,52 @@
+use std::fs::*;
+
+fn main() {
+    println("=== Permission Error Test ===");
+    println("");
+
+    // Create a test file
+    var test_file: string = "/tmp/naml_perm_test.txt";
+    write(test_file, "Test content") catch e {
+        println("Failed to create test file:");
+        println(e.message);
+    };
+    println("Created test file");
+
+    // Remove read permission (mode 000 = no permissions)
+    chmod(test_file, 0) catch e {
+        println("Failed to chmod:");
+        println(e.message);
+    };
+    println("Removed all permissions (chmod 000)");
+
+    // Try to read the file - should throw PermissionError
+    println("");
+    println("Attempting to read file without permissions...");
+    var content: string = read(test_file) catch e {
+        println("Caught exception!");
+        print("  Message: ");
+        println(e.message);
+        print("  Path: ");
+        println(e.path);
+        print("  Code: ");
+        println(e.code);
+    };
+
+    // Restore permissions for cleanup
+    println("");
+    println("Restoring permissions for cleanup...");
+    chmod(test_file, 420) catch e {
+        println("chmod failed:");
+        println(e.message);
+    };
+
+    // Cleanup
+    remove(test_file) catch e {
+        println("cleanup failed:");
+        println(e.message);
+    };
+    println("Cleaned up test file");
+
+    println("");
+    println("=== Test Complete ===");
+}

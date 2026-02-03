@@ -1,0 +1,73 @@
+use std::fs::*;
+
+fn main() {
+    println("=== Testing 'is' Operator for Exception Types ===");
+    println("");
+
+    // Test 1: IOError - File not found
+    println("--- Test 1: IOError (File Not Found) ---");
+    var is_io: bool = false;
+    var is_perm: bool = false;
+    var msg1: string = "";
+
+    var content: string = read("/nonexistent/path/file.txt") catch e {
+        msg1 = e.message;
+        is_io = e is IOError;
+        is_perm = e is PermissionError;
+    };
+
+    print("  e is IOError: ");
+    println(is_io);
+    print("  e is PermissionError: ");
+    println(is_perm);
+    print("  Message: ");
+    println(msg1);
+
+    if (is_io && !is_perm) {
+        println("  PASS: Correctly identified as IOError");
+    } else {
+        println("  FAIL: Wrong exception type");
+    }
+
+    // Test 2: PermissionError - Permission denied
+    println("");
+    println("--- Test 2: PermissionError (Permission Denied) ---");
+
+    var test_file: string = "/tmp/naml_is_test.txt";
+    write(test_file, "test content") catch e {
+        println("  Setup write failed");
+    };
+    chmod(test_file, 0) catch e {
+        println("  Setup chmod failed");
+    };
+
+    var is_io2: bool = false;
+    var is_perm2: bool = false;
+    var msg2: string = "";
+
+    var secret: string = read(test_file) catch e {
+        msg2 = e.message;
+        is_io2 = e is IOError;
+        is_perm2 = e is PermissionError;
+    };
+
+    print("  e is IOError: ");
+    println(is_io2);
+    print("  e is PermissionError: ");
+    println(is_perm2);
+    print("  Message: ");
+    println(msg2);
+
+    if (is_perm2 && !is_io2) {
+        println("  PASS: Correctly identified as PermissionError");
+    } else {
+        println("  FAIL: Wrong exception type");
+    }
+
+    // Cleanup
+    chmod(test_file, 420) catch e {};
+    remove(test_file) catch e {};
+
+    println("");
+    println("=== Type Check Tests Complete ===");
+}

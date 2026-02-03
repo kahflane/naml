@@ -69,7 +69,11 @@ mod mmap;
 pub use file_handle::*;
 pub use mmap::*;
 
-use naml_std_core::{naml_exception_set, naml_stack_capture, naml_string_new, NamlBytes, NamlString};
+use naml_std_core::{
+    naml_exception_set_typed, naml_stack_capture, naml_string_new,
+    NamlBytes, NamlString,
+    EXCEPTION_TYPE_IO_ERROR, EXCEPTION_TYPE_PERMISSION_ERROR,
+};
 
 /// Create a new IOError exception on the heap
 ///
@@ -107,11 +111,83 @@ pub extern "C" fn naml_io_error_new(
     }
 }
 
+/// Create a new PermissionError exception on the heap
+///
+/// Exception layout (matches naml exception codegen):
+/// - Offset 0: message pointer (8 bytes)
+/// - Offset 8: stack pointer (8 bytes) - null, captured at throw time
+/// - Offset 16: path pointer (8 bytes)
+/// - Offset 24: code (8 bytes)
+///
+/// Total size: 32 bytes
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_permission_error_new(
+    message: *const NamlString,
+    path: *const NamlString,
+    code: i64,
+) -> *mut u8 {
+    unsafe {
+        let layout = std::alloc::Layout::from_size_align(32, 8).unwrap();
+        let ptr = std::alloc::alloc(layout);
+        if ptr.is_null() {
+            panic!("Failed to allocate PermissionError");
+        }
+
+        *(ptr as *mut i64) = message as i64;
+        *(ptr.add(8) as *mut i64) = 0;
+        *(ptr.add(16) as *mut i64) = path as i64;
+        *(ptr.add(24) as *mut i64) = code;
+
+        ptr
+    }
+}
+
+/// Check if an error is a permission error (EACCES or EPERM)
+fn is_permission_error(error: &std::io::Error) -> bool {
+    match error.kind() {
+        std::io::ErrorKind::PermissionDenied => true,
+        _ => {
+            // Also check raw OS error codes
+            if let Some(code) = error.raw_os_error() {
+                // EACCES = 13, EPERM = 1 on Unix
+                code == 13 || code == 1
+            } else {
+                false
+            }
+        }
+    }
+}
+
+/// Create and throw a PermissionError from a Rust std::io::Error
+pub(crate) fn throw_permission_error(error: std::io::Error, path: &str) -> *mut u8 {
+    let code = error.raw_os_error().unwrap_or(-1) as i64;
+    let message = error.to_string();
+
+    unsafe {
+        let message_ptr = naml_string_new(message.as_ptr(), message.len());
+        let path_ptr = naml_string_new(path.as_ptr(), path.len());
+        let perm_error = naml_permission_error_new(message_ptr, path_ptr, code);
+
+        let stack = naml_stack_capture();
+        *(perm_error.add(8) as *mut *mut u8) = stack;
+
+        naml_exception_set_typed(perm_error, EXCEPTION_TYPE_PERMISSION_ERROR);
+    }
+
+    std::ptr::null_mut()
+}
+
 /// Create and throw an IOError from a Rust std::io::Error
 ///
 /// This is a helper for fs functions to convert Rust errors to naml exceptions.
+/// If the error is a permission error (EACCES/EPERM), throws PermissionError instead.
 /// Returns null to indicate an exception was thrown.
 pub(crate) fn throw_io_error(error: std::io::Error, path: &str) -> *mut u8 {
+    // Check if this is a permission error
+    if is_permission_error(&error) {
+        return throw_permission_error(error, path);
+    }
+
     let code = error.raw_os_error().unwrap_or(-1) as i64;
     let message = error.to_string();
 
@@ -124,7 +200,7 @@ pub(crate) fn throw_io_error(error: std::io::Error, path: &str) -> *mut u8 {
         let stack = naml_stack_capture();
         *(io_error.add(8) as *mut *mut u8) = stack;
 
-        naml_exception_set(io_error);
+        naml_exception_set_typed(io_error, EXCEPTION_TYPE_IO_ERROR);
     }
 
     std::ptr::null_mut()
@@ -542,6 +618,220 @@ pub unsafe extern "C" fn naml_fs_join(parts: *const naml_std_core::NamlArray) ->
 
     let result = path.to_string_lossy();
     unsafe { naml_string_new(result.as_ptr(), result.len()) }
+}
+
+/// Get current working directory
+/// Returns null and sets exception on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_getwd() -> *mut NamlString {
+    match std::env::current_dir() {
+        Ok(path) => {
+            let path_str = path.to_string_lossy();
+            unsafe { naml_string_new(path_str.as_ptr(), path_str.len()) }
+        }
+        Err(e) => {
+            throw_io_error(e, ".");
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Change current working directory
+/// Returns 0 on success, sets exception on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_chdir(path: *const NamlString) -> i64 {
+    let path_str = unsafe { path_from_naml_string(path) };
+
+    match std::env::set_current_dir(&path_str) {
+        Ok(()) => 0,
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            0
+        }
+    }
+}
+
+/// Create a temporary file with optional prefix
+/// Returns path to created file, or null on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_create_temp(prefix: *const NamlString) -> *mut NamlString {
+    let prefix_str = unsafe { path_from_naml_string(prefix) };
+    let prefix_str = if prefix_str.is_empty() { "naml" } else { &prefix_str };
+
+    match tempfile::Builder::new().prefix(prefix_str).tempfile() {
+        Ok(file) => {
+            let path = file.into_temp_path();
+            let path_str = path.to_string_lossy();
+            let result = unsafe { naml_string_new(path_str.as_ptr(), path_str.len()) };
+            // Keep the file by not dropping TempPath
+            std::mem::forget(path);
+            result
+        }
+        Err(e) => {
+            throw_io_error(e, prefix_str);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Create a temporary directory with optional prefix
+/// Returns path to created directory, or null on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_mkdir_temp(prefix: *const NamlString) -> *mut NamlString {
+    let prefix_str = unsafe { path_from_naml_string(prefix) };
+    let prefix_str = if prefix_str.is_empty() { "naml" } else { &prefix_str };
+
+    match tempfile::Builder::new().prefix(prefix_str).tempdir() {
+        Ok(dir) => {
+            let path_str = dir.path().to_string_lossy().into_owned();
+            // Keep the directory by forgetting the TempDir (prevents cleanup)
+            let _ = dir.keep();
+            unsafe { naml_string_new(path_str.as_ptr(), path_str.len()) }
+        }
+        Err(e) => {
+            throw_io_error(e, prefix_str);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Change file permissions (Unix mode bits)
+/// Returns 0 on success, sets exception on error
+#[cfg(unix)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_chmod(path: *const NamlString, mode: i64) -> i64 {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path_str = unsafe { path_from_naml_string(path) };
+
+    let permissions = std::fs::Permissions::from_mode(mode as u32);
+    match std::fs::set_permissions(&path_str, permissions) {
+        Ok(()) => 0,
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            0
+        }
+    }
+}
+
+/// Change file permissions (Windows - limited support)
+#[cfg(not(unix))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_chmod(path: *const NamlString, mode: i64) -> i64 {
+    let path_str = unsafe { path_from_naml_string(path) };
+
+    // On Windows, we can only toggle read-only
+    let readonly = (mode & 0o200) == 0; // No write permission = readonly
+    match std::fs::metadata(&path_str) {
+        Ok(meta) => {
+            let mut perms = meta.permissions();
+            perms.set_readonly(readonly);
+            match std::fs::set_permissions(&path_str, perms) {
+                Ok(()) => 0,
+                Err(e) => {
+                    throw_io_error(e, &path_str);
+                    0
+                }
+            }
+        }
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            0
+        }
+    }
+}
+
+/// Truncate file to specified size
+/// Returns 0 on success, sets exception on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_truncate(path: *const NamlString, size: i64) -> i64 {
+    let path_str = unsafe { path_from_naml_string(path) };
+
+    let file = match std::fs::OpenOptions::new().write(true).open(&path_str) {
+        Ok(f) => f,
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            return 0;
+        }
+    };
+
+    match file.set_len(size as u64) {
+        Ok(()) => 0,
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            0
+        }
+    }
+}
+
+/// Get file metadata (stat)
+/// Returns an array with: [size, mode, modified, created, is_dir, is_file, is_symlink]
+/// - size: file size in bytes
+/// - mode: permission bits (Unix) or 0o644/0o444 (Windows)
+/// - modified: last modified time as Unix timestamp in milliseconds
+/// - created: creation time as Unix timestamp in milliseconds
+/// - is_dir: 1 if directory, 0 otherwise
+/// - is_file: 1 if regular file, 0 otherwise
+/// - is_symlink: 1 if symlink, 0 otherwise
+/// Returns null and sets exception on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_stat(path: *const NamlString) -> *mut naml_std_core::NamlArray {
+    let path_str = unsafe { path_from_naml_string(path) };
+
+    let meta = match std::fs::metadata(&path_str) {
+        Ok(m) => m,
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            return std::ptr::null_mut();
+        }
+    };
+
+    // Create array with 7 elements
+    let arr = unsafe { naml_std_core::naml_array_new(7) };
+
+    // size
+    unsafe { naml_std_core::naml_array_push(arr, meta.len() as i64) };
+
+    // mode
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        unsafe { naml_std_core::naml_array_push(arr, meta.permissions().mode() as i64) };
+    }
+    #[cfg(not(unix))]
+    {
+        let mode = if meta.permissions().readonly() { 0o444 } else { 0o644 };
+        unsafe { naml_std_core::naml_array_push(arr, mode) };
+    }
+
+    // modified - Unix timestamp in milliseconds
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    unsafe { naml_std_core::naml_array_push(arr, modified) };
+
+    // created - Unix timestamp in milliseconds
+    let created = meta
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    unsafe { naml_std_core::naml_array_push(arr, created) };
+
+    // is_dir
+    unsafe { naml_std_core::naml_array_push(arr, if meta.is_dir() { 1 } else { 0 }) };
+
+    // is_file
+    unsafe { naml_std_core::naml_array_push(arr, if meta.is_file() { 1 } else { 0 }) };
+
+    // is_symlink
+    unsafe { naml_std_core::naml_array_push(arr, if meta.is_symlink() { 1 } else { 0 }) };
+
+    arr
 }
 
 #[cfg(test)]

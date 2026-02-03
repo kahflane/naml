@@ -69,6 +69,16 @@ pub fn call_exception_clear(
     Ok(())
 }
 
+/// Clear only the exception pointer, preserving type ID for 'is' checks in catch blocks
+pub fn call_exception_clear_ptr(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<(), CodegenError> {
+    let func_ref = rt_func_ref(ctx, builder, "naml_exception_clear_ptr")?;
+    builder.ins().call(func_ref, &[]);
+    Ok(())
+}
+
 pub fn call_exception_check(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,

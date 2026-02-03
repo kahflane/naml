@@ -788,7 +788,15 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_fs_modified", crate::runtime::naml_fs_modified as *const u8);
         builder.symbol("naml_fs_copy", crate::runtime::naml_fs_copy as *const u8);
         builder.symbol("naml_fs_rename", crate::runtime::naml_fs_rename as *const u8);
+        builder.symbol("naml_fs_getwd", crate::runtime::naml_fs_getwd as *const u8);
+        builder.symbol("naml_fs_chdir", crate::runtime::naml_fs_chdir as *const u8);
+        builder.symbol("naml_fs_create_temp", crate::runtime::naml_fs_create_temp as *const u8);
+        builder.symbol("naml_fs_mkdir_temp", crate::runtime::naml_fs_mkdir_temp as *const u8);
+        builder.symbol("naml_fs_chmod", crate::runtime::naml_fs_chmod as *const u8);
+        builder.symbol("naml_fs_truncate", crate::runtime::naml_fs_truncate as *const u8);
+        builder.symbol("naml_fs_stat", crate::runtime::naml_fs_stat as *const u8);
         builder.symbol("naml_io_error_new", crate::runtime::naml_io_error_new as *const u8);
+        builder.symbol("naml_permission_error_new", crate::runtime::naml_permission_error_new as *const u8);
 
         // Memory-mapped file operations
         builder.symbol("naml_fs_mmap_open", crate::runtime::naml_fs_mmap_open as *const u8);
@@ -849,6 +857,22 @@ impl<'a> JitCompiler<'a> {
         builder.symbol(
             "naml_exception_check",
             crate::runtime::naml_exception_check as *const u8,
+        );
+        builder.symbol(
+            "naml_exception_set_typed",
+            crate::runtime::naml_exception_set_typed as *const u8,
+        );
+        builder.symbol(
+            "naml_exception_get_type_id",
+            crate::runtime::naml_exception_get_type_id as *const u8,
+        );
+        builder.symbol(
+            "naml_exception_is_type",
+            crate::runtime::naml_exception_is_type as *const u8,
+        );
+        builder.symbol(
+            "naml_exception_clear_ptr",
+            crate::runtime::naml_exception_clear_ptr as *const u8,
         );
 
         // Stack trace functions
@@ -2644,6 +2668,34 @@ impl<'a> JitCompiler<'a> {
             &[],
             &[i64t],
         )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_exception_set_typed",
+            &[ptr, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_exception_get_type_id",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_exception_is_type",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_exception_clear_ptr",
+            &[],
+            &[],
+        )?;
 
         // File system operations
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_read", &[ptr], &[ptr])?;
@@ -2669,7 +2721,15 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_modified", &[ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_copy", &[ptr, ptr], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_rename", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_getwd", &[], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_chdir", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_create_temp", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mkdir_temp", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_chmod", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_truncate", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_stat", &[ptr], &[ptr])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_io_error_new", &[ptr, ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_permission_error_new", &[ptr, ptr, i64t], &[ptr])?;
 
         // Memory-mapped file operations
         declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_open", &[ptr, i64t], &[i64t])?;

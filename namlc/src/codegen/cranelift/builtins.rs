@@ -241,6 +241,20 @@ pub enum BuiltinStrategy {
     FsCopy,
     /// (src, dst) -> unit throws IOError
     FsRename,
+    /// () -> string throws IOError
+    FsGetwd,
+    /// (path) -> unit throws IOError
+    FsChdir,
+    /// (prefix) -> string throws IOError
+    FsCreateTemp,
+    /// (prefix) -> string throws IOError
+    FsMkdirTemp,
+    /// (path, mode) -> unit throws IOError
+    FsChmod,
+    /// (path, size) -> unit throws IOError
+    FsTruncate,
+    /// (path) -> [int] throws IOError
+    FsStat,
 
     // ========================================
     // Memory-mapped file strategies
@@ -1097,6 +1111,34 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "rename",
             strategy: BuiltinStrategy::FsRename,
+        },
+        BuiltinFunction {
+            name: "getwd",
+            strategy: BuiltinStrategy::FsGetwd,
+        },
+        BuiltinFunction {
+            name: "chdir",
+            strategy: BuiltinStrategy::FsChdir,
+        },
+        BuiltinFunction {
+            name: "create_temp",
+            strategy: BuiltinStrategy::FsCreateTemp,
+        },
+        BuiltinFunction {
+            name: "mkdir_temp",
+            strategy: BuiltinStrategy::FsMkdirTemp,
+        },
+        BuiltinFunction {
+            name: "chmod",
+            strategy: BuiltinStrategy::FsChmod,
+        },
+        BuiltinFunction {
+            name: "truncate",
+            strategy: BuiltinStrategy::FsTruncate,
+        },
+        BuiltinFunction {
+            name: "stat",
+            strategy: BuiltinStrategy::FsStat,
         },
         // ========================================
         // Memory-mapped file operations
@@ -2086,6 +2128,49 @@ pub fn compile_builtin_call(
             let dst = compile_expression(ctx, builder, &args[1])?;
             let dst = ensure_naml_string(ctx, builder, dst, &args[1])?;
             call_two_arg_int_runtime(ctx, builder, "naml_fs_rename", src, dst)
+        }
+
+        BuiltinStrategy::FsGetwd => {
+            // No arguments - returns pointer to string
+            call_int_runtime(ctx, builder, "naml_fs_getwd")
+        }
+
+        BuiltinStrategy::FsChdir => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_fs_chdir", path)
+        }
+
+        BuiltinStrategy::FsCreateTemp => {
+            let prefix = compile_expression(ctx, builder, &args[0])?;
+            let prefix = ensure_naml_string(ctx, builder, prefix, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_create_temp", prefix)
+        }
+
+        BuiltinStrategy::FsMkdirTemp => {
+            let prefix = compile_expression(ctx, builder, &args[0])?;
+            let prefix = ensure_naml_string(ctx, builder, prefix, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_mkdir_temp", prefix)
+        }
+
+        BuiltinStrategy::FsChmod => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let mode = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_chmod", path, mode)
+        }
+
+        BuiltinStrategy::FsTruncate => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let size = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_truncate", path, size)
+        }
+
+        BuiltinStrategy::FsStat => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_stat", path)
         }
 
         // ========================================

@@ -250,6 +250,21 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let permission_error_name = self.interner.get_or_intern("PermissionError");
+        self.symbols.define_type(
+            permission_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: permission_error_name,
+                fields: vec![
+                    (msg_name, Type::String),
+                    (path_name, Type::String),
+                    (code_name, Type::Int),
+                ],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -1449,38 +1464,38 @@ impl<'a> TypeChecker<'a> {
                 "read",
                 vec![("path", Type::String)],
                 Type::String,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             StdModuleFn::throwing(
                 "read_bytes",
                 vec![("path", Type::String)],
                 Type::Bytes,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             // File writing
             StdModuleFn::throwing(
                 "write",
                 vec![("path", Type::String), ("content", Type::String)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             StdModuleFn::throwing(
                 "write_bytes",
                 vec![("path", Type::String), ("content", Type::Bytes)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             StdModuleFn::throwing(
                 "append",
                 vec![("path", Type::String), ("content", Type::String)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             StdModuleFn::throwing(
                 "append_bytes",
                 vec![("path", Type::String), ("content", Type::Bytes)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             // Existence checks (non-throwing)
             StdModuleFn::new("exists", vec![("path", Type::String)], Type::Bool),
@@ -1491,32 +1506,32 @@ impl<'a> TypeChecker<'a> {
                 "list_dir",
                 vec![("path", Type::String)],
                 Type::Array(Box::new(Type::String)),
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             StdModuleFn::throwing(
                 "mkdir",
                 vec![("path", Type::String)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             StdModuleFn::throwing(
                 "mkdir_all",
                 vec![("path", Type::String)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             // Delete operations
             StdModuleFn::throwing(
                 "remove",
                 vec![("path", Type::String)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             StdModuleFn::throwing(
                 "remove_all",
                 vec![("path", Type::String)],
                 Type::Unit,
-                vec!["IOError"],
+                vec!["IOError", "PermissionError"],
             ),
             // Path operations (non-throwing)
             StdModuleFn::new(
@@ -1696,6 +1711,48 @@ impl<'a> TypeChecker<'a> {
                 vec![("handle", Type::Int)],
                 Type::Int,
                 vec!["IOError"],
+            ),
+            // Working directory operations
+            StdModuleFn::throwing("getwd", vec![], Type::String, vec!["IOError"]),
+            StdModuleFn::throwing(
+                "chdir",
+                vec![("path", Type::String)],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            // Temp file/directory creation
+            StdModuleFn::throwing(
+                "create_temp",
+                vec![("prefix", Type::String)],
+                Type::String,
+                vec!["IOError", "PermissionError"],
+            ),
+            StdModuleFn::throwing(
+                "mkdir_temp",
+                vec![("prefix", Type::String)],
+                Type::String,
+                vec!["IOError", "PermissionError"],
+            ),
+            // Permission and size operations
+            StdModuleFn::throwing(
+                "chmod",
+                vec![("path", Type::String), ("mode", Type::Int)],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            StdModuleFn::throwing(
+                "truncate",
+                vec![("path", Type::String), ("size", Type::Int)],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            // File metadata (stat)
+            // Returns [size, mode, modified, created, is_dir, is_file, is_symlink]
+            StdModuleFn::throwing(
+                "stat",
+                vec![("path", Type::String)],
+                Type::Array(Box::new(Type::Int)),
+                vec!["IOError", "PermissionError"],
             ),
         ]
     }

@@ -1,0 +1,145 @@
+use std::fs::*;
+
+fn main() {
+    println("=== File System Advanced Functions ===");
+    println("");
+
+    // Test getwd - get current working directory
+    println("--- Testing getwd ---");
+    var cwd: string = getwd() catch e {
+        println("getwd failed:");
+        println(e.message);
+    };
+    print("Current directory: ");
+    println(cwd);
+
+    // Test mkdir_temp - create temp directory
+    println("");
+    println("--- Testing mkdir_temp ---");
+    var temp_dir: string = mkdir_temp("naml_test_") catch e {
+        println("mkdir_temp failed:");
+        println(e.message);
+    };
+    print("Created temp directory: ");
+    println(temp_dir);
+
+    // Test chdir - change to temp directory
+    println("");
+    println("--- Testing chdir ---");
+    chdir(temp_dir) catch e {
+        println("chdir failed:");
+        println(e.message);
+    };
+    var new_cwd: string = getwd() catch e {
+        println("getwd failed:");
+        println(e.message);
+    };
+    print("Changed to directory: ");
+    println(new_cwd);
+
+    // Change back to original directory
+    chdir(cwd) catch e {
+        println("chdir back failed:");
+        println(e.message);
+    };
+    println("Changed back to original directory");
+
+    // Test create_temp - create temp file
+    println("");
+    println("--- Testing create_temp ---");
+    var temp_file: string = create_temp("naml_file_") catch e {
+        println("create_temp failed:");
+        println(e.message);
+    };
+    print("Created temp file: ");
+    println(temp_file);
+
+    // Write some content to the temp file for truncate test
+    var test_content: string = "Hello, this is a test file with some content!";
+    write(temp_file, test_content) catch e {
+        println("write failed:");
+        println(e.message);
+    };
+    println("Wrote content to temp file");
+
+    // Test stat - get file metadata
+    println("");
+    println("--- Testing stat ---");
+    var file_stat: [int] = stat(temp_file) catch e {
+        println("stat failed:");
+        println(e.message);
+    };
+    print("File size: ");
+    println(file_stat[0]!);
+    print("File mode: ");
+    println(file_stat[1]!);
+    print("Modified time (ms): ");
+    println(file_stat[2]!);
+    print("Created time (ms): ");
+    println(file_stat[3]!);
+    print("Is directory: ");
+    println(file_stat[4]!);
+    print("Is file: ");
+    println(file_stat[5]!);
+    print("Is symlink: ");
+    println(file_stat[6]!);
+
+    // Test truncate - truncate file to smaller size
+    println("");
+    println("--- Testing truncate ---");
+    print("Original size: ");
+    println(file_stat[0]!);
+    truncate(temp_file, 10) catch e {
+        println("truncate failed:");
+        println(e.message);
+    };
+    var new_size: int = size(temp_file) catch e {
+        println("size failed:");
+        println(e.message);
+    };
+    print("New size after truncate(10): ");
+    println(new_size);
+
+    // Read truncated content
+    var truncated_content: string = read(temp_file) catch e {
+        println("read failed:");
+        println(e.message);
+    };
+    print("Truncated content: ");
+    println(truncated_content);
+
+    // Test chmod - change file permissions
+    // 420 = 0644 in octal (rw-r--r--)
+    println("");
+    println("--- Testing chmod ---");
+    chmod(temp_file, 420) catch e {
+        println("chmod failed:");
+        println(e.message);
+    };
+    println("Changed permissions to 420 (0644 octal)");
+
+    var stat_after_chmod: [int] = stat(temp_file) catch e {
+        println("stat failed:");
+        println(e.message);
+    };
+    print("Mode after chmod: ");
+    println(stat_after_chmod[1]!);
+
+    // Cleanup
+    println("");
+    println("--- Cleanup ---");
+    remove(temp_file) catch e {
+        println("remove temp_file failed:");
+        println(e.message);
+    };
+    println("Removed temp file");
+
+    remove_all(temp_dir) catch e {
+        println("remove_all temp_dir failed:");
+        println(e.message);
+    };
+    println("Removed temp directory");
+
+    println("");
+    println("=== All tests completed ===");
+}

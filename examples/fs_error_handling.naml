@@ -1,0 +1,100 @@
+use std::fs::*;
+
+fn main() {
+    println("=== Testing IOError vs PermissionError ===");
+    println("");
+
+    // Test 1: IOError - File not found
+    println("--- Test 1: IOError (File Not Found) ---");
+    var content: string = read("/nonexistent/path/file.txt") catch e {
+        println("Caught IOError:");
+        print("  Message: ");
+        println(e.message);
+        print("  Path: ");
+        println(e.path);
+        print("  Code: ");
+        println(e.code);
+    };
+
+    // Test 2: PermissionError - No permission to read
+    println("");
+    println("--- Test 2: PermissionError (Permission Denied) ---");
+
+    // Create a test file
+    var test_file: string = "/tmp/naml_error_test.txt";
+    write(test_file, "Secret content") catch e {
+        println("Setup failed:");
+        println(e.message);
+    };
+
+    // Remove all permissions
+    chmod(test_file, 0) catch e {
+        println("chmod failed:");
+        println(e.message);
+    };
+
+    // Try to read - should get PermissionError
+    var secret: string = read(test_file) catch e {
+        println("Caught PermissionError:");
+        print("  Message: ");
+        println(e.message);
+        print("  Path: ");
+        println(e.path);
+        print("  Code: ");
+        println(e.code);
+    };
+
+    // Restore and cleanup
+    chmod(test_file, 420) catch e {
+        println("restore chmod failed");
+    };
+    remove(test_file) catch e {
+        println("cleanup failed");
+    };
+
+    // Test 3: IOError - Directory not empty
+    println("");
+    println("--- Test 3: IOError (Directory Not Empty) ---");
+
+    var test_dir: string = "/tmp/naml_dir_test";
+    mkdir_all(test_dir) catch e {
+        println("mkdir failed");
+    };
+    write("/tmp/naml_dir_test/file.txt", "content") catch e {
+        println("write failed");
+    };
+
+    // Try to remove non-empty directory with remove() - should fail
+    remove(test_dir) catch e {
+        println("Caught IOError:");
+        print("  Message: ");
+        println(e.message);
+        print("  Path: ");
+        println(e.path);
+        print("  Code: ");
+        println(e.code);
+    };
+
+    // Cleanup properly
+    remove_all(test_dir) catch e {
+        println("cleanup failed");
+    };
+
+    // Test 4: PermissionError - Cannot write to protected location
+    println("");
+    println("--- Test 4: PermissionError (Write to Protected) ---");
+
+    // Try to write to root (should fail with permission error)
+    write("/test_protected.txt", "test") catch e {
+        println("Caught PermissionError:");
+        print("  Message: ");
+        println(e.message);
+        print("  Path: ");
+        println(e.path);
+        print("  Code: ");
+        println(e.code);
+    };
+
+    println("");
+    println("=== All Error Handling Tests Complete ===");
+}

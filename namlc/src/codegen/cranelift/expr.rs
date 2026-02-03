@@ -4,7 +4,7 @@ use crate::codegen::cranelift::CompileContext;
 use crate::codegen::cranelift::array::{compile_array_literal, compile_direct_array_get_or_panic};
 use crate::codegen::cranelift::binop::{compile_binary_op, compile_unary_op};
 use crate::codegen::cranelift::exceptions::{
-    call_exception_check, call_exception_clear, call_exception_get,
+    call_exception_check, call_exception_clear, call_exception_clear_ptr, call_exception_get,
 };
 use crate::codegen::cranelift::externs::compile_extern_call;
 use crate::codegen::cranelift::literal::compile_literal;
@@ -242,6 +242,35 @@ pub fn compile_expression(
                             let result = builder.ins().icmp(IntCC::Equal, actual_type, expected);
                             return Ok(result);
                         }
+                    }
+                }
+
+                // Handle `is` operator for exception type checking
+                // Exception type IDs: IOError=1, PermissionError=2, DecodeError=3,
+                // PathError=4, NetworkError=5, TimeoutError=6
+                if let Expression::Identifier(ident) = bin.right {
+                    let type_name = ctx.interner.resolve(&ident.ident.symbol);
+                    let exception_type_id = match type_name {
+                        "IOError" => Some(1i64),
+                        "PermissionError" => Some(2i64),
+                        "DecodeError" => Some(3i64),
+                        "PathError" => Some(4i64),
+                        "NetworkError" => Some(5i64),
+                        "TimeoutError" => Some(6i64),
+                        _ => None,
+                    };
+
+                    if let Some(type_id) = exception_type_id {
+                        // Call naml_exception_is_type to check if current exception matches
+                        let func_ref = rt_func_ref(ctx, builder, "naml_exception_is_type")?;
+                        let expected = builder
+                            .ins()
+                            .iconst(cranelift::prelude::types::I64, type_id);
+                        let call = builder.ins().call(func_ref, &[expected]);
+                        let result = builder.inst_results(call)[0];
+                        // Convert i64 result to i8 bool
+                        let bool_result = builder.ins().icmp_imm(IntCC::NotEqual, result, 0);
+                        return Ok(bool_result);
                     }
                 }
             }
@@ -1028,8 +1057,8 @@ pub fn compile_expression(
             };
             builder.def_var(error_var, exception_ptr);
 
-            // Clear the exception so it doesn't propagate
-            call_exception_clear(ctx, builder)?;
+            // Clear the exception pointer so it doesn't propagate, but preserve type ID for 'is' checks
+            call_exception_clear_ptr(ctx, builder)?;
 
             // Compile the handler block statements
             for stmt in &catch_expr.handler.statements {
