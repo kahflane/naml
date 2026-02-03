@@ -182,7 +182,10 @@ pub fn call_datetime_format(
 
 pub fn ensure_i64(builder: &mut FunctionBuilder<'_>, val: Value) -> Value {
     let ty = builder.func.dfg.value_type(val);
-    if ty.is_int() && ty.bits() < 64 {
+    if ty == cranelift::prelude::types::F64 {
+        // Bitcast float to i64 for storage in generic arrays
+        builder.ins().bitcast(cranelift::prelude::types::I64, MemFlags::new(), val)
+    } else if ty.is_int() && ty.bits() < 64 {
         builder.ins().uextend(cranelift::prelude::types::I64, val)
     } else {
         val

@@ -128,7 +128,14 @@ pub fn compile_unary_op(
     operand: Value,
 ) -> Result<Value, CodegenError> {
     let result = match op {
-        UnaryOp::Neg => builder.ins().ineg(operand),
+        UnaryOp::Neg => {
+            let ty = builder.func.dfg.value_type(operand);
+            if ty == cranelift::prelude::types::F64 {
+                builder.ins().fneg(operand)
+            } else {
+                builder.ins().ineg(operand)
+            }
+        }
         UnaryOp::Not => {
             let one = builder.ins().iconst(cranelift::prelude::types::I8, 1);
             builder.ins().bxor(operand, one)

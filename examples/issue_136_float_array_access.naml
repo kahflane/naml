@@ -1,0 +1,46 @@
+///
+/// Issue #136: Float array access causes Cranelift type mismatch panic
+///
+/// This example demonstrates that float arrays can now be accessed using
+/// the force unwrap operator (arr[index]!) without causing a type mismatch.
+///
+
+fn main() {
+    println("=== Issue #136: Float Array Access ===\n");
+
+    var arr: [float] = [1.5, 2.7, 3.9, 4.1, 5.3];
+
+    println("Float array created: [1.5, 2.7, 3.9, 4.1, 5.3]");
+
+    // Test force unwrap access on float arrays
+    var first: float = arr[0]!;
+    var second: float = arr[1]!;
+    var third: float = arr[2]!;
+    var fourth: float = arr[3]!;
+    var fifth: float = arr[4]!;
+
+    print("arr[0]! = ");
+    println(first);
+
+    print("arr[1]! = ");
+    println(second);
+
+    print("arr[2]! = ");
+    println(third);
+
+    print("arr[3]! = ");
+    println(fourth);
+
+    print("arr[4]! = ");
+    println(fifth);
+
+    // Verify values are correct
+    var sum: float = first + second + third + fourth + fifth;
+    print("\nSum of all elements: ");
+    println(sum);
+
+    // Expected: 1.5 + 2.7 + 3.9 + 4.1 + 5.3 = 17.5
+    println("Expected: 17.5");
+
+    println("\n=== Issue #136 Fixed ===");
+}

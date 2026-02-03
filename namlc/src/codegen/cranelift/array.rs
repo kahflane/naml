@@ -259,6 +259,7 @@ pub fn call_array_fill_runtime(
     arr: Value,
     val: Value,
 ) -> Result<Value, CodegenError> {
+    let val = ensure_i64(builder, val);
     let func_ref = rt_func_ref(ctx, builder, "naml_array_fill")?;
     builder.ins().call(func_ref, &[arr, val]);
     Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
@@ -280,6 +281,7 @@ pub fn call_array_contains_bool(
     arr: Value,
     val: Value,
 ) -> Result<Value, CodegenError> {
+    let val = ensure_i64(builder, val);
     let func_ref = rt_func_ref(ctx, builder, "naml_array_contains")?;
     let call = builder.ins().call(func_ref, &[arr, val]);
     let result = builder.inst_results(call)[0];
@@ -289,11 +291,13 @@ pub fn call_array_contains_bool(
 /// Optimized array access for arr[index]! pattern
 /// Directly returns value or panics - no intermediate option struct
 /// Fully inlined: no function call overhead
+/// The element_type parameter specifies the Cranelift type of array elements (I64, F64, etc.)
 pub fn compile_direct_array_get_or_panic(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
     index: Value,
+    element_type: cranelift::prelude::Type,
 ) -> Result<Value, CodegenError> {
     let ptr_type = ctx.module.target_config().pointer_type();
     let len = builder
@@ -330,7 +334,7 @@ pub fn compile_direct_array_get_or_panic(
     let offset = builder.ins().ishl_imm(index, 3);
     let elem_addr = builder.ins().iadd(data_ptr, offset);
 
-    // Load result directly from element address
+    // Load result directly from element address as I64 (storage format)
     let val = builder.ins().load(
         cranelift::prelude::types::I64,
         MemFlags::trusted().with_notrap(),
@@ -338,5 +342,10 @@ pub fn compile_direct_array_get_or_panic(
         0,
     );
 
-    Ok(val)
+    // Bitcast to correct type if needed (floats are stored as bitcast i64)
+    if element_type == cranelift::prelude::types::F64 {
+        Ok(builder.ins().bitcast(cranelift::prelude::types::F64, MemFlags::new(), val))
+    } else {
+        Ok(val)
+    }
 }

@@ -5,6 +5,7 @@ use cranelift_frontend::FunctionBuilder;
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::{CompileContext, ARRAY_LEN_OFFSET};
 use crate::codegen::cranelift::runtime::rt_func_ref;
+use crate::codegen::cranelift::misc::ensure_i64;
 
 pub fn compile_option_from_array_access(
     ctx: &mut CompileContext<'_>,
@@ -193,6 +194,7 @@ pub fn compile_option_from_index_of(
     arr: Value,
     val: Value,
 ) -> Result<Value, CodegenError> {
+    let val = ensure_i64(builder, val);
     let option_slot =
         builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
     let option_ptr = builder
@@ -247,6 +249,7 @@ pub fn compile_option_from_last_index_of(
     arr: Value,
     val: Value,
 ) -> Result<Value, CodegenError> {
+    let val = ensure_i64(builder, val);
     let option_slot =
         builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
     let option_ptr = builder

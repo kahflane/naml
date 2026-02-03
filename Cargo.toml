@@ -130,6 +130,11 @@ tracing-subscriber = "0.3"
 smallvec = { version = "1.13", features = ["union"] }
 
 ##
+## Insertion-order preserving hashmap
+##
+indexmap = "2.7"
+
+##
 ## SIMD-accelerated byte searching
 ##
 memchr = "2.7"

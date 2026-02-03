@@ -298,7 +298,7 @@ mod tests {
     use super::*;
     use naml_std_core::naml_string_new;
     use std::alloc::Layout;
-    use naml_std_core::{HeapHeader, HeapTag};
+    use naml_std_core::{HeapHeader, HeapTag, NamlArray};
 
     /// Create a NamlBytes from raw data for testing
     fn create_bytes_from(data: *const u8, len: usize) -> *mut NamlBytes {
@@ -317,6 +317,21 @@ mod tests {
                 std::ptr::copy_nonoverlapping(data, (*ptr).data.as_mut_ptr(), len);
             }
             ptr
+        }
+    }
+
+    /// Helper to convert NamlBytes to Vec<u8>
+    unsafe fn bytes_to_vec(bytes_ptr: *const NamlBytes) -> Vec<u8> {
+        unsafe {
+            if bytes_ptr.is_null() {
+                return Vec::new();
+            }
+            let len = (*bytes_ptr).len;
+            let mut result = Vec::with_capacity(len);
+            for i in 0..len {
+                result.push(*(*bytes_ptr).data.as_ptr().add(i));
+            }
+            result
         }
     }
 
@@ -376,7 +391,7 @@ mod tests {
             let received = naml_net_udp_receive(socket2, 1024);
             assert!(!received.is_null());
 
-            let data = array_to_bytes(received);
+            let data = bytes_to_vec(received);
             assert_eq!(data, b"Hello UDP!");
 
             naml_net_udp_close(socket1);

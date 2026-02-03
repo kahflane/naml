@@ -81,6 +81,11 @@ nom.workspace = true
 smallvec.workspace = true
 
 ##
+## Insertion-order preserving hashmap
+##
+indexmap.workspace = true
+
+##
 ## SIMD-accelerated byte searching
 ##
 memchr.workspace = true

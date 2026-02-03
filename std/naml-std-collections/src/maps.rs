@@ -671,16 +671,26 @@ fn string_eq(a: *const NamlString, b: *const NamlString) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::alloc::{alloc_zeroed, Layout};
+    use naml_std_core::{HeapHeader, HeapTag};
 
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
+    unsafe fn test_map_new(capacity: usize) -> *mut NamlMap {
+        let cap = if capacity < 16 { 16 } else { capacity };
+        let map_layout = Layout::new::<NamlMap>();
+        let map_ptr = alloc_zeroed(map_layout) as *mut NamlMap;
+        let entries_layout = Layout::array::<MapEntry>(cap).unwrap();
+        let entries_ptr = alloc_zeroed(entries_layout) as *mut MapEntry;
+        (*map_ptr).header = HeapHeader::new(HeapTag::Map);
+        (*map_ptr).capacity = cap;
+        (*map_ptr).length = 0;
+        (*map_ptr).entries = entries_ptr;
+        map_ptr
     }
 
     #[test]
     fn test_map_count() {
         unsafe {
-            let map = naml_map_new(16);
+            let map = test_map_new(16);
             assert_eq!(naml_map_count(map), 0);
         }
     }
@@ -688,7 +698,7 @@ mod tests {
     #[test]
     fn test_map_keys_values() {
         unsafe {
-            let map = naml_map_new(16);
+            let map = test_map_new(16);
             let keys = naml_map_keys(map);
             let values = naml_map_values(map);
             assert_eq!((*keys).len, 0);

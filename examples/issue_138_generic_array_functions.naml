@@ -1,0 +1,91 @@
+///
+/// Issue #138: Generic array functions fail with float arrays
+///
+/// This example demonstrates that array functions like `count`, `push`, `pop`,
+/// etc. now work with arrays of any type, not just int arrays.
+///
+
+use std::collections::arrays::{count, push, take, drop, slice, reversed};
+
+fn main() {
+    println("=== Issue #138: Generic Array Functions ===\n");
+
+    // Test with float arrays
+    println("--- Float Arrays ---");
+    var floats: [float] = [1.1, 2.2, 3.3];
+
+    print("Initial float array: [1.1, 2.2, 3.3], count = ");
+    println(count(floats));
+
+    push(floats, 4.4);
+    print("After push(4.4), count = ");
+    println(count(floats));
+
+    push(floats, 5.5);
+    print("After push(5.5), count = ");
+    println(count(floats));
+
+    // Verify values using force unwrap
+    print("floats[0]! = ");
+    println(floats[0]!);
+
+    print("floats[3]! = ");
+    println(floats[3]!);
+
+    print("floats[4]! = ");
+    println(floats[4]!);
+
+    // Test with string arrays
+    println("\n--- String Arrays ---");
+    var strings: [string] = ["hello", "world"];
+
+    print("Initial string array: [\"hello\", \"world\"], count = ");
+    println(count(strings));
+
+    push(strings, "naml");
+    print("After push(\"naml\"), count = ");
+    println(count(strings));
+
+    // Test with bool arrays
+    println("\n--- Bool Arrays ---");
+    var bools: [bool] = [true, false, true];
+
+    print("Initial bool array: [true, false, true], count = ");
+    println(count(bools));
+
+    push(bools, false);
+    print("After push(false), count = ");
+    println(count(bools));
+
+    // Test slice operations with floats
+    println("\n--- Slice Operations with Floats ---");
+    var numbers: [float] = [1.0, 2.0, 3.0, 4.0, 5.0];
+
+    print("Original array count: ");
+    println(count(numbers));
+
+    var taken: [float] = take(numbers, 3);
+    print("take(numbers, 3) count: ");
+    println(count(taken));
+
+    var dropped: [float] = drop(numbers, 2);
+    print("drop(numbers, 2) count: ");
+    println(count(dropped));
+
+    var sliced: [float] = slice(numbers, 1, 4);
+    print("slice(numbers, 1, 4) count: ");
+    println(count(sliced));
+
+    // Test reversed with floats
+    println("\n--- Reversed with Floats ---");
+    var rev: [float] = reversed(numbers);
+    print("Original first element: ");
+    println(numbers[0]!);
+    print("Reversed first element: ");
+    println(rev[0]!);
+
+    println("\n=== Issue #138 Fixed ===");
+
+    // Note: contains() and index_of() with float values have a separate
+    // codegen bug tracked in issue #139
+}

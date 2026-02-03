@@ -1,0 +1,73 @@
+///
+/// Issue #137: Global variables not accessible from functions
+///
+/// This example demonstrates that module-level variables are now accessible
+/// from within functions, enabling patterns like defining constants at the
+/// top of a file and using them throughout the code.
+///
+/// Note: Global variables that depend on other globals have a separate bug
+/// tracked in issue #140 (initialization order not preserved).
+///
+
+// Define global constants (independent - no dependencies between them)
+var PI: float = 3.141592653589793;
+var DAYS_PER_YEAR: float = 365.24;
+var GRAVITY: float = 9.81;
+var SPEED_OF_LIGHT: int = 299792458;
+
+fn get_pi() -> float {
+    // Access global constant from function
+    return PI;
+}
+
+fn get_days_per_year() -> float {
+    return DAYS_PER_YEAR;
+}
+
+fn calculate_with_gravity(mass: float) -> float {
+    // Use global constant in calculation
+    return mass * GRAVITY;
+}
+
+fn main() {
+    println("=== Issue #137: Global Variables ===\n");
+
+    // Access global constants directly
+    println("--- Direct Access ---");
+    print("PI = ");
+    println(PI);
+
+    print("DAYS_PER_YEAR = ");
+    println(DAYS_PER_YEAR);
+
+    print("GRAVITY = ");
+    println(GRAVITY);
+
+    print("SPEED_OF_LIGHT = ");
+    println(SPEED_OF_LIGHT);
+
+    // Access globals through functions
+    println("\n--- Access Through Functions ---");
+
+    print("get_pi() = ");
+    println(get_pi());
+
+    print("get_days_per_year() = ");
+    println(get_days_per_year());
+
+    var force: float = calculate_with_gravity(10.0);
+    print("calculate_with_gravity(10.0) = ");
+    println(force);
+
+    // Compute derived values in main (avoiding issue #140)
+    println("\n--- Computed Values ---");
+    var pi_squared: float = PI * PI;
+    print("PI * PI = ");
+    println(pi_squared);
+
+    var solar_mass: float = 4.0 * PI * PI;
+    print("4.0 * PI * PI = ");
+    println(solar_mass);
+
+    println("\n=== Issue #137 Fixed ===");
+}

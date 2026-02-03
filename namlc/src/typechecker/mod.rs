@@ -686,69 +686,75 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_collections_array_functions() -> Vec<StdModuleFn> {
+        // Use a default Spur for generic type T
+        let generic_t = || Type::Generic(lasso::Spur::default(), vec![]);
+        let array_of_t = || Type::Array(Box::new(generic_t()));
+        let option_of_t = || Type::Option(Box::new(generic_t()));
+
         vec![
-            // Basic functions (Go-style)
-            StdModuleFn::new(
+            // Basic functions (Go-style) - generic over element type T
+            StdModuleFn::generic(
                 "count",
-                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                vec!["T"],
+                vec![("arr", array_of_t())],
                 Type::Int,
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "reserved",
+                vec!["T"],
                 vec![("capacity", Type::Int)],
-                Type::Array(Box::new(Type::Int)),
+                array_of_t(),
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "push",
-                vec![
-                    ("arr", Type::Array(Box::new(Type::Int))),
-                    ("value", Type::Int),
-                ],
+                vec!["T"],
+                vec![("arr", array_of_t()), ("value", generic_t())],
                 Type::Unit,
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "pop",
-                vec![("arr", Type::Array(Box::new(Type::Int)))],
-                Type::Option(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t())],
+                option_of_t(),
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "shift",
-                vec![("arr", Type::Array(Box::new(Type::Int)))],
-                Type::Option(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t())],
+                option_of_t(),
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "fill",
-                vec![
-                    ("arr", Type::Array(Box::new(Type::Int))),
-                    ("value", Type::Int),
-                ],
+                vec!["T"],
+                vec![("arr", array_of_t()), ("value", generic_t())],
                 Type::Unit,
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "clear",
-                vec![("arr", Type::Array(Box::new(Type::Int)))],
+                vec!["T"],
+                vec![("arr", array_of_t())],
                 Type::Unit,
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "get",
-                vec![
-                    ("arr", Type::Array(Box::new(Type::Int))),
-                    ("index", Type::Int),
-                ],
-                Type::Option(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t()), ("index", Type::Int)],
+                option_of_t(),
             ),
             // Access functions
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "first",
-                vec![("arr", Type::Array(Box::new(Type::Int)))],
-                Type::Option(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t())],
+                option_of_t(),
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "last",
-                vec![("arr", Type::Array(Box::new(Type::Int)))],
-                Type::Option(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t())],
+                option_of_t(),
             ),
-            // Aggregation
+            // Aggregation - these only make sense for numeric types, keep as int for now
             StdModuleFn::new(
                 "sum",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
@@ -764,47 +770,43 @@ impl<'a> TypeChecker<'a> {
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Option(Box::new(Type::Int)),
             ),
-            // Transformation
-            StdModuleFn::new(
+            // Transformation - generic
+            StdModuleFn::generic(
                 "reversed",
-                vec![("arr", Type::Array(Box::new(Type::Int)))],
-                Type::Array(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t())],
+                array_of_t(),
             ),
-            // Slicing
-            StdModuleFn::new(
+            // Slicing - generic
+            StdModuleFn::generic(
                 "take",
-                vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)],
-                Type::Array(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t()), ("n", Type::Int)],
+                array_of_t(),
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "drop",
-                vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)],
-                Type::Array(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t()), ("n", Type::Int)],
+                array_of_t(),
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "slice",
-                vec![
-                    ("arr", Type::Array(Box::new(Type::Int))),
-                    ("start", Type::Int),
-                    ("end", Type::Int),
-                ],
-                Type::Array(Box::new(Type::Int)),
+                vec!["T"],
+                vec![("arr", array_of_t()), ("start", Type::Int), ("end", Type::Int)],
+                array_of_t(),
             ),
-            // Search
-            StdModuleFn::new(
+            // Search - generic
+            StdModuleFn::generic(
                 "index_of",
-                vec![
-                    ("arr", Type::Array(Box::new(Type::Int))),
-                    ("val", Type::Int),
-                ],
+                vec!["T"],
+                vec![("arr", array_of_t()), ("val", generic_t())],
                 Type::Option(Box::new(Type::Int)),
             ),
-            StdModuleFn::new(
+            StdModuleFn::generic(
                 "contains",
-                vec![
-                    ("arr", Type::Array(Box::new(Type::Int))),
-                    ("val", Type::Int),
-                ],
+                vec!["T"],
+                vec![("arr", array_of_t()), ("val", generic_t())],
                 Type::Bool,
             ),
             // Lambda-based functions (predicate: fn(int) -> bool)
@@ -2855,8 +2857,8 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_top_level_stmt(&mut self, stmt_item: &ast::TopLevelStmtItem) {
-        self.env.push_scope();
-
+        // Top-level statements (including global variable declarations) are checked
+        // in the root scope so they're accessible from all functions in the module
         let mut inferrer = TypeInferrer {
             env: &mut self.env,
             symbols: &self.symbols,
@@ -2869,8 +2871,6 @@ impl<'a> TypeChecker<'a> {
         };
 
         inferrer.check_stmt(&stmt_item.stmt);
-
-        self.env.pop_scope();
     }
 
     fn check_function(&mut self, func: &ast::FunctionItem) {

@@ -1,0 +1,30 @@
+///
+/// Issue #139: Array functions with float value arguments fail at codegen
+///
+/// BUG: This example demonstrates a codegen bug where functions that take
+/// a value argument of the array's element type fail when used with float arrays.
+///
+/// The type checker correctly infers T=float, but the codegen passes f64
+/// directly to runtime functions that expect i64.
+///
+/// EXPECTED: Should compile and run correctly
+/// ACTUAL: Fails with "arg has type f64, expected i64"
+///
+
+use std::collections::arrays::{contains, index_of};
+
+fn main() {
+    println("=== Issue #139: Float Value Arguments Bug ===\n");
+
+    var numbers: [float] = [1.0, 2.0, 3.0, 4.0, 5.0];
+
+    // BUG: contains with float value fails
+    print("contains(numbers, 3.0): ");
+    println(contains(numbers, 3.0));
+
+    // BUG: index_of with float value fails
+    print("index_of(numbers, 3.0): ");
+    println(index_of(numbers, 3.0) ?? -1);
+
+    println("\n=== End ===");
+}

@@ -1,0 +1,27 @@
+///
+/// Issue #140: Global variables depending on other globals are not initialized correctly
+///
+/// BUG: This example demonstrates a bug where global variables that reference
+/// other globals in their initializers get incorrect values (typically 0).
+///
+/// EXPECTED: SOLAR_MASS should be 39.478... (4 * PI^2)
+/// ACTUAL: SOLAR_MASS is 0 because HashMap doesn't preserve initialization order
+///
+
+var PI: float = 3.141592653589793;
+var SOLAR_MASS: float = 4.0 * PI * PI;
+
+fn main() {
+    println("=== Issue #140: Global Initialization Order Bug ===\n");
+
+    print("PI = ");
+    println(PI);
+
+    print("SOLAR_MASS (should be 4 * PI^2 = 39.478...) = ");
+    println(SOLAR_MASS);
+
+    println("\nExpected SOLAR_MASS:");
+    println(4.0 * 3.141592653589793 * 3.141592653589793);
+
+    println("\n=== BUG: Global initialization order not preserved ===");
+}

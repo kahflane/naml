@@ -241,15 +241,18 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    /// Helper to convert NamlArray of bytes to Vec<u8>
-    unsafe fn array_to_bytes(arr: *const NamlArray) -> Vec<u8> {
+    /// Helper to convert NamlBytes to Vec<u8>
+    unsafe fn bytes_to_vec(bytes_ptr: *const NamlBytes) -> Vec<u8> {
         unsafe {
-            let len = naml_std_core::naml_array_len(arr) as usize;
-            let mut bytes = Vec::with_capacity(len);
-            for i in 0..len {
-                bytes.push(naml_std_core::naml_array_get(arr, i as i64) as u8);
+            if bytes_ptr.is_null() {
+                return Vec::new();
             }
-            bytes
+            let len = (*bytes_ptr).len;
+            let mut result = Vec::with_capacity(len);
+            for i in 0..len {
+                result.push(*(*bytes_ptr).data.as_ptr().add(i));
+            }
+            result
         }
     }
 
@@ -271,7 +274,7 @@ mod tests {
                 let data = naml_net_tcp_client_read(client_socket, 1024);
                 assert!(!data.is_null());
 
-                let received = array_to_bytes(data);
+                let received = bytes_to_vec(data);
                 assert_eq!(received, b"Hello, server!");
 
                 let response = create_bytes_from(b"Hello, client!".as_ptr(), 14);
@@ -297,7 +300,7 @@ mod tests {
             let response = naml_net_tcp_client_read(client_socket, 1024);
             assert!(!response.is_null());
 
-            let received = array_to_bytes(response);
+            let received = bytes_to_vec(response);
             assert_eq!(received, b"Hello, client!");
 
             naml_net_tcp_client_close(client_socket);

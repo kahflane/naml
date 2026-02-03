@@ -34,6 +34,7 @@ mod types;
 
 use std::collections::{HashMap, HashSet};
 use std::panic;
+use indexmap::IndexMap;
 
 use cranelift::prelude::*;
 use cranelift_codegen::ir::AtomicRmwOp;
@@ -108,6 +109,7 @@ pub struct CompileContext<'a> {
     enum_defs: &'a HashMap<String, EnumDef>,
     exception_names: &'a HashSet<String>,
     extern_fns: &'a HashMap<String, ExternFn>,
+    global_vars: &'a IndexMap<String, GlobalVarDef>,
     variables: HashMap<String, Variable>,
     var_heap_types: HashMap<String, HeapType>,
     var_counter: usize,
@@ -131,6 +133,16 @@ pub(crate) const ARRAY_LEN_OFFSET: i32 = 16;
 const ARRAY_CAPACITY_OFFSET: i32 = 24;
 const ARRAY_DATA_OFFSET: i32 = 32;
 
+/// Global variable definition for codegen
+#[derive(Clone)]
+pub struct GlobalVarDef {
+    pub data_id: cranelift_module::DataId,
+    pub init_expr: *const Expression<'static>,
+    pub cl_type: cranelift::prelude::Type,
+}
+
+unsafe impl Send for GlobalVarDef {}
+
 pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
     annotations: &'a TypeAnnotations,
@@ -143,6 +155,7 @@ pub struct JitCompiler<'a> {
     enum_defs: HashMap<String, EnumDef>,
     exception_names: HashSet<String>,
     extern_fns: HashMap<String, ExternFn>,
+    global_vars: IndexMap<String, GlobalVarDef>,
     next_type_id: u32,
     spawn_counter: u32,
     spawn_blocks: HashMap<u32, SpawnBlockInfo>,
@@ -1654,6 +1667,7 @@ impl<'a> JitCompiler<'a> {
             enum_defs,
             exception_names: HashSet::new(),
             extern_fns: HashMap::new(),
+            global_vars: IndexMap::new(),
             next_type_id: 0,
             spawn_counter: 0,
             spawn_blocks: HashMap::new(),
@@ -4487,6 +4501,60 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
+        // Collect global variable declarations from top-level statements
+        for item in &ast.items {
+            if let Item::TopLevelStmt(stmt_item) = item {
+                if let Statement::Var(var_stmt) = &stmt_item.stmt {
+                    let name = self.interner.resolve(&var_stmt.name.symbol).to_string();
+
+                    // Determine the Cranelift type from the type annotation or infer from init
+                    let cl_type = if let Some(ty) = &var_stmt.ty {
+                        types::naml_to_cranelift(ty)
+                    } else {
+                        // Default to I64 for most types
+                        cranelift::prelude::types::I64
+                    };
+
+                    // Create a data section for this global variable (8 bytes)
+                    use cranelift_module::DataDescription;
+                    let data_id = self
+                        .module
+                        .declare_data(&format!("__global_{}", name), Linkage::Local, true, false)
+                        .map_err(|e| {
+                            CodegenError::JitCompile(format!(
+                                "Failed to declare global variable '{}': {}",
+                                name, e
+                            ))
+                        })?;
+
+                    let mut data_desc = DataDescription::new();
+                    data_desc.define_zeroinit(8); // 8 bytes for any value
+                    self.module.define_data(data_id, &data_desc).map_err(|e| {
+                        CodegenError::JitCompile(format!(
+                            "Failed to define global variable '{}': {}",
+                            name, e
+                        ))
+                    })?;
+
+                    // Store the initializer expression pointer for later compilation
+                    let init_expr = var_stmt
+                        .init
+                        .as_ref()
+                        .map(|e| e as *const Expression as *const Expression<'static>)
+                        .unwrap_or(std::ptr::null());
+
+                    self.global_vars.insert(
+                        name,
+                        GlobalVarDef {
+                            data_id,
+                            init_expr,
+                            cl_type,
+                        },
+                    );
+                }
+            }
+        }
+
         // Generate per-struct decref functions for structs with heap fields
         self.generate_struct_decref_functions()?;
 
@@ -4943,6 +5011,7 @@ impl<'a> JitCompiler<'a> {
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
+            global_vars: &self.global_vars,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
             var_counter: 0,
@@ -5489,6 +5558,7 @@ impl<'a> JitCompiler<'a> {
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
+            global_vars: &self.global_vars,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
             var_counter: 0,
@@ -5631,6 +5701,7 @@ impl<'a> JitCompiler<'a> {
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
+            global_vars: &self.global_vars,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
             var_counter: 0,
@@ -5795,6 +5866,7 @@ impl<'a> JitCompiler<'a> {
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
+            global_vars: &self.global_vars,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
             var_counter: 0,
@@ -5832,6 +5904,58 @@ impl<'a> JitCompiler<'a> {
             file_name,
             line as u32,
         )?;
+
+        // If this is main, initialize global variables first
+        if name == "main" {
+            // Collect global var info before borrowing ctx
+            let global_init_info: Vec<_> = self
+                .global_vars
+                .iter()
+                .filter(|(_, def)| !def.init_expr.is_null())
+                .map(|(name, def)| {
+                    (
+                        name.clone(),
+                        def.data_id,
+                        def.cl_type,
+                        def.init_expr,
+                    )
+                })
+                .collect();
+
+            for (var_name, data_id, cl_type, init_expr_ptr) in global_init_info {
+                // SAFETY: the expression pointer is valid for the lifetime of compilation
+                let init_expr: &Expression<'_> = unsafe { &*init_expr_ptr };
+
+                // Compile the initializer expression
+                let value = compile_expression(&mut ctx, &mut builder, init_expr)?;
+
+                // Get the global address and store the value
+                let global_value = ctx.module.declare_data_in_func(data_id, builder.func);
+                let ptr = builder
+                    .ins()
+                    .global_value(cranelift::prelude::types::I64, global_value);
+
+                // Bitcast if needed for storage
+                let store_value = if cl_type == cranelift::prelude::types::F64 {
+                    // Floats are stored as bitcast i64
+                    let val_type = builder.func.dfg.value_type(value);
+                    if val_type == cranelift::prelude::types::F64 {
+                        builder.ins().bitcast(
+                            cranelift::prelude::types::I64,
+                            MemFlags::new(),
+                            value,
+                        )
+                    } else {
+                        value
+                    }
+                } else {
+                    value
+                };
+
+                builder.ins().store(MemFlags::trusted(), store_value, ptr, 0);
+                let _ = var_name; // suppress unused warning
+            }
+        }
 
         if let Some(ref body) = func.body {
             for stmt in &body.statements {
@@ -5989,6 +6113,7 @@ impl<'a> JitCompiler<'a> {
             enum_defs: &self.enum_defs,
             exception_names: &self.exception_names,
             extern_fns: &self.extern_fns,
+            global_vars: &self.global_vars,
             variables: HashMap::new(),
             var_heap_types: HashMap::new(),
             var_counter: 0,

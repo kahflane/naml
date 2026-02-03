@@ -67,6 +67,32 @@ pub fn compile_expression(
                     .store(MemFlags::new(), null_ptr, slot_addr, 16);
 
                 Ok(slot_addr)
+            } else if let Some(global_def) = ctx.global_vars.get(&name) {
+                // Load from global variable data section
+                let global_value = ctx
+                    .module
+                    .declare_data_in_func(global_def.data_id, builder.func);
+                let ptr = builder
+                    .ins()
+                    .global_value(cranelift::prelude::types::I64, global_value);
+                // Load as i64 (storage format) then bitcast if needed
+                let raw_value = builder.ins().load(
+                    cranelift::prelude::types::I64,
+                    MemFlags::trusted(),
+                    ptr,
+                    0,
+                );
+                // Bitcast to correct type if it's a float
+                let value = if global_def.cl_type == cranelift::prelude::types::F64 {
+                    builder.ins().bitcast(
+                        cranelift::prelude::types::F64,
+                        MemFlags::new(),
+                        raw_value,
+                    )
+                } else {
+                    raw_value
+                };
+                Ok(value)
             } else {
                 Err(CodegenError::JitCompile(format!(
                     "Undefined variable: {}",
@@ -1460,7 +1486,19 @@ pub fn compile_expression(
                 } else {
                     // Array access: arr[index]!
                     let index = compile_expression(ctx, builder, index_expr.index)?;
-                    return compile_direct_array_get_or_panic(ctx, builder, base, index);
+
+                    // Determine the element type from the array type annotation
+                    let element_cl_type = if let Some(base_type) = ctx.annotations.get_type(index_expr.base.span()) {
+                        if let Type::Array(elem_ty) = base_type {
+                            tc_type_to_cranelift(elem_ty)
+                        } else {
+                            cranelift::prelude::types::I64
+                        }
+                    } else {
+                        cranelift::prelude::types::I64
+                    };
+
+                    return compile_direct_array_get_or_panic(ctx, builder, base, index, element_cl_type);
                 }
             }
 
