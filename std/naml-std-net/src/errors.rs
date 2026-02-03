@@ -19,7 +19,7 @@
 //! - Additional fields follow at offset 16+
 //!
 
-use naml_std_core::{naml_exception_set, naml_stack_capture, naml_string_new, NamlString};
+use naml_std_core::{NamlString, naml_exception_set, naml_stack_capture, naml_string_new};
 
 /// Create a new NetworkError exception on the heap
 ///
@@ -203,40 +203,6 @@ pub(crate) fn throw_connection_refused(address: &str) -> *mut u8 {
         *(conn_error.add(8) as *mut *mut u8) = stack;
 
         naml_exception_set(conn_error);
-    }
-
-    std::ptr::null_mut()
-}
-
-/// Throw a DnsError
-///
-/// Sets the exception and returns null to indicate an exception was thrown.
-pub(crate) fn throw_dns_error(hostname: &str) -> *mut u8 {
-    unsafe {
-        let hostname_ptr = naml_string_new(hostname.as_ptr(), hostname.len());
-        let dns_error = naml_dns_error_new(hostname_ptr);
-
-        let stack = naml_stack_capture();
-        *(dns_error.add(8) as *mut *mut u8) = stack;
-
-        naml_exception_set(dns_error);
-    }
-
-    std::ptr::null_mut()
-}
-
-/// Throw a TlsError
-///
-/// Sets the exception and returns null to indicate an exception was thrown.
-pub(crate) fn throw_tls_error(message: &str) -> *mut u8 {
-    unsafe {
-        let message_ptr = naml_string_new(message.as_ptr(), message.len());
-        let tls_error = naml_tls_error_new(message_ptr);
-
-        let stack = naml_stack_capture();
-        *(tls_error.add(8) as *mut *mut u8) = stack;
-
-        naml_exception_set(tls_error);
     }
 
     std::ptr::null_mut()

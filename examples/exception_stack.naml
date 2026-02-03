@@ -1,11 +1,11 @@
 use std::fs::*;
 
-fn helper() throws IOError {
+fn helper() throws IOError, PermissionError {
     var content: string = read("/nonexistent/file.txt");
     println(content);
 }
 
-fn caller() throws IOError {
+fn caller() throws IOError, PermissionError {
     helper();
 }
 

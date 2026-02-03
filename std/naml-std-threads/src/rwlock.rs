@@ -20,7 +20,7 @@
 //! ```
 //!
 
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{Layout, alloc, dealloc};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -51,10 +51,13 @@ pub extern "C" fn naml_rwlock_new(initial_value: i64) -> *mut NamlRwLock {
             panic!("Failed to allocate rwlock");
         }
 
-        std::ptr::write(ptr, NamlRwLock {
-            header: HeapHeader::new(HeapTag::Rwlock),
-            inner: RwLock::new(initial_value),
-        });
+        std::ptr::write(
+            ptr,
+            NamlRwLock {
+                header: HeapHeader::new(HeapTag::Rwlock),
+                inner: RwLock::new(initial_value),
+            },
+        );
 
         ptr
     }
@@ -63,7 +66,9 @@ pub extern "C" fn naml_rwlock_new(initial_value: i64) -> *mut NamlRwLock {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_rwlock_incref(rw: *mut NamlRwLock) {
     if !rw.is_null() {
-        unsafe { (*rw).header.incref(); }
+        unsafe {
+            (*rw).header.incref();
+        }
     }
 }
 
@@ -94,7 +99,9 @@ pub unsafe extern "C" fn naml_rwlock_read_lock(rw: *mut NamlRwLock) -> i64 {
         // Store the guard in thread-local storage
         let guard: RwLockReadGuard<'static, i64> = std::mem::transmute(guard);
         ACTIVE_RW_GUARDS.with(|guards| {
-            guards.borrow_mut().insert(rw as usize, RwLockGuard::Read(guard));
+            guards
+                .borrow_mut()
+                .insert(rw as usize, RwLockGuard::Read(guard));
         });
 
         value
@@ -128,7 +135,9 @@ pub unsafe extern "C" fn naml_rwlock_write_lock(rw: *mut NamlRwLock) -> i64 {
         // Store the guard in thread-local storage
         let guard: RwLockWriteGuard<'static, i64> = std::mem::transmute(guard);
         ACTIVE_RW_GUARDS.with(|guards| {
-            guards.borrow_mut().insert(rw as usize, RwLockGuard::Write(guard));
+            guards
+                .borrow_mut()
+                .insert(rw as usize, RwLockGuard::Write(guard));
         });
 
         value
@@ -180,7 +189,10 @@ pub unsafe extern "C" fn naml_rwlock_set(rw: *mut NamlRwLock, new_value: i64) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_rwlock_try_read_lock(rw: *mut NamlRwLock, out_value: *mut i64) -> i64 {
+pub unsafe extern "C" fn naml_rwlock_try_read_lock(
+    rw: *mut NamlRwLock,
+    out_value: *mut i64,
+) -> i64 {
     if rw.is_null() {
         return 0;
     }
@@ -194,7 +206,9 @@ pub unsafe extern "C" fn naml_rwlock_try_read_lock(rw: *mut NamlRwLock, out_valu
                 }
                 let guard: RwLockReadGuard<'static, i64> = std::mem::transmute(guard);
                 ACTIVE_RW_GUARDS.with(|guards| {
-                    guards.borrow_mut().insert(rw as usize, RwLockGuard::Read(guard));
+                    guards
+                        .borrow_mut()
+                        .insert(rw as usize, RwLockGuard::Read(guard));
                 });
                 1
             }
@@ -204,7 +218,10 @@ pub unsafe extern "C" fn naml_rwlock_try_read_lock(rw: *mut NamlRwLock, out_valu
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_rwlock_try_write_lock(rw: *mut NamlRwLock, out_value: *mut i64) -> i64 {
+pub unsafe extern "C" fn naml_rwlock_try_write_lock(
+    rw: *mut NamlRwLock,
+    out_value: *mut i64,
+) -> i64 {
     if rw.is_null() {
         return 0;
     }
@@ -218,7 +235,9 @@ pub unsafe extern "C" fn naml_rwlock_try_write_lock(rw: *mut NamlRwLock, out_val
                 }
                 let guard: RwLockWriteGuard<'static, i64> = std::mem::transmute(guard);
                 ACTIVE_RW_GUARDS.with(|guards| {
-                    guards.borrow_mut().insert(rw as usize, RwLockGuard::Write(guard));
+                    guards
+                        .borrow_mut()
+                        .insert(rw as usize, RwLockGuard::Write(guard));
                 });
                 1
             }
@@ -230,9 +249,9 @@ pub unsafe extern "C" fn naml_rwlock_try_write_lock(rw: *mut NamlRwLock, out_val
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::thread;
 
     #[test]
     fn test_rwlock_basic() {
@@ -260,11 +279,11 @@ mod tests {
         let rw = naml_rwlock_new(42);
         let reader_count = Arc::new(AtomicUsize::new(0));
 
-        let handles: Vec<_> = (0..5).map(|_| {
-            let rw_ptr = rw as usize;
-            let count = Arc::clone(&reader_count);
-            thread::spawn(move || {
-                unsafe {
+        let handles: Vec<_> = (0..5)
+            .map(|_| {
+                let rw_ptr = rw as usize;
+                let count = Arc::clone(&reader_count);
+                thread::spawn(move || unsafe {
                     let rw = rw_ptr as *mut NamlRwLock;
                     let value = naml_rwlock_read_lock(rw);
                     count.fetch_add(1, Ordering::SeqCst);
@@ -272,33 +291,35 @@ mod tests {
                     thread::sleep(std::time::Duration::from_millis(10));
                     count.fetch_sub(1, Ordering::SeqCst);
                     naml_rwlock_read_unlock(rw);
-                }
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();
         }
 
-        unsafe { naml_rwlock_decref(rw); }
+        unsafe {
+            naml_rwlock_decref(rw);
+        }
     }
 
     #[test]
     fn test_rwlock_writer_exclusive() {
         let rw = naml_rwlock_new(0);
 
-        let handles: Vec<_> = (0..5).map(|_| {
-            let rw_ptr = rw as usize;
-            thread::spawn(move || {
-                unsafe {
+        let handles: Vec<_> = (0..5)
+            .map(|_| {
+                let rw_ptr = rw as usize;
+                thread::spawn(move || unsafe {
                     let rw = rw_ptr as *mut NamlRwLock;
                     for _ in 0..100 {
                         let value = naml_rwlock_write_lock(rw);
                         naml_rwlock_write_unlock(rw, value + 1);
                     }
-                }
+                })
             })
-        }).collect();
+            .collect();
 
         for h in handles {
             h.join().unwrap();

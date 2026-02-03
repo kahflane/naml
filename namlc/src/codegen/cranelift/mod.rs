@@ -7,51 +7,48 @@
 //!
 
 mod array;
+mod binop;
 mod builtins;
+mod channels;
 mod context;
 mod errors;
-mod map;
-mod pattern;
-mod stmt;
-mod types;
-mod expr;
-mod method;
-mod literal;
-mod print;
-mod misc;
-mod externs;
-mod options;
-mod lambda;
 mod exceptions;
-mod channels;
-mod spawns;
-mod structs;
-mod strings;
-mod io;
-mod binop;
+mod expr;
+mod externs;
 mod heap;
+mod io;
+mod lambda;
+mod literal;
+mod map;
+mod method;
+mod misc;
+mod options;
+mod pattern;
+mod print;
 mod runtime;
+mod spawns;
+mod stmt;
+mod strings;
+mod structs;
+mod types;
 
 use std::collections::{HashMap, HashSet};
 use std::panic;
 
 use cranelift::prelude::*;
-use cranelift_codegen::ir::{AtomicRmwOp};
+use cranelift_codegen::ir::AtomicRmwOp;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use lasso::Rodeo;
 
-use crate::ast::{
-    Expression, FunctionItem, Item,SourceFile,
-    Statement
-};
+use crate::ast::{Expression, FunctionItem, Item, SourceFile, Statement};
+use crate::codegen::CodegenError;
 use crate::codegen::cranelift::errors::convert_cranelift_error;
 use crate::codegen::cranelift::expr::compile_expression;
+use crate::codegen::cranelift::heap::{HeapType, get_heap_type};
 use crate::codegen::cranelift::map::call_map_set;
+use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_stack_pop, emit_stack_push};
 use crate::codegen::cranelift::stmt::compile_statement;
-use crate::codegen::CodegenError;
-use crate::codegen::cranelift::heap::{get_heap_type, HeapType};
-use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_stack_push, emit_stack_pop};
 use crate::typechecker::{Type, TypeAnnotations};
 
 #[derive(Clone)]
@@ -163,6 +160,10 @@ impl<'a> JitCompiler<'a> {
         let mut flag_builder = settings::builder();
         flag_builder.set("use_colocated_libcalls", "false").unwrap();
         flag_builder.set("is_pic", "false").unwrap();
+        flag_builder.set("opt_level", "speed").unwrap();
+        flag_builder
+            .set("preserve_frame_pointers", "false")
+            .unwrap();
 
         let isa_builder = cranelift_native::builder().map_err(|e| {
             CodegenError::JitCompile(format!("Failed to create ISA builder: {}", e))
@@ -740,106 +741,337 @@ impl<'a> JitCompiler<'a> {
         );
 
         // Map collection operations (from naml-std-collections)
-        builder.symbol("naml_map_count", crate::runtime::naml_map_count as *const u8);
-        builder.symbol("naml_map_contains_key", crate::runtime::naml_map_contains_key as *const u8);
-        builder.symbol("naml_map_remove", crate::runtime::naml_map_remove as *const u8);
-        builder.symbol("naml_map_clear", crate::runtime::naml_map_clear as *const u8);
+        builder.symbol(
+            "naml_map_count",
+            crate::runtime::naml_map_count as *const u8,
+        );
+        builder.symbol(
+            "naml_map_contains_key",
+            crate::runtime::naml_map_contains_key as *const u8,
+        );
+        builder.symbol(
+            "naml_map_remove",
+            crate::runtime::naml_map_remove as *const u8,
+        );
+        builder.symbol(
+            "naml_map_clear",
+            crate::runtime::naml_map_clear as *const u8,
+        );
         builder.symbol("naml_map_keys", crate::runtime::naml_map_keys as *const u8);
-        builder.symbol("naml_map_values", crate::runtime::naml_map_values as *const u8);
-        builder.symbol("naml_map_entries", crate::runtime::naml_map_entries as *const u8);
-        builder.symbol("naml_map_first_key", crate::runtime::naml_map_first_key as *const u8);
-        builder.symbol("naml_map_first_value", crate::runtime::naml_map_first_value as *const u8);
+        builder.symbol(
+            "naml_map_values",
+            crate::runtime::naml_map_values as *const u8,
+        );
+        builder.symbol(
+            "naml_map_entries",
+            crate::runtime::naml_map_entries as *const u8,
+        );
+        builder.symbol(
+            "naml_map_first_key",
+            crate::runtime::naml_map_first_key as *const u8,
+        );
+        builder.symbol(
+            "naml_map_first_value",
+            crate::runtime::naml_map_first_value as *const u8,
+        );
         builder.symbol("naml_map_any", crate::runtime::naml_map_any as *const u8);
         builder.symbol("naml_map_all", crate::runtime::naml_map_all as *const u8);
-        builder.symbol("naml_map_count_if", crate::runtime::naml_map_count_if as *const u8);
+        builder.symbol(
+            "naml_map_count_if",
+            crate::runtime::naml_map_count_if as *const u8,
+        );
         builder.symbol("naml_map_fold", crate::runtime::naml_map_fold as *const u8);
-        builder.symbol("naml_map_transform", crate::runtime::naml_map_transform as *const u8);
-        builder.symbol("naml_map_where", crate::runtime::naml_map_where as *const u8);
-        builder.symbol("naml_map_reject", crate::runtime::naml_map_reject as *const u8);
-        builder.symbol("naml_map_merge", crate::runtime::naml_map_merge as *const u8);
-        builder.symbol("naml_map_defaults", crate::runtime::naml_map_defaults as *const u8);
-        builder.symbol("naml_map_intersect", crate::runtime::naml_map_intersect as *const u8);
+        builder.symbol(
+            "naml_map_transform",
+            crate::runtime::naml_map_transform as *const u8,
+        );
+        builder.symbol(
+            "naml_map_where",
+            crate::runtime::naml_map_where as *const u8,
+        );
+        builder.symbol(
+            "naml_map_reject",
+            crate::runtime::naml_map_reject as *const u8,
+        );
+        builder.symbol(
+            "naml_map_merge",
+            crate::runtime::naml_map_merge as *const u8,
+        );
+        builder.symbol(
+            "naml_map_defaults",
+            crate::runtime::naml_map_defaults as *const u8,
+        );
+        builder.symbol(
+            "naml_map_intersect",
+            crate::runtime::naml_map_intersect as *const u8,
+        );
         builder.symbol("naml_map_diff", crate::runtime::naml_map_diff as *const u8);
-        builder.symbol("naml_map_invert", crate::runtime::naml_map_invert as *const u8);
-        builder.symbol("naml_map_from_arrays", crate::runtime::naml_map_from_arrays as *const u8);
-        builder.symbol("naml_map_from_entries", crate::runtime::naml_map_from_entries as *const u8);
+        builder.symbol(
+            "naml_map_invert",
+            crate::runtime::naml_map_invert as *const u8,
+        );
+        builder.symbol(
+            "naml_map_from_arrays",
+            crate::runtime::naml_map_from_arrays as *const u8,
+        );
+        builder.symbol(
+            "naml_map_from_entries",
+            crate::runtime::naml_map_from_entries as *const u8,
+        );
 
         // File system operations (from naml-std-fs)
         builder.symbol("naml_fs_read", crate::runtime::naml_fs_read as *const u8);
-        builder.symbol("naml_fs_read_bytes", crate::runtime::naml_fs_read_bytes as *const u8);
+        builder.symbol(
+            "naml_fs_read_bytes",
+            crate::runtime::naml_fs_read_bytes as *const u8,
+        );
         builder.symbol("naml_fs_write", crate::runtime::naml_fs_write as *const u8);
-        builder.symbol("naml_fs_append", crate::runtime::naml_fs_append as *const u8);
-        builder.symbol("naml_fs_write_bytes", crate::runtime::naml_fs_write_bytes as *const u8);
-        builder.symbol("naml_fs_append_bytes", crate::runtime::naml_fs_append_bytes as *const u8);
-        builder.symbol("naml_fs_exists", crate::runtime::naml_fs_exists as *const u8);
-        builder.symbol("naml_fs_is_file", crate::runtime::naml_fs_is_file as *const u8);
-        builder.symbol("naml_fs_is_dir", crate::runtime::naml_fs_is_dir as *const u8);
-        builder.symbol("naml_fs_list_dir", crate::runtime::naml_fs_list_dir as *const u8);
+        builder.symbol(
+            "naml_fs_append",
+            crate::runtime::naml_fs_append as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_write_bytes",
+            crate::runtime::naml_fs_write_bytes as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_append_bytes",
+            crate::runtime::naml_fs_append_bytes as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_exists",
+            crate::runtime::naml_fs_exists as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_is_file",
+            crate::runtime::naml_fs_is_file as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_is_dir",
+            crate::runtime::naml_fs_is_dir as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_list_dir",
+            crate::runtime::naml_fs_list_dir as *const u8,
+        );
         builder.symbol("naml_fs_mkdir", crate::runtime::naml_fs_mkdir as *const u8);
-        builder.symbol("naml_fs_mkdir_all", crate::runtime::naml_fs_mkdir_all as *const u8);
-        builder.symbol("naml_fs_remove", crate::runtime::naml_fs_remove as *const u8);
-        builder.symbol("naml_fs_remove_all", crate::runtime::naml_fs_remove_all as *const u8);
+        builder.symbol(
+            "naml_fs_mkdir_all",
+            crate::runtime::naml_fs_mkdir_all as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_remove",
+            crate::runtime::naml_fs_remove as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_remove_all",
+            crate::runtime::naml_fs_remove_all as *const u8,
+        );
         builder.symbol("naml_fs_join", crate::runtime::naml_fs_join as *const u8);
-        builder.symbol("naml_fs_dirname", crate::runtime::naml_fs_dirname as *const u8);
-        builder.symbol("naml_fs_basename", crate::runtime::naml_fs_basename as *const u8);
-        builder.symbol("naml_fs_extension", crate::runtime::naml_fs_extension as *const u8);
-        builder.symbol("naml_fs_absolute", crate::runtime::naml_fs_absolute as *const u8);
+        builder.symbol(
+            "naml_fs_dirname",
+            crate::runtime::naml_fs_dirname as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_basename",
+            crate::runtime::naml_fs_basename as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_extension",
+            crate::runtime::naml_fs_extension as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_absolute",
+            crate::runtime::naml_fs_absolute as *const u8,
+        );
         builder.symbol("naml_fs_size", crate::runtime::naml_fs_size as *const u8);
-        builder.symbol("naml_fs_modified", crate::runtime::naml_fs_modified as *const u8);
+        builder.symbol(
+            "naml_fs_modified",
+            crate::runtime::naml_fs_modified as *const u8,
+        );
         builder.symbol("naml_fs_copy", crate::runtime::naml_fs_copy as *const u8);
-        builder.symbol("naml_fs_rename", crate::runtime::naml_fs_rename as *const u8);
+        builder.symbol(
+            "naml_fs_rename",
+            crate::runtime::naml_fs_rename as *const u8,
+        );
         builder.symbol("naml_fs_getwd", crate::runtime::naml_fs_getwd as *const u8);
         builder.symbol("naml_fs_chdir", crate::runtime::naml_fs_chdir as *const u8);
-        builder.symbol("naml_fs_create_temp", crate::runtime::naml_fs_create_temp as *const u8);
-        builder.symbol("naml_fs_mkdir_temp", crate::runtime::naml_fs_mkdir_temp as *const u8);
+        builder.symbol(
+            "naml_fs_create_temp",
+            crate::runtime::naml_fs_create_temp as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mkdir_temp",
+            crate::runtime::naml_fs_mkdir_temp as *const u8,
+        );
         builder.symbol("naml_fs_chmod", crate::runtime::naml_fs_chmod as *const u8);
-        builder.symbol("naml_fs_truncate", crate::runtime::naml_fs_truncate as *const u8);
+        builder.symbol(
+            "naml_fs_truncate",
+            crate::runtime::naml_fs_truncate as *const u8,
+        );
         builder.symbol("naml_fs_stat", crate::runtime::naml_fs_stat as *const u8);
-        builder.symbol("naml_io_error_new", crate::runtime::naml_io_error_new as *const u8);
-        builder.symbol("naml_permission_error_new", crate::runtime::naml_permission_error_new as *const u8);
+        builder.symbol(
+            "naml_io_error_new",
+            crate::runtime::naml_io_error_new as *const u8,
+        );
+        builder.symbol(
+            "naml_permission_error_new",
+            crate::runtime::naml_permission_error_new as *const u8,
+        );
 
         // Memory-mapped file operations
-        builder.symbol("naml_fs_mmap_open", crate::runtime::naml_fs_mmap_open as *const u8);
-        builder.symbol("naml_fs_mmap_len", crate::runtime::naml_fs_mmap_len as *const u8);
-        builder.symbol("naml_fs_mmap_read_byte", crate::runtime::naml_fs_mmap_read_byte as *const u8);
-        builder.symbol("naml_fs_mmap_write_byte", crate::runtime::naml_fs_mmap_write_byte as *const u8);
-        builder.symbol("naml_fs_mmap_read", crate::runtime::naml_fs_mmap_read as *const u8);
-        builder.symbol("naml_fs_mmap_write", crate::runtime::naml_fs_mmap_write as *const u8);
-        builder.symbol("naml_fs_mmap_flush", crate::runtime::naml_fs_mmap_flush as *const u8);
-        builder.symbol("naml_fs_mmap_close", crate::runtime::naml_fs_mmap_close as *const u8);
+        builder.symbol(
+            "naml_fs_mmap_open",
+            crate::runtime::naml_fs_mmap_open as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mmap_len",
+            crate::runtime::naml_fs_mmap_len as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mmap_read_byte",
+            crate::runtime::naml_fs_mmap_read_byte as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mmap_write_byte",
+            crate::runtime::naml_fs_mmap_write_byte as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mmap_read",
+            crate::runtime::naml_fs_mmap_read as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mmap_write",
+            crate::runtime::naml_fs_mmap_write as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mmap_flush",
+            crate::runtime::naml_fs_mmap_flush as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_mmap_close",
+            crate::runtime::naml_fs_mmap_close as *const u8,
+        );
 
         // File handle operations
-        builder.symbol("naml_fs_file_open", crate::runtime::naml_fs_file_open as *const u8);
-        builder.symbol("naml_fs_file_close", crate::runtime::naml_fs_file_close as *const u8);
-        builder.symbol("naml_fs_file_read", crate::runtime::naml_fs_file_read as *const u8);
-        builder.symbol("naml_fs_file_read_line", crate::runtime::naml_fs_file_read_line as *const u8);
-        builder.symbol("naml_fs_file_read_all", crate::runtime::naml_fs_file_read_all as *const u8);
-        builder.symbol("naml_fs_file_write", crate::runtime::naml_fs_file_write as *const u8);
-        builder.symbol("naml_fs_file_write_line", crate::runtime::naml_fs_file_write_line as *const u8);
-        builder.symbol("naml_fs_file_flush", crate::runtime::naml_fs_file_flush as *const u8);
-        builder.symbol("naml_fs_file_seek", crate::runtime::naml_fs_file_seek as *const u8);
-        builder.symbol("naml_fs_file_tell", crate::runtime::naml_fs_file_tell as *const u8);
-        builder.symbol("naml_fs_file_eof", crate::runtime::naml_fs_file_eof as *const u8);
-        builder.symbol("naml_fs_file_size", crate::runtime::naml_fs_file_size as *const u8);
+        builder.symbol(
+            "naml_fs_file_open",
+            crate::runtime::naml_fs_file_open as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_close",
+            crate::runtime::naml_fs_file_close as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_read",
+            crate::runtime::naml_fs_file_read as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_read_line",
+            crate::runtime::naml_fs_file_read_line as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_read_all",
+            crate::runtime::naml_fs_file_read_all as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_write",
+            crate::runtime::naml_fs_file_write as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_write_line",
+            crate::runtime::naml_fs_file_write_line as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_flush",
+            crate::runtime::naml_fs_file_flush as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_seek",
+            crate::runtime::naml_fs_file_seek as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_tell",
+            crate::runtime::naml_fs_file_tell as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_eof",
+            crate::runtime::naml_fs_file_eof as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_size",
+            crate::runtime::naml_fs_file_size as *const u8,
+        );
 
         // Path operations (from naml-std-path)
-        builder.symbol("naml_path_join", crate::runtime::naml_path_join as *const u8);
-        builder.symbol("naml_path_normalize", crate::runtime::naml_path_normalize as *const u8);
-        builder.symbol("naml_path_is_absolute", crate::runtime::naml_path_is_absolute as *const u8);
-        builder.symbol("naml_path_is_relative", crate::runtime::naml_path_is_relative as *const u8);
-        builder.symbol("naml_path_has_root", crate::runtime::naml_path_has_root as *const u8);
-        builder.symbol("naml_path_dirname", crate::runtime::naml_path_dirname as *const u8);
-        builder.symbol("naml_path_basename", crate::runtime::naml_path_basename as *const u8);
-        builder.symbol("naml_path_extension", crate::runtime::naml_path_extension as *const u8);
-        builder.symbol("naml_path_stem", crate::runtime::naml_path_stem as *const u8);
-        builder.symbol("naml_path_with_extension", crate::runtime::naml_path_with_extension as *const u8);
-        builder.symbol("naml_path_components", crate::runtime::naml_path_components as *const u8);
-        builder.symbol("naml_path_separator", crate::runtime::naml_path_separator as *const u8);
-        builder.symbol("naml_path_to_slash", crate::runtime::naml_path_to_slash as *const u8);
-        builder.symbol("naml_path_from_slash", crate::runtime::naml_path_from_slash as *const u8);
-        builder.symbol("naml_path_starts_with", crate::runtime::naml_path_starts_with as *const u8);
-        builder.symbol("naml_path_ends_with", crate::runtime::naml_path_ends_with as *const u8);
-        builder.symbol("naml_path_strip_prefix", crate::runtime::naml_path_strip_prefix as *const u8);
+        builder.symbol(
+            "naml_path_join",
+            crate::runtime::naml_path_join as *const u8,
+        );
+        builder.symbol(
+            "naml_path_normalize",
+            crate::runtime::naml_path_normalize as *const u8,
+        );
+        builder.symbol(
+            "naml_path_is_absolute",
+            crate::runtime::naml_path_is_absolute as *const u8,
+        );
+        builder.symbol(
+            "naml_path_is_relative",
+            crate::runtime::naml_path_is_relative as *const u8,
+        );
+        builder.symbol(
+            "naml_path_has_root",
+            crate::runtime::naml_path_has_root as *const u8,
+        );
+        builder.symbol(
+            "naml_path_dirname",
+            crate::runtime::naml_path_dirname as *const u8,
+        );
+        builder.symbol(
+            "naml_path_basename",
+            crate::runtime::naml_path_basename as *const u8,
+        );
+        builder.symbol(
+            "naml_path_extension",
+            crate::runtime::naml_path_extension as *const u8,
+        );
+        builder.symbol(
+            "naml_path_stem",
+            crate::runtime::naml_path_stem as *const u8,
+        );
+        builder.symbol(
+            "naml_path_with_extension",
+            crate::runtime::naml_path_with_extension as *const u8,
+        );
+        builder.symbol(
+            "naml_path_components",
+            crate::runtime::naml_path_components as *const u8,
+        );
+        builder.symbol(
+            "naml_path_separator",
+            crate::runtime::naml_path_separator as *const u8,
+        );
+        builder.symbol(
+            "naml_path_to_slash",
+            crate::runtime::naml_path_to_slash as *const u8,
+        );
+        builder.symbol(
+            "naml_path_from_slash",
+            crate::runtime::naml_path_from_slash as *const u8,
+        );
+        builder.symbol(
+            "naml_path_starts_with",
+            crate::runtime::naml_path_starts_with as *const u8,
+        );
+        builder.symbol(
+            "naml_path_ends_with",
+            crate::runtime::naml_path_ends_with as *const u8,
+        );
+        builder.symbol(
+            "naml_path_strip_prefix",
+            crate::runtime::naml_path_strip_prefix as *const u8,
+        );
 
         // Exception handling
         builder.symbol(
@@ -883,6 +1115,10 @@ impl<'a> JitCompiler<'a> {
         builder.symbol(
             "naml_stack_pop",
             crate::runtime::naml_stack_pop as *const u8,
+        );
+        builder.symbol(
+            "NAML_SHADOW_STACK",
+            std::ptr::addr_of!(crate::runtime::NAML_SHADOW_STACK) as *const u8,
         );
         builder.symbol(
             "naml_stack_capture",
@@ -1068,97 +1304,316 @@ impl<'a> JitCompiler<'a> {
         );
 
         // Encoding operations (from naml-std-encoding)
-        builder.symbol("naml_encoding_utf8_encode", crate::runtime::naml_encoding_utf8_encode as *const u8);
-        builder.symbol("naml_encoding_utf8_decode", crate::runtime::naml_encoding_utf8_decode as *const u8);
-        builder.symbol("naml_encoding_utf8_is_valid", crate::runtime::naml_encoding_utf8_is_valid as *const u8);
-        builder.symbol("naml_encoding_hex_encode", crate::runtime::naml_encoding_hex_encode as *const u8);
-        builder.symbol("naml_encoding_hex_decode", crate::runtime::naml_encoding_hex_decode as *const u8);
-        builder.symbol("naml_encoding_base64_encode", crate::runtime::naml_encoding_base64_encode as *const u8);
-        builder.symbol("naml_encoding_base64_decode", crate::runtime::naml_encoding_base64_decode as *const u8);
-        builder.symbol("naml_encoding_url_encode", crate::runtime::naml_encoding_url_encode as *const u8);
-        builder.symbol("naml_encoding_url_decode", crate::runtime::naml_encoding_url_decode as *const u8);
-        builder.symbol("naml_decode_error_new", crate::runtime::naml_decode_error_new as *const u8);
+        builder.symbol(
+            "naml_encoding_utf8_encode",
+            crate::runtime::naml_encoding_utf8_encode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_utf8_decode",
+            crate::runtime::naml_encoding_utf8_decode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_utf8_is_valid",
+            crate::runtime::naml_encoding_utf8_is_valid as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_hex_encode",
+            crate::runtime::naml_encoding_hex_encode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_hex_decode",
+            crate::runtime::naml_encoding_hex_decode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_base64_encode",
+            crate::runtime::naml_encoding_base64_encode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_base64_decode",
+            crate::runtime::naml_encoding_base64_decode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_url_encode",
+            crate::runtime::naml_encoding_url_encode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_url_decode",
+            crate::runtime::naml_encoding_url_decode as *const u8,
+        );
+        builder.symbol(
+            "naml_decode_error_new",
+            crate::runtime::naml_decode_error_new as *const u8,
+        );
 
         // JSON encoding operations
-        builder.symbol("naml_json_decode", crate::runtime::naml_json_decode as *const u8);
-        builder.symbol("naml_json_encode", crate::runtime::naml_json_encode as *const u8);
-        builder.symbol("naml_json_encode_pretty", crate::runtime::naml_json_encode_pretty as *const u8);
-        builder.symbol("naml_json_exists", crate::runtime::naml_json_exists as *const u8);
-        builder.symbol("naml_json_path", crate::runtime::naml_json_path as *const u8);
-        builder.symbol("naml_json_keys", crate::runtime::naml_json_keys as *const u8);
-        builder.symbol("naml_json_count", crate::runtime::naml_json_count as *const u8);
-        builder.symbol("naml_json_get_type", crate::runtime::naml_json_get_type as *const u8);
-        builder.symbol("naml_json_type_name", crate::runtime::naml_json_type_name as *const u8);
-        builder.symbol("naml_json_is_null", crate::runtime::naml_json_is_null as *const u8);
-        builder.symbol("naml_json_index_string", crate::runtime::naml_json_index_string as *const u8);
-        builder.symbol("naml_json_index_int", crate::runtime::naml_json_index_int as *const u8);
-        builder.symbol("naml_json_as_int", crate::runtime::naml_json_as_int as *const u8);
-        builder.symbol("naml_json_as_float", crate::runtime::naml_json_as_float as *const u8);
-        builder.symbol("naml_json_as_bool", crate::runtime::naml_json_as_bool as *const u8);
-        builder.symbol("naml_json_as_string", crate::runtime::naml_json_as_string as *const u8);
-        builder.symbol("naml_json_null", crate::runtime::naml_json_null as *const u8);
-        builder.symbol("naml_path_error_new", crate::runtime::naml_path_error_new as *const u8);
+        builder.symbol(
+            "naml_json_decode",
+            crate::runtime::naml_json_decode as *const u8,
+        );
+        builder.symbol(
+            "naml_json_encode",
+            crate::runtime::naml_json_encode as *const u8,
+        );
+        builder.symbol(
+            "naml_json_encode_pretty",
+            crate::runtime::naml_json_encode_pretty as *const u8,
+        );
+        builder.symbol(
+            "naml_json_exists",
+            crate::runtime::naml_json_exists as *const u8,
+        );
+        builder.symbol(
+            "naml_json_path",
+            crate::runtime::naml_json_path as *const u8,
+        );
+        builder.symbol(
+            "naml_json_keys",
+            crate::runtime::naml_json_keys as *const u8,
+        );
+        builder.symbol(
+            "naml_json_count",
+            crate::runtime::naml_json_count as *const u8,
+        );
+        builder.symbol(
+            "naml_json_get_type",
+            crate::runtime::naml_json_get_type as *const u8,
+        );
+        builder.symbol(
+            "naml_json_type_name",
+            crate::runtime::naml_json_type_name as *const u8,
+        );
+        builder.symbol(
+            "naml_json_is_null",
+            crate::runtime::naml_json_is_null as *const u8,
+        );
+        builder.symbol(
+            "naml_json_index_string",
+            crate::runtime::naml_json_index_string as *const u8,
+        );
+        builder.symbol(
+            "naml_json_index_int",
+            crate::runtime::naml_json_index_int as *const u8,
+        );
+        builder.symbol(
+            "naml_json_as_int",
+            crate::runtime::naml_json_as_int as *const u8,
+        );
+        builder.symbol(
+            "naml_json_as_float",
+            crate::runtime::naml_json_as_float as *const u8,
+        );
+        builder.symbol(
+            "naml_json_as_bool",
+            crate::runtime::naml_json_as_bool as *const u8,
+        );
+        builder.symbol(
+            "naml_json_as_string",
+            crate::runtime::naml_json_as_string as *const u8,
+        );
+        builder.symbol(
+            "naml_json_null",
+            crate::runtime::naml_json_null as *const u8,
+        );
+        builder.symbol(
+            "naml_path_error_new",
+            crate::runtime::naml_path_error_new as *const u8,
+        );
 
         // Networking operations (from naml-std-net)
         // Exception constructors
-        builder.symbol("naml_network_error_new", crate::runtime::naml_network_error_new as *const u8);
-        builder.symbol("naml_timeout_error_new", crate::runtime::naml_timeout_error_new as *const u8);
-        builder.symbol("naml_connection_refused_new", crate::runtime::naml_connection_refused_new as *const u8);
+        builder.symbol(
+            "naml_network_error_new",
+            crate::runtime::naml_network_error_new as *const u8,
+        );
+        builder.symbol(
+            "naml_timeout_error_new",
+            crate::runtime::naml_timeout_error_new as *const u8,
+        );
+        builder.symbol(
+            "naml_connection_refused_new",
+            crate::runtime::naml_connection_refused_new as *const u8,
+        );
 
         // TCP Server
-        builder.symbol("naml_net_tcp_server_listen", crate::runtime::naml_net_tcp_server_listen as *const u8);
-        builder.symbol("naml_net_tcp_server_accept", crate::runtime::naml_net_tcp_server_accept as *const u8);
-        builder.symbol("naml_net_tcp_server_close", crate::runtime::naml_net_tcp_server_close as *const u8);
-        builder.symbol("naml_net_tcp_server_local_addr", crate::runtime::naml_net_tcp_server_local_addr as *const u8);
+        builder.symbol(
+            "naml_net_tcp_server_listen",
+            crate::runtime::naml_net_tcp_server_listen as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_server_accept",
+            crate::runtime::naml_net_tcp_server_accept as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_server_close",
+            crate::runtime::naml_net_tcp_server_close as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_server_local_addr",
+            crate::runtime::naml_net_tcp_server_local_addr as *const u8,
+        );
 
         // TCP Client
-        builder.symbol("naml_net_tcp_client_connect", crate::runtime::naml_net_tcp_client_connect as *const u8);
-        builder.symbol("naml_net_tcp_client_read", crate::runtime::naml_net_tcp_client_read as *const u8);
-        builder.symbol("naml_net_tcp_client_read_all", crate::runtime::naml_net_tcp_client_read_all as *const u8);
-        builder.symbol("naml_net_tcp_client_write", crate::runtime::naml_net_tcp_client_write as *const u8);
-        builder.symbol("naml_net_tcp_client_close", crate::runtime::naml_net_tcp_client_close as *const u8);
-        builder.symbol("naml_net_tcp_client_set_timeout", crate::runtime::naml_net_tcp_client_set_timeout as *const u8);
-        builder.symbol("naml_net_tcp_socket_peer_addr", crate::runtime::naml_net_tcp_socket_peer_addr as *const u8);
+        builder.symbol(
+            "naml_net_tcp_client_connect",
+            crate::runtime::naml_net_tcp_client_connect as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_client_read",
+            crate::runtime::naml_net_tcp_client_read as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_client_read_all",
+            crate::runtime::naml_net_tcp_client_read_all as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_client_write",
+            crate::runtime::naml_net_tcp_client_write as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_client_close",
+            crate::runtime::naml_net_tcp_client_close as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_client_set_timeout",
+            crate::runtime::naml_net_tcp_client_set_timeout as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tcp_socket_peer_addr",
+            crate::runtime::naml_net_tcp_socket_peer_addr as *const u8,
+        );
 
         // UDP
-        builder.symbol("naml_net_udp_bind", crate::runtime::naml_net_udp_bind as *const u8);
-        builder.symbol("naml_net_udp_send", crate::runtime::naml_net_udp_send as *const u8);
-        builder.symbol("naml_net_udp_receive", crate::runtime::naml_net_udp_receive as *const u8);
-        builder.symbol("naml_net_udp_receive_from", crate::runtime::naml_net_udp_receive_from as *const u8);
-        builder.symbol("naml_net_udp_close", crate::runtime::naml_net_udp_close as *const u8);
-        builder.symbol("naml_net_udp_local_addr", crate::runtime::naml_net_udp_local_addr as *const u8);
+        builder.symbol(
+            "naml_net_udp_bind",
+            crate::runtime::naml_net_udp_bind as *const u8,
+        );
+        builder.symbol(
+            "naml_net_udp_send",
+            crate::runtime::naml_net_udp_send as *const u8,
+        );
+        builder.symbol(
+            "naml_net_udp_receive",
+            crate::runtime::naml_net_udp_receive as *const u8,
+        );
+        builder.symbol(
+            "naml_net_udp_receive_from",
+            crate::runtime::naml_net_udp_receive_from as *const u8,
+        );
+        builder.symbol(
+            "naml_net_udp_close",
+            crate::runtime::naml_net_udp_close as *const u8,
+        );
+        builder.symbol(
+            "naml_net_udp_local_addr",
+            crate::runtime::naml_net_udp_local_addr as *const u8,
+        );
 
         // HTTP Client
-        builder.symbol("naml_net_http_client_get", crate::runtime::naml_net_http_client_get as *const u8);
-        builder.symbol("naml_net_http_client_post", crate::runtime::naml_net_http_client_post as *const u8);
-        builder.symbol("naml_net_http_client_put", crate::runtime::naml_net_http_client_put as *const u8);
-        builder.symbol("naml_net_http_client_patch", crate::runtime::naml_net_http_client_patch as *const u8);
-        builder.symbol("naml_net_http_client_delete", crate::runtime::naml_net_http_client_delete as *const u8);
-        builder.symbol("naml_net_http_client_set_timeout", crate::runtime::naml_net_http_client_set_timeout as *const u8);
+        builder.symbol(
+            "naml_net_http_client_get",
+            crate::runtime::naml_net_http_client_get as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_client_post",
+            crate::runtime::naml_net_http_client_post as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_client_put",
+            crate::runtime::naml_net_http_client_put as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_client_patch",
+            crate::runtime::naml_net_http_client_patch as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_client_delete",
+            crate::runtime::naml_net_http_client_delete as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_client_set_timeout",
+            crate::runtime::naml_net_http_client_set_timeout as *const u8,
+        );
         // HTTP Response accessors
-        builder.symbol("naml_net_http_response_get_status", crate::runtime::naml_net_http_response_get_status as *const u8);
-        builder.symbol("naml_net_http_response_get_body_bytes", crate::runtime::naml_net_http_response_get_body_bytes as *const u8);
+        builder.symbol(
+            "naml_net_http_response_get_status",
+            crate::runtime::naml_net_http_response_get_status as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_response_get_body_bytes",
+            crate::runtime::naml_net_http_response_get_body_bytes as *const u8,
+        );
 
         // HTTP Server
-        builder.symbol("naml_net_http_server_open_router", crate::runtime::naml_net_http_server_open_router as *const u8);
-        builder.symbol("naml_net_http_server_get", crate::runtime::naml_net_http_server_get as *const u8);
-        builder.symbol("naml_net_http_server_post", crate::runtime::naml_net_http_server_post as *const u8);
-        builder.symbol("naml_net_http_server_put", crate::runtime::naml_net_http_server_put as *const u8);
-        builder.symbol("naml_net_http_server_patch", crate::runtime::naml_net_http_server_patch as *const u8);
-        builder.symbol("naml_net_http_server_delete", crate::runtime::naml_net_http_server_delete as *const u8);
-        builder.symbol("naml_net_http_server_with", crate::runtime::naml_net_http_server_with as *const u8);
-        builder.symbol("naml_net_http_server_group", crate::runtime::naml_net_http_server_group as *const u8);
-        builder.symbol("naml_net_http_server_mount", crate::runtime::naml_net_http_server_mount as *const u8);
-        builder.symbol("naml_net_http_server_serve", crate::runtime::naml_net_http_server_serve as *const u8);
+        builder.symbol(
+            "naml_net_http_server_open_router",
+            crate::runtime::naml_net_http_server_open_router as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_get",
+            crate::runtime::naml_net_http_server_get as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_post",
+            crate::runtime::naml_net_http_server_post as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_put",
+            crate::runtime::naml_net_http_server_put as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_patch",
+            crate::runtime::naml_net_http_server_patch as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_delete",
+            crate::runtime::naml_net_http_server_delete as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_with",
+            crate::runtime::naml_net_http_server_with as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_group",
+            crate::runtime::naml_net_http_server_group as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_mount",
+            crate::runtime::naml_net_http_server_mount as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_server_serve",
+            crate::runtime::naml_net_http_server_serve as *const u8,
+        );
 
         // HTTP Middleware
-        builder.symbol("naml_net_http_middleware_logger", crate::runtime::naml_net_http_middleware_logger as *const u8);
-        builder.symbol("naml_net_http_middleware_timeout", crate::runtime::naml_net_http_middleware_timeout as *const u8);
-        builder.symbol("naml_net_http_middleware_recover", crate::runtime::naml_net_http_middleware_recover as *const u8);
-        builder.symbol("naml_net_http_middleware_cors", crate::runtime::naml_net_http_middleware_cors as *const u8);
-        builder.symbol("naml_net_http_middleware_rate_limit", crate::runtime::naml_net_http_middleware_rate_limit as *const u8);
-        builder.symbol("naml_net_http_middleware_compress", crate::runtime::naml_net_http_middleware_compress as *const u8);
-        builder.symbol("naml_net_http_middleware_request_id", crate::runtime::naml_net_http_middleware_request_id as *const u8);
+        builder.symbol(
+            "naml_net_http_middleware_logger",
+            crate::runtime::naml_net_http_middleware_logger as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_middleware_timeout",
+            crate::runtime::naml_net_http_middleware_timeout as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_middleware_recover",
+            crate::runtime::naml_net_http_middleware_recover as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_middleware_cors",
+            crate::runtime::naml_net_http_middleware_cors as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_middleware_rate_limit",
+            crate::runtime::naml_net_http_middleware_rate_limit as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_middleware_compress",
+            crate::runtime::naml_net_http_middleware_compress as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_middleware_request_id",
+            crate::runtime::naml_net_http_middleware_request_id as *const u8,
+        );
 
         let module = JITModule::new(builder);
         let ctx = module.make_context();
@@ -2280,49 +2735,49 @@ impl<'a> JitCompiler<'a> {
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_map_any",
-            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr, ptr, ptr], // map, func_ptr, data_ptr
             &[i64t],
         )?;
         declare(
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_map_all",
-            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr, ptr, ptr], // map, func_ptr, data_ptr
             &[i64t],
         )?;
         declare(
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_map_count_if",
-            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr, ptr, ptr], // map, func_ptr, data_ptr
             &[i64t],
         )?;
         declare(
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_map_fold",
-            &[ptr, i64t, ptr, ptr],  // map, initial, func_ptr, data_ptr
+            &[ptr, i64t, ptr, ptr], // map, initial, func_ptr, data_ptr
             &[i64t],
         )?;
         declare(
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_map_transform",
-            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr, ptr, ptr], // map, func_ptr, data_ptr
             &[ptr],
         )?;
         declare(
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_map_where",
-            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr, ptr, ptr], // map, func_ptr, data_ptr
             &[ptr],
         )?;
         declare(
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_map_reject",
-            &[ptr, ptr, ptr],  // map, func_ptr, data_ptr
+            &[ptr, ptr, ptr], // map, func_ptr, data_ptr
             &[ptr],
         )?;
         declare(
@@ -2698,81 +3153,495 @@ impl<'a> JitCompiler<'a> {
         )?;
 
         // File system operations
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_read", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_read_bytes", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_write", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_append", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_write_bytes", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_append_bytes", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_exists", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_is_file", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_is_dir", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_list_dir", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mkdir", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mkdir_all", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_remove", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_remove_all", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_join", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_dirname", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_basename", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_extension", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_absolute", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_size", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_modified", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_copy", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_rename", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_getwd", &[], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_chdir", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_create_temp", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mkdir_temp", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_chmod", &[ptr, i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_truncate", &[ptr, i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_stat", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_io_error_new", &[ptr, ptr, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_permission_error_new", &[ptr, ptr, i64t], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_read",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_read_bytes",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_write",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_append",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_write_bytes",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_append_bytes",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_exists",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_is_file",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_is_dir",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_list_dir",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mkdir",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mkdir_all",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_remove",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_remove_all",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_join",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_dirname",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_basename",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_extension",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_absolute",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_size",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_modified",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_copy",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_rename",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_getwd",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_chdir",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_create_temp",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mkdir_temp",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_chmod",
+            &[ptr, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_truncate",
+            &[ptr, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_stat",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_io_error_new",
+            &[ptr, ptr, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_permission_error_new",
+            &[ptr, ptr, i64t],
+            &[ptr],
+        )?;
 
         // Memory-mapped file operations
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_open", &[ptr, i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_len", &[i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_read_byte", &[i64t, i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_write_byte", &[i64t, i64t, i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_read", &[i64t, i64t, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_write", &[i64t, i64t, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_flush", &[i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_mmap_close", &[i64t], &[i64t])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_open",
+            &[ptr, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_len",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_read_byte",
+            &[i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_write_byte",
+            &[i64t, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_read",
+            &[i64t, i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_write",
+            &[i64t, i64t, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_flush",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_mmap_close",
+            &[i64t],
+            &[i64t],
+        )?;
 
         // File handle operations
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_open", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_close", &[i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_read", &[i64t, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_read_line", &[i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_read_all", &[i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_write", &[i64t, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_write_line", &[i64t, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_flush", &[i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_seek", &[i64t, i64t, i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_tell", &[i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_eof", &[i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_fs_file_size", &[i64t], &[i64t])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_open",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_close",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_read",
+            &[i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_read_line",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_read_all",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_write",
+            &[i64t, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_write_line",
+            &[i64t, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_flush",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_seek",
+            &[i64t, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_tell",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_eof",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_size",
+            &[i64t],
+            &[i64t],
+        )?;
 
         // Path operations
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_join", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_normalize", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_is_absolute", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_is_relative", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_has_root", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_dirname", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_basename", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_extension", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_stem", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_with_extension", &[ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_components", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_separator", &[], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_to_slash", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_from_slash", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_starts_with", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_ends_with", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_strip_prefix", &[ptr, ptr], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_join",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_normalize",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_is_absolute",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_is_relative",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_has_root",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_dirname",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_basename",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_extension",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_stem",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_with_extension",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_components",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_separator",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_to_slash",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_from_slash",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_starts_with",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_ends_with",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_strip_prefix",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
 
         // Bytes operations
         declare(
@@ -2827,40 +3696,208 @@ impl<'a> JitCompiler<'a> {
 
         // Encoding operations (from naml-std-encoding)
         // UTF-8
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_utf8_encode", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_utf8_decode", &[ptr, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_utf8_is_valid", &[ptr], &[i64t])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_utf8_encode",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_utf8_decode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_utf8_is_valid",
+            &[ptr],
+            &[i64t],
+        )?;
         // Hex
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_hex_encode", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_hex_decode", &[ptr, ptr, ptr], &[])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_hex_encode",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_hex_decode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
         // Base64
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_base64_encode", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_base64_decode", &[ptr, ptr, ptr], &[])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_base64_encode",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_base64_decode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
         // URL
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_url_encode", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_url_decode", &[ptr, ptr, ptr], &[])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_url_encode",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_url_decode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
         // DecodeError helper
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_decode_error_new", &[ptr, i64t], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_decode_error_new",
+            &[ptr, i64t],
+            &[ptr],
+        )?;
 
         // JSON encoding operations
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_decode", &[ptr, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_encode", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_encode_pretty", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_exists", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_path", &[ptr, ptr, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_keys", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_count", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_get_type", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_type_name", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_is_null", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_index_string", &[ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_index_int", &[ptr, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_int", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_float", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_bool", &[ptr, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_as_string", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_json_null", &[], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_path_error_new", &[ptr], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_decode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_encode",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_encode_pretty",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_exists",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_path",
+            &[ptr, ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_keys",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_count",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_get_type",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_type_name",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_is_null",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_index_string",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_index_int",
+            &[ptr, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_as_int",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_as_float",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_as_bool",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_as_string",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_json_null",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_path_error_new",
+            &[ptr],
+            &[ptr],
+        )?;
 
         // Datetime operations
         declare(
@@ -3003,64 +4040,334 @@ impl<'a> JitCompiler<'a> {
 
         // Networking operations (from naml-std-net)
         // Exception constructors
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_network_error_new", &[ptr, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_timeout_error_new", &[ptr, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_connection_refused_new", &[ptr], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_network_error_new",
+            &[ptr, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timeout_error_new",
+            &[ptr, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_connection_refused_new",
+            &[ptr],
+            &[ptr],
+        )?;
 
         // TCP Server
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_listen", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_accept", &[i64t], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_close", &[i64t], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_server_local_addr", &[i64t], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_server_listen",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_server_accept",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_server_close",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_server_local_addr",
+            &[i64t],
+            &[ptr],
+        )?;
 
         // TCP Client
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_connect", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_read", &[i64t, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_read_all", &[i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_write", &[i64t, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_close", &[i64t], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_client_set_timeout", &[i64t, i64t], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_tcp_socket_peer_addr", &[i64t], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_client_connect",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_client_read",
+            &[i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_client_read_all",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_client_write",
+            &[i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_client_close",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_client_set_timeout",
+            &[i64t, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tcp_socket_peer_addr",
+            &[i64t],
+            &[ptr],
+        )?;
 
         // UDP
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_bind", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_send", &[i64t, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_receive", &[i64t, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_receive_from", &[i64t, i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_close", &[i64t], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_udp_local_addr", &[i64t], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_udp_bind",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_udp_send",
+            &[i64t, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_udp_receive",
+            &[i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_udp_receive_from",
+            &[i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_udp_close",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_udp_local_addr",
+            &[i64t],
+            &[ptr],
+        )?;
 
         // HTTP Client (all methods accept optional headers: url, [body], headers)
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_get", &[ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_post", &[ptr, ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_put", &[ptr, ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_patch", &[ptr, ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_delete", &[ptr, ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_client_set_timeout", &[i64t], &[])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_client_get",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_client_post",
+            &[ptr, ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_client_put",
+            &[ptr, ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_client_patch",
+            &[ptr, ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_client_delete",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_client_set_timeout",
+            &[i64t],
+            &[],
+        )?;
         // HTTP Response accessors
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_response_get_status", &[ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_response_get_body_bytes", &[ptr], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_response_get_status",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_response_get_body_bytes",
+            &[ptr],
+            &[ptr],
+        )?;
 
         // HTTP Server
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_open_router", &[], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_get", &[i64t, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_post", &[i64t, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_put", &[i64t, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_patch", &[i64t, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_delete", &[i64t, ptr, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_with", &[i64t, ptr], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_group", &[i64t, ptr], &[i64t])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_mount", &[i64t, ptr, i64t], &[])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_server_serve", &[ptr, i64t], &[])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_open_router",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_get",
+            &[i64t, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_post",
+            &[i64t, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_put",
+            &[i64t, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_patch",
+            &[i64t, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_delete",
+            &[i64t, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_with",
+            &[i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_group",
+            &[i64t, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_mount",
+            &[i64t, ptr, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_serve",
+            &[ptr, i64t],
+            &[],
+        )?;
 
         // HTTP Middleware
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_logger", &[], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_timeout", &[i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_recover", &[], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_cors", &[ptr], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_rate_limit", &[i64t], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_compress", &[], &[ptr])?;
-        declare(&mut self.module, &mut self.runtime_funcs, "naml_net_http_middleware_request_id", &[], &[ptr])?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_middleware_logger",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_middleware_timeout",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_middleware_recover",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_middleware_cors",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_middleware_rate_limit",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_middleware_compress",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_middleware_request_id",
+            &[],
+            &[ptr],
+        )?;
 
         Ok(())
     }
@@ -4031,7 +5338,10 @@ impl<'a> JitCompiler<'a> {
                 // Collect the mutex expression (e.g., the variable being locked)
                 self.collect_vars_in_expression(&locked_stmt.mutex, captured, defined);
                 // The binding is defined within the locked block scope
-                let binding_name = self.interner.resolve(&locked_stmt.binding.symbol).to_string();
+                let binding_name = self
+                    .interner
+                    .resolve(&locked_stmt.binding.symbol)
+                    .to_string();
                 let mut locked_defined = defined.clone();
                 locked_defined.insert(binding_name);
                 self.collect_vars_in_block(&locked_stmt.body, captured, &mut locked_defined);
@@ -4515,7 +5825,13 @@ impl<'a> JitCompiler<'a> {
         let func_name_str = self.interner.resolve(&func.name.symbol);
         let (line, _) = self.source_info.line_col(func.span.start);
         let file_name = &*self.source_info.name;
-        emit_stack_push(&mut ctx, &mut builder, func_name_str, file_name, line as u32)?;
+        emit_stack_push(
+            &mut ctx,
+            &mut builder,
+            func_name_str,
+            file_name,
+            line as u32,
+        )?;
 
         if let Some(ref body) = func.body {
             for stmt in &body.statements {
@@ -4781,7 +6097,6 @@ impl<'a> JitCompiler<'a> {
     }
 }
 
-
 extern "C" fn naml_print_int(val: i64) {
     print!("{}", val);
 }
@@ -4810,7 +6125,6 @@ extern "C" fn naml_print_str(ptr: *const i8) {
 extern "C" fn naml_print_newline() {
     println!();
 }
-
 
 #[cfg(test)]
 mod tests {

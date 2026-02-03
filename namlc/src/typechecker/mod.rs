@@ -694,6 +694,11 @@ impl<'a> TypeChecker<'a> {
                 Type::Int,
             ),
             StdModuleFn::new(
+                "reserved",
+                vec![("capacity", Type::Int)],
+                Type::Array(Box::new(Type::Int)),
+            ),
+            StdModuleFn::new(
                 "push",
                 vec![
                     ("arr", Type::Array(Box::new(Type::Int))),

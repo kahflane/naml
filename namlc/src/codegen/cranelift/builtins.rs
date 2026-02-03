@@ -41,6 +41,8 @@ use crate::codegen::CodegenError;
 pub enum BuiltinStrategy {
     /// Load array length from header offset
     ArrayLength,
+    /// Create array with pre-allocated capacity
+    ArrayWithCapacity,
     /// Call array push helper (arr, val) -> unit
     ArrayPush,
     /// One arg -> option via array_access pattern
@@ -452,6 +454,10 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "collections::arrays::push",
             strategy: BuiltinStrategy::ArrayPush,
+        },
+        BuiltinFunction {
+            name: "collections::arrays::reserved",
+            strategy: BuiltinStrategy::ArrayWithCapacity,
         },
         BuiltinFunction {
             name: "collections::arrays::pop",
@@ -1534,6 +1540,11 @@ pub fn compile_builtin_call(
         // ========================================
         // Collections strategies
         // ========================================
+        BuiltinStrategy::ArrayWithCapacity => {
+            let cap = compile_expression(ctx, builder, &args[0])?;
+            super::array::call_array_new(ctx, builder, cap)
+        }
+
         BuiltinStrategy::ArrayLength => {
             let arr = compile_expression(ctx, builder, &args[0])?;
             let len = builder

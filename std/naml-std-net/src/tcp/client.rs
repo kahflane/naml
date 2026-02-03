@@ -18,7 +18,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use naml_std_core::{HeapHeader, HeapTag, NamlArray, NamlBytes, NamlString};
+use naml_std_core::{HeapHeader, HeapTag, NamlBytes, NamlString};
 
 use crate::errors::{string_from_naml, throw_connection_refused, throw_network_error};
 
@@ -95,10 +95,8 @@ pub extern "C" fn naml_net_tcp_client_read(socket_handle: i64, size: i64) -> *mu
                 }
             },
             None => {
-                let err = std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Invalid socket handle",
-                );
+                let err =
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "Invalid socket handle");
                 drop(sockets);
                 throw_network_error(err);
                 return std::ptr::null_mut();
@@ -140,10 +138,8 @@ pub extern "C" fn naml_net_tcp_client_read_all(socket_handle: i64) -> *mut NamlB
                 }
             },
             None => {
-                let err = std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Invalid socket handle",
-                );
+                let err =
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "Invalid socket handle");
                 drop(sockets);
                 throw_network_error(err);
                 return std::ptr::null_mut();
@@ -184,10 +180,7 @@ pub unsafe extern "C" fn naml_net_tcp_client_write(
     let stream = match sockets.get_mut(&socket_handle) {
         Some(s) => s,
         None => {
-            let err = std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Invalid socket handle",
-            );
+            let err = std::io::Error::new(std::io::ErrorKind::NotFound, "Invalid socket handle");
             drop(sockets);
             throw_network_error(err);
             return -1;

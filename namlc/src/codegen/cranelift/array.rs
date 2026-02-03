@@ -1,13 +1,13 @@
 use crate::ast::{Expression, Literal, LiteralExpr};
-use crate::codegen::cranelift::{
-    compile_expression,
-    CompileContext, ARRAY_CAPACITY_OFFSET, ARRAY_DATA_OFFSET, ARRAY_LEN_OFFSET,
-};
 use crate::codegen::CodegenError;
-use cranelift::prelude::*;
 use crate::codegen::cranelift::misc::ensure_i64;
 use crate::codegen::cranelift::runtime::rt_func_ref;
 use crate::codegen::cranelift::strings::call_string_from_cstr;
+use crate::codegen::cranelift::{
+    ARRAY_CAPACITY_OFFSET, ARRAY_DATA_OFFSET, ARRAY_LEN_OFFSET, CompileContext, compile_expression,
+};
+use cranelift::prelude::*;
+use cranelift_module::Module;
 
 pub fn compile_array_literal(
     ctx: &mut CompileContext<'_>,
@@ -120,20 +120,18 @@ pub fn call_array_len(
 }
 
 pub fn call_array_set(
-    _ctx: &mut CompileContext<'_>,
+    ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
     index: Value,
     value: Value,
 ) -> Result<(), CodegenError> {
+    let ptr_type = ctx.module.target_config().pointer_type();
     let value = ensure_i64(builder, value);
     // Load len field
-    let len = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::trusted(),
-        arr,
-        ARRAY_LEN_OFFSET,
-    );
+    let len = builder
+        .ins()
+        .load(ptr_type, MemFlags::trusted(), arr, ARRAY_LEN_OFFSET);
 
     // Create blocks for bounds check
     let in_bounds_block = builder.create_block();
@@ -152,15 +150,12 @@ pub fn call_array_set(
     builder.seal_block(in_bounds_block);
 
     // Load data pointer
-    let data_ptr = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::trusted(),
-        arr,
-        ARRAY_DATA_OFFSET,
-    );
+    let data_ptr = builder
+        .ins()
+        .load(ptr_type, MemFlags::trusted(), arr, ARRAY_DATA_OFFSET as i32);
 
-    // Compute element address: data + index * 8
-    let offset = builder.ins().imul_imm(index, 8);
+    // Optimized offset: index << 3
+    let offset = builder.ins().ishl_imm(index, 3);
     let elem_addr = builder.ins().iadd(data_ptr, offset);
 
     // Store element value
@@ -227,17 +222,21 @@ pub fn call_array_push(
         ARRAY_DATA_OFFSET,
     );
 
-    let offset = builder.ins().imul_imm(len, 8);
+    // Optimized offset: len << 3
+    let offset = builder.ins().ishl_imm(len, 3);
     let elem_addr = builder.ins().iadd(data_ptr, offset);
 
     builder
         .ins()
-        .store(MemFlags::trusted(), value, elem_addr, 0);
+        .store(MemFlags::trusted().with_notrap(), value, elem_addr, 0);
 
     let new_len = builder.ins().iadd_imm(len, 1);
-    builder
-        .ins()
-        .store(MemFlags::trusted(), new_len, arr, ARRAY_LEN_OFFSET);
+    builder.ins().store(
+        MemFlags::trusted().with_notrap(),
+        new_len,
+        arr,
+        ARRAY_LEN_OFFSET,
+    );
 
     builder.ins().jump(done_block, &[]);
 
@@ -296,59 +295,48 @@ pub fn compile_direct_array_get_or_panic(
     arr: Value,
     index: Value,
 ) -> Result<Value, CodegenError> {
-    let len = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::trusted(),
-        arr,
-        ARRAY_LEN_OFFSET,
-    );
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let len = builder
+        .ins()
+        .load(ptr_type, MemFlags::trusted(), arr, ARRAY_LEN_OFFSET);
 
-    let valid_block = builder.create_block();
-    let panic_block = builder.create_block();
-    let merge_block = builder.create_block();
-    builder.append_block_param(merge_block, cranelift::prelude::types::I64);
-
-    // Bounds check using unsigned comparison: (unsigned)index < (unsigned)len
-    // This catches both negative indices (which become huge unsigned values)
-    // and indices >= len in a single comparison
+    // Bounds check using branching (CPU branch predictor handles this better than traps)
     let in_bounds = builder.ins().icmp(IntCC::UnsignedLessThan, index, len);
+
+    let ok_block = builder.create_block();
+    let panic_block = builder.create_block();
     builder
         .ins()
-        .brif(in_bounds, valid_block, &[], panic_block, &[]);
+        .brif(in_bounds, ok_block, &[], panic_block, &[]);
 
-    // Panic block: out of bounds
     builder.switch_to_block(panic_block);
     builder.seal_block(panic_block);
     let panic_func = rt_func_ref(ctx, builder, "naml_panic_unwrap")?;
     builder.ins().call(panic_func, &[]);
-    let zero_val = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-    builder.ins().jump(merge_block, &[zero_val]);
+    builder.ins().jump(ok_block, &[]); // Never reached but needed for block closure
 
-    // Valid block: inline array access (no function call)
-    builder.switch_to_block(valid_block);
-    builder.seal_block(valid_block);
-    // Load data pointer from array struct
+    builder.switch_to_block(ok_block);
+    builder.seal_block(ok_block);
+
+    // Load data pointer with notrap since we checked bounds
     let data_ptr = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::trusted(),
+        ptr_type,
+        MemFlags::trusted().with_notrap(),
         arr,
         ARRAY_DATA_OFFSET,
     );
-    // Compute element address: data_ptr + index * 8
-    let eight = builder.ins().iconst(cranelift::prelude::types::I64, 8);
-    let offset = builder.ins().imul(index, eight);
+
+    // Optimized offset: index << 3
+    let offset = builder.ins().ishl_imm(index, 3);
     let elem_addr = builder.ins().iadd(data_ptr, offset);
-    // Load value from element address
-    let value = builder.ins().load(
+
+    // Load result directly from element address
+    let val = builder.ins().load(
         cranelift::prelude::types::I64,
-        MemFlags::new(),
+        MemFlags::trusted().with_notrap(),
         elem_addr,
         0,
     );
-    builder.ins().jump(merge_block, &[value]);
 
-    builder.switch_to_block(merge_block);
-    builder.seal_block(merge_block);
-
-    Ok(builder.block_params(merge_block)[0])
+    Ok(val)
 }

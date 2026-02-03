@@ -24,18 +24,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use http_body_util::{BodyExt, Full};
-use hyper::body::Bytes;
 use hyper::Request;
+use hyper::body::Bytes;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use tokio::runtime::Runtime;
 
-use naml_std_collections::{MapEntry, NamlMap};
+use naml_std_collections::NamlMap;
 use naml_std_core::{NamlBytes, NamlString, NamlStruct};
 
 use super::types::{
-    naml_net_http_response_new, naml_net_http_response_set_body,
-    naml_net_http_response_set_status, vec_to_array,
+    naml_net_http_response_new, naml_net_http_response_set_body, naml_net_http_response_set_status,
+    vec_to_array,
 };
 
 /// Helper to convert NamlBytes to Vec<u8>
@@ -161,13 +161,17 @@ fn do_request(
 
     let result: Result<(i64, Vec<u8>), std::io::Error> = runtime.block_on(async move {
         // Parse URL
-        let uri: hyper::Uri = url_clone.parse().map_err(|e: hyper::http::uri::InvalidUri| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Invalid URL: {}", e))
-        })?;
+        let uri: hyper::Uri = url_clone
+            .parse()
+            .map_err(|e: hyper::http::uri::InvalidUri| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid URL: {}", e),
+                )
+            })?;
 
         // Create HTTP connector (no TLS)
-        let client: Client<_, Full<Bytes>> =
-            Client::builder(TokioExecutor::new()).build_http();
+        let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
 
         // Build request with default headers
         let body_bytes = body.unwrap_or_default();

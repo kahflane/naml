@@ -1,16 +1,15 @@
-use cranelift::prelude::*;
-use cranelift_codegen::ir::{FuncRef, Value};
-use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_frontend::{FunctionBuilder, Variable};
-use cranelift_module::Module;
-use lasso::Rodeo;
 use crate::ast::Expression;
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::CompileContext;
 use crate::codegen::cranelift::heap::HeapType;
-use crate::codegen::cranelift::structs::struct_has_heap_fields;
 use crate::codegen::cranelift::literal::compile_string_literal;
-use crate::codegen::cranelift::strings::call_string_from_cstr;
+use crate::codegen::cranelift::structs::struct_has_heap_fields;
+use cranelift::prelude::*;
+use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::{FuncRef, Value};
+use cranelift_frontend::{FunctionBuilder, Variable};
+use cranelift_module::{Linkage, Module};
+use lasso::Rodeo;
 
 pub fn rt_func_ref(
     ctx: &mut CompileContext<'_>,
@@ -175,8 +174,29 @@ pub fn emit_stack_pop(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<(), CodegenError> {
-    let stack_pop = rt_func_ref(ctx, builder, "naml_stack_pop")?;
-    builder.ins().call(stack_pop, &[]);
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let stack_addr = ctx
+        .module
+        .declare_data("NAML_SHADOW_STACK", Linkage::Import, true, false)
+        .map_err(|e| CodegenError::JitCompile(e.to_string()))?;
+    let stack_ptr = ctx.module.declare_data_in_func(stack_addr, builder.func);
+
+    let global_ptr = builder.ins().symbol_value(ptr_type, stack_ptr);
+
+    // Load current depth (offset 0)
+    let depth = builder
+        .ins()
+        .load(ptr_type, MemFlags::trusted(), global_ptr, 0);
+
+    // if depth > 0 { depth -= 1 }
+    let is_positive = builder.ins().icmp_imm(IntCC::UnsignedGreaterThan, depth, 0);
+    let new_depth = builder.ins().iadd_imm(depth, -1);
+    let final_depth = builder.ins().select(is_positive, new_depth, depth);
+
+    builder
+        .ins()
+        .store(MemFlags::trusted(), final_depth, global_ptr, 0);
+
     Ok(())
 }
 
@@ -187,19 +207,52 @@ pub fn emit_stack_push(
     file_name: &str,
     line: u32,
 ) -> Result<(), CodegenError> {
-    let stack_push = rt_func_ref(ctx, builder, "naml_stack_push")?;
+    let ptr_type = ctx.module.target_config().pointer_type();
+    let stack_addr = ctx
+        .module
+        .declare_data("NAML_SHADOW_STACK", Linkage::Import, true, false)
+        .map_err(|e| CodegenError::JitCompile(e.to_string()))?;
+    let stack_ptr = ctx.module.declare_data_in_func(stack_addr, builder.func);
 
-    // Create function name string
-    let func_name_cstr = compile_string_literal(ctx, builder, func_name)?;
-    let func_name_ptr = call_string_from_cstr(ctx, builder, func_name_cstr)?;
+    let global_ptr = builder.ins().symbol_value(ptr_type, stack_ptr);
 
-    // Create file name string
-    let file_name_cstr = compile_string_literal(ctx, builder, file_name)?;
-    let file_name_ptr = call_string_from_cstr(ctx, builder, file_name_cstr)?;
+    // Load current depth (offset 0)
+    let depth = builder
+        .ins()
+        .load(ptr_type, MemFlags::trusted(), global_ptr, 0);
 
-    // Line number
+    // Check if depth < 1024
+    let can_push = builder.ins().icmp_imm(IntCC::UnsignedLessThan, depth, 1024);
+
+    // Calculate frame address: global_ptr + 8 + (depth * 24)
+    // 24 = 16 + 8 (size of StackFrame)
+    let frame_offset_base = builder.ins().imul_imm(depth, 24);
+    let frame_addr = builder.ins().iadd_imm(frame_offset_base, 8);
+    let elem_addr = builder.ins().iadd(global_ptr, frame_addr);
+
+    // Compile static strings
+    let func_name_ptr = compile_string_literal(ctx, builder, func_name)?;
+    let file_name_ptr = compile_string_literal(ctx, builder, file_name)?;
     let line_val = builder.ins().iconst(types::I64, line as i64);
 
-    builder.ins().call(stack_push, &[func_name_ptr, file_name_ptr, line_val]);
+    // Store frame data with condition
+    // For simplicity, we just store and then increment depth if < 1024
+    builder
+        .ins()
+        .store(MemFlags::trusted(), func_name_ptr, elem_addr, 0);
+    builder
+        .ins()
+        .store(MemFlags::trusted(), file_name_ptr, elem_addr, 8);
+    builder
+        .ins()
+        .store(MemFlags::trusted(), line_val, elem_addr, 16);
+
+    let new_depth = builder.ins().iadd_imm(depth, 1);
+    let final_depth = builder.ins().select(can_push, new_depth, depth);
+
+    builder
+        .ins()
+        .store(MemFlags::trusted(), final_depth, global_ptr, 0);
+
     Ok(())
 }
