@@ -75,23 +75,13 @@ pub fn compile_expression(
                 let ptr = builder
                     .ins()
                     .global_value(cranelift::prelude::types::I64, global_value);
-                // Load as i64 (storage format) then bitcast if needed
-                let raw_value = builder.ins().load(
-                    cranelift::prelude::types::I64,
+                // Load directly with the correct type (floats stored natively as f64)
+                let value = builder.ins().load(
+                    global_def.cl_type,
                     MemFlags::trusted(),
                     ptr,
                     0,
                 );
-                // Bitcast to correct type if it's a float
-                let value = if global_def.cl_type == cranelift::prelude::types::F64 {
-                    builder.ins().bitcast(
-                        cranelift::prelude::types::F64,
-                        MemFlags::new(),
-                        raw_value,
-                    )
-                } else {
-                    raw_value
-                };
                 Ok(value)
             } else {
                 Err(CodegenError::JitCompile(format!(
@@ -343,6 +333,84 @@ pub fn compile_expression(
 
                 // Check for normal (naml) function
                 if let Some(&func_id) = ctx.functions.get(actual_func_name) {
+                    // Check if this function should be inlined
+                    // Only inline if:
+                    // 1. The function is marked as inlineable
+                    // 2. We're not too deep in the inline stack (prevent infinite recursion)
+                    // 3. We're in release or unsafe mode for maximum performance
+                    let should_inline = ctx.inline_depth < 3
+                        && (ctx.release_mode || ctx.unsafe_mode)
+                        && ctx.inline_functions.contains_key(actual_func_name);
+
+                    if should_inline {
+                        // Inline the function
+                        let inline_info = ctx.inline_functions.get(actual_func_name).unwrap().clone();
+
+                        // SAFETY: The function AST is valid for the duration of compilation
+                        let func_ast: &crate::ast::FunctionItem<'_> =
+                            unsafe { &*inline_info.func_ptr };
+
+                        // Compile arguments first
+                        let mut arg_values = Vec::new();
+                        for arg in &call.args {
+                            let mut val = compile_expression(ctx, builder, arg)?;
+                            if matches!(
+                                arg,
+                                Expression::Literal(LiteralExpr {
+                                    value: Literal::String(_),
+                                    ..
+                                })
+                            ) {
+                                val = call_string_from_cstr(ctx, builder, val)?;
+                            }
+                            arg_values.push(val);
+                        }
+
+                        // Create local variables for parameters
+                        let saved_vars = ctx.variables.clone();
+                        let saved_depth = ctx.inline_depth;
+                        ctx.inline_depth += 1;
+
+                        for (i, param_name) in inline_info.param_names.iter().enumerate() {
+                            let var = Variable::new(ctx.var_counter);
+                            ctx.var_counter += 1;
+                            let param_ty =
+                                super::types::naml_to_cranelift(&inline_info.param_types[i]);
+                            builder.declare_var(var, param_ty);
+                            builder.def_var(var, arg_values[i]);
+                            ctx.variables.insert(param_name.clone(), var);
+                        }
+
+                        // Compile the function body inline
+                        let mut result_value = None;
+                        if let Some(ref body) = func_ast.body {
+                            for stmt in &body.statements {
+                                // Handle return statements specially for inlining
+                                if let crate::ast::Statement::Return(ret_stmt) = stmt {
+                                    if let Some(ref ret_expr) = ret_stmt.value {
+                                        result_value = Some(compile_expression(ctx, builder, ret_expr)?);
+                                    }
+                                    break;
+                                } else {
+                                    compile_statement(ctx, builder, stmt)?;
+                                    if ctx.block_terminated {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Restore context
+                        ctx.variables = saved_vars;
+                        ctx.inline_depth = saved_depth;
+
+                        // Return the result value
+                        return Ok(result_value.unwrap_or_else(|| {
+                            builder.ins().iconst(cranelift::prelude::types::I64, 0)
+                        }));
+                    }
+
+                    // Regular call path
                     let func_ref = ctx.module.declare_func_in_func(func_id, builder.func);
 
                     let closure_data = builder.ins().iconst(cranelift::prelude::types::I64, 0);
@@ -782,8 +850,17 @@ pub fn compile_expression(
                         && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name)
                     {
                         let offset = (24 + idx * 8) as i32;
+                        // Determine field type for typed load (eliminates bitcast for floats)
+                        let field_type = struct_type.fields.iter()
+                            .find(|f| ctx.interner.resolve(&f.name) == field_name)
+                            .map(|f| &f.ty);
+                        let load_type = if let Some(crate::typechecker::Type::Float) = field_type {
+                            cranelift::prelude::types::F64
+                        } else {
+                            cranelift::prelude::types::I64
+                        };
                         let value = builder.ins().load(
-                            cranelift::prelude::types::I64,
+                            load_type,
                             MemFlags::new(),
                             struct_ptr,
                             offset,
@@ -810,6 +887,40 @@ pub fn compile_expression(
                         offset,
                     );
                     return Ok(value);
+                }
+            }
+
+            // Handle ForceUnwrap(Index(...)) pattern: bodies[i]!.x where field may be float
+            if let Expression::ForceUnwrap(unwrap_expr) = field_expr.base
+                && let Expression::Index(index_expr) = unwrap_expr.expr
+            {
+                if let Some(crate::typechecker::Type::Array(elem_ty)) =
+                    ctx.annotations.get_type(index_expr.base.span())
+                {
+                    if let crate::typechecker::Type::Struct(struct_type) = elem_ty.as_ref() {
+                        let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
+                        if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
+                            if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                let offset = (24 + idx * 8) as i32;
+                                // Determine field type for typed load
+                                let field_type = struct_type.fields.iter()
+                                    .find(|f| ctx.interner.resolve(&f.name) == field_name)
+                                    .map(|f| &f.ty);
+                                let load_type = if let Some(crate::typechecker::Type::Float) = field_type {
+                                    cranelift::prelude::types::F64
+                                } else {
+                                    cranelift::prelude::types::I64
+                                };
+                                let value = builder.ins().load(
+                                    load_type,
+                                    MemFlags::new(),
+                                    struct_ptr,
+                                    offset,
+                                );
+                                return Ok(value);
+                            }
+                        }
+                    }
                 }
             }
 

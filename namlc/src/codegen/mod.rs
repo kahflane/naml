@@ -40,8 +40,10 @@ pub fn compile_and_run(
     annotations: &TypeAnnotations,
     imported_modules: &[ImportedModule],
     source_info: &SourceInfo,
+    release: bool,
+    unsafe_mode: bool,
 ) -> Result<(), CodegenError> {
-    let mut jit = cranelift::JitCompiler::new(interner, annotations, source_info)?;
+    let mut jit = cranelift::JitCompiler::new(interner, annotations, source_info, release, unsafe_mode)?;
     for module in imported_modules {
         jit.compile_module_source(&module.source_text)?;
     }

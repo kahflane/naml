@@ -100,6 +100,17 @@ pub struct LambdaInfo {
     pub body_ptr: *const crate::ast::Expression<'static>,
 }
 
+/// Information for inlineable functions
+#[derive(Clone)]
+pub struct InlineFuncInfo {
+    pub func_ptr: *const FunctionItem<'static>,
+    pub param_names: Vec<String>,
+    pub param_types: Vec<crate::ast::NamlType>,
+    pub return_type: Option<crate::ast::NamlType>,
+}
+
+unsafe impl Send for InlineFuncInfo {}
+
 pub struct CompileContext<'a> {
     interner: &'a Rodeo,
     module: &'a mut JITModule,
@@ -123,6 +134,10 @@ pub struct CompileContext<'a> {
     annotations: &'a TypeAnnotations,
     type_substitutions: HashMap<String, String>,
     func_return_type: Option<cranelift::prelude::Type>,
+    release_mode: bool,
+    unsafe_mode: bool,
+    inline_functions: &'a HashMap<String, InlineFuncInfo>,
+    inline_depth: u32,
 }
 
 unsafe impl Send for LambdaInfo {}
@@ -162,6 +177,9 @@ pub struct JitCompiler<'a> {
     lambda_counter: u32,
     lambda_blocks: HashMap<u32, LambdaInfo>,
     generic_functions: HashMap<String, *const FunctionItem<'a>>,
+    inline_functions: HashMap<String, InlineFuncInfo>,
+    release_mode: bool,
+    unsafe_mode: bool,
 }
 
 impl<'a> JitCompiler<'a> {
@@ -169,6 +187,8 @@ impl<'a> JitCompiler<'a> {
         interner: &'a Rodeo,
         annotations: &'a TypeAnnotations,
         source_info: &'a crate::source::SourceFile,
+        release: bool,
+        unsafe_mode: bool,
     ) -> Result<Self, CodegenError> {
         let mut flag_builder = settings::builder();
         flag_builder.set("use_colocated_libcalls", "false").unwrap();
@@ -1674,6 +1694,9 @@ impl<'a> JitCompiler<'a> {
             lambda_counter: 0,
             lambda_blocks: HashMap::new(),
             generic_functions: HashMap::new(),
+            inline_functions: HashMap::new(),
+            release_mode: release,
+            unsafe_mode,
         };
         compiler.declare_runtime_functions()?;
         compiler.register_builtin_exceptions();
@@ -4595,6 +4618,15 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
+        // Identify inline candidates (small non-generic functions)
+        for item in &ast.items {
+            if let Item::Function(f) = item {
+                if f.receiver.is_none() && f.generics.is_empty() {
+                    self.maybe_add_inline_candidate(f);
+                }
+            }
+        }
+
         // Process monomorphizations - declare and compile specialized versions
         self.process_monomorphizations()?;
 
@@ -5025,6 +5057,10 @@ impl<'a> JitCompiler<'a> {
             annotations: self.annotations,
             type_substitutions,
             func_return_type,
+            release_mode: self.release_mode,
+            unsafe_mode: self.unsafe_mode,
+            inline_functions: &self.inline_functions,
+            inline_depth: 0,
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -5572,6 +5608,10 @@ impl<'a> JitCompiler<'a> {
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type: None,
+            release_mode: self.release_mode,
+            unsafe_mode: self.unsafe_mode,
+            inline_functions: &self.inline_functions,
+            inline_depth: 0,
         };
 
         // Load captured variables from closure data
@@ -5715,6 +5755,10 @@ impl<'a> JitCompiler<'a> {
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type: Some(cranelift::prelude::types::I64), // Lambdas always return i64
+            release_mode: self.release_mode,
+            unsafe_mode: self.unsafe_mode,
+            inline_functions: &self.inline_functions,
+            inline_depth: 0,
         };
 
         // Load captured variables from closure data
@@ -5829,6 +5873,65 @@ impl<'a> JitCompiler<'a> {
         Ok(func_id)
     }
 
+    /// Check if a function is a good candidate for inlining and store it if so.
+    /// Criteria: small body, no throws, no generics, not "main", not recursive.
+    fn maybe_add_inline_candidate(&mut self, func: &FunctionItem<'_>) {
+        let name = self.interner.resolve(&func.name.symbol);
+
+        // Skip main function
+        if name == "main" {
+            return;
+        }
+
+        // Skip functions with throws
+        if !func.throws.is_empty() {
+            return;
+        }
+
+        // Skip generics (handled separately)
+        if !func.generics.is_empty() {
+            return;
+        }
+
+        // Skip functions without bodies
+        let body = match &func.body {
+            Some(b) => b,
+            None => return,
+        };
+
+        // Count statements - inline only small functions (max 5 statements)
+        let stmt_count = body.statements.len();
+        if stmt_count > 5 {
+            return;
+        }
+
+        // Simple recursion check: skip if function calls itself
+        // (A more sophisticated check would walk the AST)
+        // For now, we rely on inline_depth limiting in compile_expression
+
+        // Collect parameter info
+        let param_names: Vec<String> = func
+            .params
+            .iter()
+            .map(|p| self.interner.resolve(&p.name.symbol).to_string())
+            .collect();
+
+        let param_types: Vec<crate::ast::NamlType> =
+            func.params.iter().map(|p| p.ty.clone()).collect();
+
+        let return_type = func.return_ty.clone();
+
+        // Store as inline candidate
+        let info = InlineFuncInfo {
+            func_ptr: func as *const _ as *const FunctionItem<'static>,
+            param_names,
+            param_types,
+            return_type,
+        };
+
+        self.inline_functions.insert(name.to_string(), info);
+    }
+
     fn compile_function(&mut self, func: &FunctionItem<'_>) -> Result<(), CodegenError> {
         let name = self.interner.resolve(&func.name.symbol);
         let func_id = *self
@@ -5880,6 +5983,10 @@ impl<'a> JitCompiler<'a> {
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type,
+            release_mode: self.release_mode,
+            unsafe_mode: self.unsafe_mode,
+            inline_functions: &self.inline_functions,
+            inline_depth: 0,
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -5935,24 +6042,8 @@ impl<'a> JitCompiler<'a> {
                     .ins()
                     .global_value(cranelift::prelude::types::I64, global_value);
 
-                // Bitcast if needed for storage
-                let store_value = if cl_type == cranelift::prelude::types::F64 {
-                    // Floats are stored as bitcast i64
-                    let val_type = builder.func.dfg.value_type(value);
-                    if val_type == cranelift::prelude::types::F64 {
-                        builder.ins().bitcast(
-                            cranelift::prelude::types::I64,
-                            MemFlags::new(),
-                            value,
-                        )
-                    } else {
-                        value
-                    }
-                } else {
-                    value
-                };
-
-                builder.ins().store(MemFlags::trusted(), store_value, ptr, 0);
+                // Store floats natively as f64 (no bitcast needed)
+                builder.ins().store(MemFlags::trusted(), value, ptr, 0);
                 let _ = var_name; // suppress unused warning
             }
         }
@@ -6127,6 +6218,10 @@ impl<'a> JitCompiler<'a> {
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type,
+            release_mode: self.release_mode,
+            unsafe_mode: self.unsafe_mode,
+            inline_functions: &self.inline_functions,
+            inline_depth: 0,
         };
 
         // Set up receiver variable (self)

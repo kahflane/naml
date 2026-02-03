@@ -41,12 +41,33 @@ pub fn compile_array_literal(
 }
 /// Direct array indexing: arr[index]
 /// Returns the raw value (0 if out of bounds) - used for direct indexing expressions
+/// In unsafe mode, skips bounds checking for maximum performance
 pub fn call_array_index(
-    _ctx: &mut CompileContext<'_>,
+    ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
     index: Value,
 ) -> Result<Value, CodegenError> {
+    // In unsafe mode, skip bounds checking entirely for maximum performance
+    if ctx.unsafe_mode {
+        let data_ptr = builder.ins().load(
+            cranelift::prelude::types::I64,
+            MemFlags::trusted(),
+            arr,
+            ARRAY_DATA_OFFSET,
+        );
+        let offset = builder.ins().ishl_imm(index, 3); // index * 8
+        let elem_addr = builder.ins().iadd(data_ptr, offset);
+        let value = builder.ins().load(
+            cranelift::prelude::types::I64,
+            MemFlags::trusted().with_notrap(),
+            elem_addr,
+            0,
+        );
+        return Ok(value);
+    }
+
+    // Safe mode: full bounds checking
     let len = builder.ins().load(
         cranelift::prelude::types::I64,
         MemFlags::trusted(),
@@ -119,15 +140,41 @@ pub fn call_array_len(
     Ok(len)
 }
 
+/// Set array element at index
+/// element_type specifies the storage type (I64 for ints, F64 for floats)
+/// This eliminates bitcast overhead for float arrays
 pub fn call_array_set(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
     arr: Value,
     index: Value,
     value: Value,
+    element_type: Option<cranelift::prelude::Type>,
 ) -> Result<(), CodegenError> {
     let ptr_type = ctx.module.target_config().pointer_type();
-    let value = ensure_i64(builder, value);
+
+    // For typed float arrays, store directly without conversion
+    // For other types, ensure it's i64 for generic storage
+    let store_value = if element_type == Some(cranelift::prelude::types::F64) {
+        value // Store F64 directly
+    } else {
+        ensure_i64(builder, value)
+    };
+
+    // In unsafe mode, skip bounds checking entirely for maximum performance
+    if ctx.unsafe_mode {
+        let data_ptr = builder
+            .ins()
+            .load(ptr_type, MemFlags::trusted(), arr, ARRAY_DATA_OFFSET as i32);
+        let offset = builder.ins().ishl_imm(index, 3);
+        let elem_addr = builder.ins().iadd(data_ptr, offset);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), store_value, elem_addr, 0);
+        return Ok(());
+    }
+
+    // Safe mode: full bounds checking
     // Load len field
     let len = builder
         .ins()
@@ -161,7 +208,7 @@ pub fn call_array_set(
     // Store element value
     builder
         .ins()
-        .store(MemFlags::trusted(), value, elem_addr, 0);
+        .store(MemFlags::trusted(), store_value, elem_addr, 0);
     builder.ins().jump(done_block, &[]);
 
     // Done block
@@ -292,6 +339,7 @@ pub fn call_array_contains_bool(
 /// Directly returns value or panics - no intermediate option struct
 /// Fully inlined: no function call overhead
 /// The element_type parameter specifies the Cranelift type of array elements (I64, F64, etc.)
+/// In unsafe mode, skips bounds checking entirely for maximum performance
 pub fn compile_direct_array_get_or_panic(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
@@ -300,6 +348,33 @@ pub fn compile_direct_array_get_or_panic(
     element_type: cranelift::prelude::Type,
 ) -> Result<Value, CodegenError> {
     let ptr_type = ctx.module.target_config().pointer_type();
+
+    // In unsafe mode, skip bounds checking entirely for maximum performance
+    if ctx.unsafe_mode {
+        let data_ptr = builder.ins().load(
+            ptr_type,
+            MemFlags::trusted().with_notrap(),
+            arr,
+            ARRAY_DATA_OFFSET,
+        );
+        let offset = builder.ins().ishl_imm(index, 3);
+        let elem_addr = builder.ins().iadd(data_ptr, offset);
+        // Load directly as the target type - eliminates bitcast overhead for floats
+        let load_type = if element_type == cranelift::prelude::types::F64 {
+            cranelift::prelude::types::F64
+        } else {
+            cranelift::prelude::types::I64
+        };
+        let val = builder.ins().load(
+            load_type,
+            MemFlags::trusted().with_notrap(),
+            elem_addr,
+            0,
+        );
+        return Ok(val);
+    }
+
+    // Safe mode: full bounds checking
     let len = builder
         .ins()
         .load(ptr_type, MemFlags::trusted(), arr, ARRAY_LEN_OFFSET);
@@ -334,18 +409,17 @@ pub fn compile_direct_array_get_or_panic(
     let offset = builder.ins().ishl_imm(index, 3);
     let elem_addr = builder.ins().iadd(data_ptr, offset);
 
-    // Load result directly from element address as I64 (storage format)
+    // Load directly as the target type - eliminates bitcast overhead for floats
+    let load_type = if element_type == cranelift::prelude::types::F64 {
+        cranelift::prelude::types::F64
+    } else {
+        cranelift::prelude::types::I64
+    };
     let val = builder.ins().load(
-        cranelift::prelude::types::I64,
+        load_type,
         MemFlags::trusted().with_notrap(),
         elem_addr,
         0,
     );
-
-    // Bitcast to correct type if needed (floats are stored as bitcast i64)
-    if element_type == cranelift::prelude::types::F64 {
-        Ok(builder.ins().bitcast(cranelift::prelude::types::F64, MemFlags::new(), val))
-    } else {
-        Ok(val)
-    }
+    Ok(val)
 }

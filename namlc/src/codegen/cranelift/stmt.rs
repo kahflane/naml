@@ -1,6 +1,7 @@
 use crate::ast::{BinaryOp, Expression, Literal, LiteralExpr, Statement};
 use crate::codegen::cranelift::array::{
     call_array_index, call_array_len, call_array_new, call_array_set,
+    compile_direct_array_get_or_panic,
 };
 use crate::codegen::cranelift::pattern::compile_pattern_match;
 use crate::codegen::cranelift::{
@@ -246,7 +247,17 @@ pub fn compile_statement(
                     } else {
                         // Default to array set for integer indices
                         let index = compile_expression(ctx, builder, index_expr.index)?;
-                        call_array_set(ctx, builder, base, index, value)?;
+                        // Determine element type for typed array access (eliminates bitcast for floats)
+                        let element_type = if let Some(base_type) = ctx.annotations.get_type(index_expr.base.span()) {
+                            if let crate::typechecker::Type::Array(elem_ty) = base_type {
+                                Some(super::types::tc_type_to_cranelift(elem_ty))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        call_array_set(ctx, builder, base, index, value, element_type)?;
                     }
                 }
                 Expression::Field(field_expr) => {
@@ -312,6 +323,49 @@ pub fn compile_statement(
                                         .ins()
                                         .store(MemFlags::new(), value, base_ptr, offset);
                                     return Ok(());
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle ForceUnwrap(Index(...)) pattern: bodies[i]!.vx = value
+                    if let Expression::ForceUnwrap(unwrap_expr) = field_expr.base {
+                        if let Expression::Index(index_expr) = unwrap_expr.expr {
+                            // Get array element type to determine struct type
+                            if let Some(crate::typechecker::Type::Array(elem_ty)) =
+                                ctx.annotations.get_type(index_expr.base.span())
+                            {
+                                if let crate::typechecker::Type::Struct(struct_type) = elem_ty.as_ref() {
+                                    let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
+                                    if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
+                                        if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                            // Get struct pointer from array element
+                                            let arr_ptr = compile_expression(ctx, builder, index_expr.base)?;
+                                            let index = compile_expression(ctx, builder, index_expr.index)?;
+                                            let struct_ptr = compile_direct_array_get_or_panic(
+                                                ctx, builder, arr_ptr, index,
+                                                cranelift::prelude::types::I64
+                                            )?;
+
+                                            // Determine field type for typed store (F64 for floats)
+                                            let field_type = struct_type.fields.iter()
+                                                .find(|f| ctx.interner.resolve(&f.name) == field_name)
+                                                .map(|f| &f.ty);
+                                            let is_float = matches!(field_type, Some(crate::typechecker::Type::Float));
+
+                                            // Convert value to correct type if needed
+                                            let store_value = if is_float {
+                                                value // Already F64 from expression compilation
+                                            } else {
+                                                super::misc::ensure_i64(builder, value)
+                                            };
+
+                                            // Store with correct type (offset = 24 byte header + field_index * 8)
+                                            let offset = (24 + idx * 8) as i32;
+                                            builder.ins().store(MemFlags::new(), store_value, struct_ptr, offset);
+                                            return Ok(());
+                                        }
+                                    }
                                 }
                             }
                         }

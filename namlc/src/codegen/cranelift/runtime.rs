@@ -174,6 +174,11 @@ pub fn emit_stack_pop(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
 ) -> Result<(), CodegenError> {
+    // Skip shadow stack operations in release mode for better performance
+    if ctx.release_mode {
+        return Ok(());
+    }
+
     let ptr_type = ctx.module.target_config().pointer_type();
     let stack_addr = ctx
         .module
@@ -207,6 +212,11 @@ pub fn emit_stack_push(
     file_name: &str,
     line: u32,
 ) -> Result<(), CodegenError> {
+    // Skip shadow stack operations in release mode for better performance
+    if ctx.release_mode {
+        return Ok(());
+    }
+
     let ptr_type = ctx.module.target_config().pointer_type();
     let stack_addr = ctx
         .module

@@ -27,6 +27,10 @@ enum Commands {
         file: PathBuf,
         #[arg(long)]
         cached: bool,
+        #[arg(long, help = "Release mode: disable shadow stack for better performance")]
+        release: bool,
+        #[arg(long, help = "Unsafe mode: disable array bounds checking for maximum performance")]
+        r#unsafe: bool,
     },
     Build {
         #[arg(long, default_value = "native")]
@@ -49,8 +53,8 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { file, cached } => {
-            run_file(&file, cached);
+        Commands::Run { file, cached, release, r#unsafe } => {
+            run_file(&file, cached, release, r#unsafe);
         }
         Commands::Build { target, release } => {
             build_project(&target, release);
@@ -67,7 +71,7 @@ fn main() {
     }
 }
 
-fn run_file(file: &PathBuf, cached: bool) {
+fn run_file(file: &PathBuf, cached: bool, release: bool, unsafe_mode: bool) {
     let source_text = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(e) => {
@@ -108,6 +112,8 @@ fn run_file(file: &PathBuf, cached: bool) {
         &type_result.annotations,
         &type_result.imported_modules,
         &source_file,
+        release,
+        unsafe_mode,
     ) {
         Ok(()) => {}
         Err(e) => {
