@@ -2831,8 +2831,21 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_items(&mut self, file: &SourceFile) {
+        // Pass 1: Process all top-level statements (global variables)
+        // so they're visible to all functions regardless of source order
         for item in &file.items {
-            self.check_item(item);
+            if let Item::TopLevelStmt(stmt_item) = item {
+                self.check_top_level_stmt(stmt_item);
+            }
+        }
+
+        // Pass 2: Process functions and modules
+        for item in &file.items {
+            match item {
+                Item::Function(func) => self.check_function(func),
+                Item::Mod(m) => self.check_mod(m),
+                _ => {}
+            }
         }
     }
 
@@ -2841,19 +2854,19 @@ impl<'a> TypeChecker<'a> {
         self.symbols.enter_module(name_spur);
         if let Some(ref items) = m.body {
             for item in items {
-                self.check_item(item);
+                if let Item::TopLevelStmt(stmt_item) = item {
+                    self.check_top_level_stmt(stmt_item);
+                }
+            }
+            for item in items {
+                match item {
+                    Item::Function(func) => self.check_function(func),
+                    Item::Mod(inner_m) => self.check_mod(inner_m),
+                    _ => {}
+                }
             }
         }
         self.symbols.exit_module();
-    }
-
-    fn check_item<'ast>(&mut self, item: &'ast Item<'ast>) {
-        match item {
-            Item::Function(func) => self.check_function(func),
-            Item::TopLevelStmt(stmt_item) => self.check_top_level_stmt(stmt_item),
-            Item::Mod(m) => self.check_mod(m),
-            _ => {}
-        }
     }
 
     fn check_top_level_stmt(&mut self, stmt_item: &ast::TopLevelStmtItem) {
@@ -3210,5 +3223,21 @@ mod tests {
             "fn main() { var f: fn(int) -> int = fn(x: int) -> int { return x + 1; }; }",
         );
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_global_var_in_function() {
+        let errors = check_source(
+            "var PI: float = 3.14;\nvar SOLAR_MASS: float = 4.0 * PI * PI;\nfn main() { var x: float = SOLAR_MASS; }",
+        );
+        assert!(errors.is_empty(), "Global variables should be visible inside functions: {:?}", errors);
+    }
+
+    #[test]
+    fn test_global_var_after_function() {
+        let errors = check_source(
+            "fn main() { var x: float = GRAVITY; }\nvar GRAVITY: float = 9.81;",
+        );
+        assert!(errors.is_empty(), "Global variables defined after functions should still be visible: {:?}", errors);
     }
 }
