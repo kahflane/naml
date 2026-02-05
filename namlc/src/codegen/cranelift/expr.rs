@@ -273,6 +273,9 @@ pub fn compile_expression(
                         "PathError" => Some(4i64),
                         "NetworkError" => Some(5i64),
                         "TimeoutError" => Some(6i64),
+                        "EnvError" => Some(7i64),
+                        "OSError" => Some(8i64),
+                        "ProcessError" => Some(9i64),
                         _ => None,
                     };
 

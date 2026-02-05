@@ -1196,6 +1196,84 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_os_error_new as *const u8,
         );
 
+        // Process operations (from naml-std-process)
+        builder.symbol(
+            "naml_process_getpid",
+            crate::runtime::naml_process_getpid as *const u8,
+        );
+        builder.symbol(
+            "naml_process_getppid",
+            crate::runtime::naml_process_getppid as *const u8,
+        );
+        builder.symbol(
+            "naml_process_exit",
+            crate::runtime::naml_process_exit as *const u8,
+        );
+        builder.symbol(
+            "naml_process_pipe_read",
+            crate::runtime::naml_process_pipe_read as *const u8,
+        );
+        builder.symbol(
+            "naml_process_pipe_write",
+            crate::runtime::naml_process_pipe_write as *const u8,
+        );
+        builder.symbol(
+            "naml_process_start",
+            crate::runtime::naml_process_start as *const u8,
+        );
+        builder.symbol(
+            "naml_process_find",
+            crate::runtime::naml_process_find as *const u8,
+        );
+        builder.symbol(
+            "naml_process_wait",
+            crate::runtime::naml_process_wait as *const u8,
+        );
+        builder.symbol(
+            "naml_process_signal",
+            crate::runtime::naml_process_signal as *const u8,
+        );
+        builder.symbol(
+            "naml_process_kill",
+            crate::runtime::naml_process_kill as *const u8,
+        );
+        builder.symbol(
+            "naml_process_release",
+            crate::runtime::naml_process_release as *const u8,
+        );
+        builder.symbol(
+            "naml_process_error_new",
+            crate::runtime::naml_process_error_new as *const u8,
+        );
+        builder.symbol(
+            "naml_process_sighup",
+            crate::runtime::naml_process_sighup as *const u8,
+        );
+        builder.symbol(
+            "naml_process_sigint",
+            crate::runtime::naml_process_sigint as *const u8,
+        );
+        builder.symbol(
+            "naml_process_sigquit",
+            crate::runtime::naml_process_sigquit as *const u8,
+        );
+        builder.symbol(
+            "naml_process_sigkill",
+            crate::runtime::naml_process_sigkill as *const u8,
+        );
+        builder.symbol(
+            "naml_process_sigterm",
+            crate::runtime::naml_process_sigterm as *const u8,
+        );
+        builder.symbol(
+            "naml_process_sigstop",
+            crate::runtime::naml_process_sigstop as *const u8,
+        );
+        builder.symbol(
+            "naml_process_sigcont",
+            crate::runtime::naml_process_sigcont as *const u8,
+        );
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -1844,6 +1922,16 @@ impl<'a> JitCompiler<'a> {
                 type_id: 0xFFFF_0007, // Reserved type ID for EnvError
                 fields: vec!["message".to_string(), "key".to_string()],
                 field_heap_types: vec![Some(HeapType::String), Some(HeapType::String)],
+            },
+        );
+
+        self.exception_names.insert("ProcessError".to_string());
+        self.struct_defs.insert(
+            "ProcessError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0009,
+                fields: vec!["message".to_string(), "code".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None],
             },
         );
     }
@@ -3931,6 +4019,141 @@ impl<'a> JitCompiler<'a> {
             "naml_os_error_new",
             &[ptr, i64t],
             &[ptr],
+        )?;
+
+        // Process operations (from naml-std-process)
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_getpid",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_getppid",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_exit",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_pipe_read",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_pipe_write",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_start",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_find",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_wait",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_signal",
+            &[i64t, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_kill",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_release",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_error_new",
+            &[ptr, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_sighup",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_sigint",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_sigquit",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_sigkill",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_sigterm",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_sigstop",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_process_sigcont",
+            &[],
+            &[i64t],
         )?;
 
         // Bytes operations

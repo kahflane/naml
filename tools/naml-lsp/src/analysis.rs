@@ -241,6 +241,26 @@ static STD_MODULE_MAP: LazyLock<HashMap<&'static str, Vec<&'static str>>> = Lazy
     add(&mut m, "getegid", "std::os");
     add(&mut m, "getgroups", "std::os");
 
+    // std::process
+    add(&mut m, "getpid", "std::process");
+    add(&mut m, "getppid", "std::process");
+    add(&mut m, "exit", "std::process");
+    add(&mut m, "pipe_read", "std::process");
+    add(&mut m, "pipe_write", "std::process");
+    add(&mut m, "start_process", "std::process");
+    add(&mut m, "find_process", "std::process");
+    add(&mut m, "wait", "std::process");
+    add(&mut m, "signal", "std::process");
+    add(&mut m, "kill", "std::process");
+    add(&mut m, "release", "std::process");
+    add(&mut m, "SIGHUP", "std::process");
+    add(&mut m, "SIGINT", "std::process");
+    add(&mut m, "SIGQUIT", "std::process");
+    add(&mut m, "SIGKILL", "std::process");
+    add(&mut m, "SIGTERM", "std::process");
+    add(&mut m, "SIGSTOP", "std::process");
+    add(&mut m, "SIGCONT", "std::process");
+
     // std::env
     add(&mut m, "getenv", "std::env");
     add(&mut m, "lookup_env", "std::env");

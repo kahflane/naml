@@ -294,6 +294,20 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let process_error_name = self.interner.get_or_intern("ProcessError");
+        self.symbols.define_type(
+            process_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: process_error_name,
+                fields: vec![
+                    (msg_name, Type::String),
+                    (code_name, Type::Int),
+                ],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -322,6 +336,7 @@ impl<'a> TypeChecker<'a> {
             "encoding::json",
             "env",
             "os",
+            "process",
             "net",
             "net::tcp",
             "net::tcp::server",
@@ -2388,6 +2403,56 @@ impl<'a> TypeChecker<'a> {
                     Type::Array(Box::new(Type::Int)),
                     vec!["OSError"],
                 ),
+            ]),
+            "process" => Some(vec![
+                StdModuleFn::new("getpid", vec![], Type::Int),
+                StdModuleFn::new("getppid", vec![], Type::Int),
+                StdModuleFn::new("exit", vec![("code", Type::Int)], Type::Unit),
+                StdModuleFn::throwing(
+                    "pipe_read",
+                    vec![],
+                    Type::Int,
+                    vec!["ProcessError"],
+                ),
+                StdModuleFn::new("pipe_write", vec![], Type::Int),
+                StdModuleFn::throwing(
+                    "start_process",
+                    vec![("name", Type::String), ("args", Type::Array(Box::new(Type::String)))],
+                    Type::Int,
+                    vec!["ProcessError"],
+                ),
+                StdModuleFn::throwing(
+                    "find_process",
+                    vec![("pid", Type::Int)],
+                    Type::Int,
+                    vec!["ProcessError"],
+                ),
+                StdModuleFn::throwing(
+                    "wait",
+                    vec![("handle", Type::Int)],
+                    Type::Array(Box::new(Type::Int)),
+                    vec!["ProcessError"],
+                ),
+                StdModuleFn::throwing(
+                    "signal",
+                    vec![("handle", Type::Int), ("sig", Type::Int)],
+                    Type::Unit,
+                    vec!["ProcessError"],
+                ),
+                StdModuleFn::throwing(
+                    "kill",
+                    vec![("handle", Type::Int)],
+                    Type::Unit,
+                    vec!["ProcessError"],
+                ),
+                StdModuleFn::new("release", vec![("handle", Type::Int)], Type::Unit),
+                StdModuleFn::new("SIGHUP", vec![], Type::Int),
+                StdModuleFn::new("SIGINT", vec![], Type::Int),
+                StdModuleFn::new("SIGQUIT", vec![], Type::Int),
+                StdModuleFn::new("SIGKILL", vec![], Type::Int),
+                StdModuleFn::new("SIGTERM", vec![], Type::Int),
+                StdModuleFn::new("SIGSTOP", vec![], Type::Int),
+                StdModuleFn::new("SIGCONT", vec![], Type::Int),
             ]),
             "fs" => Some(Self::get_fs_functions()),
             "path" => Some(vec![

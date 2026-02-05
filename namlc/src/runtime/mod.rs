@@ -35,6 +35,7 @@ pub use naml_std_encoding::*;
 pub use naml_std_net::*;
 pub use naml_std_env::*;
 pub use naml_std_os::*;
+pub use naml_std_process::*;
 
 // Import collection arrays functions (not the arrays module to avoid conflict with naml_std_core::array)
 pub use naml_std_collections::arrays::*;

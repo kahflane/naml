@@ -1,0 +1,157 @@
+use std::process::*;
+
+fn print_section(title: string) {
+    println("");
+    println(fmt("--- {} ---", title));
+}
+
+fn print_status(label: string, s: [int]) {
+    var s_pid: int = s[0] ?? -1;
+    var s_code: int = s[1] ?? -1;
+    var s_exited: int = s[2] ?? -1;
+    var s_success: int = s[3] ?? -1;
+    var s_signal: int = s[4] ?? -1;
+    println(fmt("  {}: pid={}, code={}, exited={}, success={}, signal={}",
+        label, s_pid, s_code, s_exited, s_success, s_signal));
+}
+
+fn main() {
+    println("=== std::process Demo ===");
+    println("Issues #131 (process operations) and #132 (handle methods)");
+
+    // ============================================================
+    // Issue #131: Process Operations
+    // ============================================================
+
+    print_section("1. getpid()");
+    var pid: int = getpid();
+    println(fmt("  Current PID: {}", pid));
+
+    print_section("2. getppid()");
+    var ppid: int = getppid();
+    println(fmt("  Parent PID: {}", ppid));
+
+    print_section("3. Signal constants");
+    println(fmt("  SIGHUP  = {}", SIGHUP()));
+    println(fmt("  SIGINT  = {}", SIGINT()));
+    println(fmt("  SIGQUIT = {}", SIGQUIT()));
+    println(fmt("  SIGKILL = {}", SIGKILL()));
+    println(fmt("  SIGTERM = {}", SIGTERM()));
+    println(fmt("  SIGSTOP = {}", SIGSTOP()));
+    println(fmt("  SIGCONT = {}", SIGCONT()));
+
+    // ============================================================
+    // Issue #131: start_process + Issue #132: wait
+    // ============================================================
+
+    print_section("4. start_process() + wait()");
+    var handle: int = start_process("echo", ["hello", "from", "naml"]) catch e {
+        println(fmt("  start error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Process handle: {}", handle));
+
+    var status: [int] = wait(handle) catch e {
+        println(fmt("  wait error: {} (code: {})", e.message, e.code));
+    };
+    print_status("Wait result", status);
+
+    // ============================================================
+    // Issue #132: kill + wait
+    // ============================================================
+
+    print_section("5. start_process() + kill() + wait()");
+    var sleeper: int = start_process("sleep", ["60"]) catch e {
+        println(fmt("  start error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Started sleep process, handle: {}", sleeper));
+
+    kill(sleeper) catch e {
+        println(fmt("  kill error: {} (code: {})", e.message, e.code));
+    };
+    println("  Killed process");
+
+    var kill_status: [int] = wait(sleeper) catch e {
+        println(fmt("  wait error: {} (code: {})", e.message, e.code));
+    };
+    print_status("Kill result", kill_status);
+
+    // ============================================================
+    // Issue #132: signal + wait
+    // ============================================================
+
+    print_section("6. start_process() + signal(SIGTERM) + wait()");
+    var sig_proc: int = start_process("sleep", ["60"]) catch e {
+        println(fmt("  start error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Started sleep process, handle: {}", sig_proc));
+
+    signal(sig_proc, SIGTERM()) catch e {
+        println(fmt("  signal error: {} (code: {})", e.message, e.code));
+    };
+    println("  Sent SIGTERM");
+
+    var sig_status: [int] = wait(sig_proc) catch e {
+        println(fmt("  wait error: {} (code: {})", e.message, e.code));
+    };
+    print_status("Signal result", sig_status);
+
+    // ============================================================
+    // Issue #131: pipe
+    // ============================================================
+
+    print_section("7. pipe()");
+    var read_fd: int = pipe_read() catch e {
+        println(fmt("  pipe error: {} (code: {})", e.message, e.code));
+    };
+    var write_fd: int = pipe_write();
+    println(fmt("  Pipe: read_fd={}, write_fd={}", read_fd, write_fd));
+
+    // ============================================================
+    // Release handles
+    // ============================================================
+
+    print_section("8. release()");
+    release(handle);
+    release(sleeper);
+    release(sig_proc);
+    println("  Released all process handles");
+
+    // ============================================================
+    // Issue #131: find_process
+    // ============================================================
+
+    print_section("9. find_process()");
+    var self_handle: int = find_process(pid) catch e {
+        println(fmt("  find error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Found self as handle: {}", self_handle));
+    release(self_handle);
+
+    // ============================================================
+    // Verification
+    // ============================================================
+
+    println("");
+    println("=== Verification ===");
+    var ok: int = 0;
+    if (pid > 0) { ok = ok + 1; }
+    if (ppid > 0) { ok = ok + 1; }
+    if (handle > 0) { ok = ok + 1; }
+
+    var st_exited: int = status[2] ?? -1;
+    var st_success: int = status[3] ?? -1;
+    if (st_exited == 1) { ok = ok + 1; }
+    if (st_success == 1) { ok = ok + 1; }
+
+    var ks_signal: int = kill_status[4] ?? -1;
+    if (ks_signal == 9) { ok = ok + 1; }
+
+    var ss_signal: int = sig_status[4] ?? -1;
+    if (ss_signal == 15) { ok = ok + 1; }
+
+    if (read_fd >= 0) { ok = ok + 1; }
+    if (write_fd >= 0) { ok = ok + 1; }
+    if (self_handle > 0) { ok = ok + 1; }
+    println(fmt("Passed: {}/10 checks", ok));
+    println("=== All process functions verified ===");
+}

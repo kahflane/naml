@@ -372,6 +372,40 @@ pub enum BuiltinStrategy {
     OsGetgroups,
 
     // ========================================
+    // Process module strategies
+    // ========================================
+    /// () -> int (getpid)
+    ProcessGetpid,
+    /// () -> int (getppid)
+    ProcessGetppid,
+    /// (code: int) -> unit (exit)
+    ProcessExit,
+    /// () -> int throws ProcessError (pipe read fd)
+    ProcessPipeRead,
+    /// () -> int (pipe write fd)
+    ProcessPipeWrite,
+    /// (name: string, args: [string]) -> int throws ProcessError
+    ProcessStart,
+    /// (pid: int) -> int throws ProcessError
+    ProcessFind,
+    /// (handle: int) -> [int] throws ProcessError
+    ProcessWait,
+    /// (handle: int, sig: int) throws ProcessError
+    ProcessSignal,
+    /// (handle: int) throws ProcessError
+    ProcessKill,
+    /// (handle: int) -> unit
+    ProcessRelease,
+    /// Signal constants
+    ProcessSighup,
+    ProcessSigint,
+    ProcessSigquit,
+    ProcessSigkill,
+    ProcessSigterm,
+    ProcessSigstop,
+    ProcessSigcont,
+
+    // ========================================
     // Encoding module strategies
     // ========================================
     /// (bytes) -> string (encode bytes to string)
@@ -1432,6 +1466,81 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "getgroups",
             strategy: BuiltinStrategy::OsGetgroups,
+        },
+        // ========================================
+        // Process module
+        // ========================================
+        BuiltinFunction {
+            name: "getpid",
+            strategy: BuiltinStrategy::ProcessGetpid,
+        },
+        BuiltinFunction {
+            name: "getppid",
+            strategy: BuiltinStrategy::ProcessGetppid,
+        },
+        BuiltinFunction {
+            name: "exit",
+            strategy: BuiltinStrategy::ProcessExit,
+        },
+        BuiltinFunction {
+            name: "pipe_read",
+            strategy: BuiltinStrategy::ProcessPipeRead,
+        },
+        BuiltinFunction {
+            name: "pipe_write",
+            strategy: BuiltinStrategy::ProcessPipeWrite,
+        },
+        BuiltinFunction {
+            name: "start_process",
+            strategy: BuiltinStrategy::ProcessStart,
+        },
+        BuiltinFunction {
+            name: "find_process",
+            strategy: BuiltinStrategy::ProcessFind,
+        },
+        BuiltinFunction {
+            name: "wait",
+            strategy: BuiltinStrategy::ProcessWait,
+        },
+        BuiltinFunction {
+            name: "signal",
+            strategy: BuiltinStrategy::ProcessSignal,
+        },
+        BuiltinFunction {
+            name: "kill",
+            strategy: BuiltinStrategy::ProcessKill,
+        },
+        BuiltinFunction {
+            name: "release",
+            strategy: BuiltinStrategy::ProcessRelease,
+        },
+        BuiltinFunction {
+            name: "SIGHUP",
+            strategy: BuiltinStrategy::ProcessSighup,
+        },
+        BuiltinFunction {
+            name: "SIGINT",
+            strategy: BuiltinStrategy::ProcessSigint,
+        },
+        BuiltinFunction {
+            name: "SIGQUIT",
+            strategy: BuiltinStrategy::ProcessSigquit,
+        },
+        BuiltinFunction {
+            name: "SIGKILL",
+            strategy: BuiltinStrategy::ProcessSigkill,
+        },
+        BuiltinFunction {
+            name: "SIGTERM",
+            strategy: BuiltinStrategy::ProcessSigterm,
+        },
+        BuiltinFunction {
+            name: "SIGSTOP",
+            strategy: BuiltinStrategy::ProcessSigstop,
+        },
+        BuiltinFunction {
+            name: "SIGCONT",
+            strategy: BuiltinStrategy::ProcessSigcont,
         },
         // ========================================
         // Encoding module
@@ -2647,6 +2756,97 @@ pub fn compile_builtin_call(
             let inst = builder.ins().call(func_ref, &[]);
             let results = builder.inst_results(inst);
             Ok(results[0])
+        }
+
+        // ========================================
+        // Process strategies
+        // ========================================
+        BuiltinStrategy::ProcessGetpid => {
+            call_int_runtime(ctx, builder, "naml_process_getpid")
+        }
+
+        BuiltinStrategy::ProcessGetppid => {
+            call_int_runtime(ctx, builder, "naml_process_getppid")
+        }
+
+        BuiltinStrategy::ProcessExit => {
+            let code = compile_expression(ctx, builder, &args[0])?;
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_process_exit")?;
+            builder.ins().call(func_ref, &[code]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        BuiltinStrategy::ProcessPipeRead => {
+            call_int_runtime(ctx, builder, "naml_process_pipe_read")
+        }
+
+        BuiltinStrategy::ProcessPipeWrite => {
+            call_int_runtime(ctx, builder, "naml_process_pipe_write")
+        }
+
+        BuiltinStrategy::ProcessStart => {
+            let name = compile_expression(ctx, builder, &args[0])?;
+            let name = ensure_naml_string(ctx, builder, name, &args[0])?;
+            let arr = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_process_start", name, arr)
+        }
+
+        BuiltinStrategy::ProcessFind => {
+            let pid = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_process_find", pid)
+        }
+
+        BuiltinStrategy::ProcessWait => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_process_wait", handle)
+        }
+
+        BuiltinStrategy::ProcessSignal => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let sig = compile_expression(ctx, builder, &args[1])?;
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_process_signal")?;
+            builder.ins().call(func_ref, &[handle, sig]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        BuiltinStrategy::ProcessKill => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_process_kill")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        BuiltinStrategy::ProcessRelease => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_process_release")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        BuiltinStrategy::ProcessSighup => {
+            call_int_runtime(ctx, builder, "naml_process_sighup")
+        }
+        BuiltinStrategy::ProcessSigint => {
+            call_int_runtime(ctx, builder, "naml_process_sigint")
+        }
+        BuiltinStrategy::ProcessSigquit => {
+            call_int_runtime(ctx, builder, "naml_process_sigquit")
+        }
+        BuiltinStrategy::ProcessSigkill => {
+            call_int_runtime(ctx, builder, "naml_process_sigkill")
+        }
+        BuiltinStrategy::ProcessSigterm => {
+            call_int_runtime(ctx, builder, "naml_process_sigterm")
+        }
+        BuiltinStrategy::ProcessSigstop => {
+            call_int_runtime(ctx, builder, "naml_process_sigstop")
+        }
+        BuiltinStrategy::ProcessSigcont => {
+            call_int_runtime(ctx, builder, "naml_process_sigcont")
         }
 
         // ========================================

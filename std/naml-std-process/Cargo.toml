@@ -1,0 +1,31 @@
+##
+## naml-std-process - Process Management
+##
+## Provides process spawning, management, and signal operations:
+## - getpid() -> int: Get current process ID
+## - getppid() -> int: Get parent process ID
+## - exit(code: int): Exit program with code
+## - pipe() -> (int, int) throws ProcessError: Create pipe (read_fd, write_fd)
+## - start_process(name: string, args: [string]) -> int throws ProcessError: Start new process
+## - find_process(pid: int) -> int throws ProcessError: Get handle to existing process
+## - wait(handle: int) -> ProcessStatus throws ProcessError: Wait for process to exit
+## - signal(handle: int, sig: int) throws ProcessError: Send signal to process
+## - kill(handle: int) throws ProcessError: Kill process (SIGKILL)
+## - release(handle: int): Release process handle resources
+##
+
+[package]
+name = "naml-std-process"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Process management for the naml programming language"
+
+[lib]
+name = "naml_std_process"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
+libc.workspace = true
