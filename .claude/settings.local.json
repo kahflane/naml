@@ -27,7 +27,11 @@
       "Bash(gh issue create:*)",
       "Bash(cargo clippy:*)",
       "Bash(gh issue edit:*)",
-      "Bash(gh issue close:*)"
+      "Bash(gh issue close:*)",
+      "Bash(time ./target/release/namlc run:*)",
+      "Bash(./target/release/naml run:*)",
+      "Bash(echo:*)",
+      "Bash(bash:*)"
     ]
   },
   "hooks": {

@@ -7,7 +7,7 @@ fn main() {
     // Test path joining
     println("--- Path Joining ---");
     var parts: [string] = ["home", "user", "documents", "file.txt"];
-    var joined: string = path::join(parts);
+    var joined: string = join(parts);
     print("join([home, user, documents, file.txt]) = ");
     println(joined);
 
@@ -15,7 +15,7 @@ fn main() {
     println("");
     println("--- Path Normalization ---");
     var messy_path: string = "a/b/../c/./d";
-    var normalized: string = path::normalize(messy_path);
+    var normalized: string = normalize(messy_path);
     print("normalize(\"a/b/../c/./d\") = ");
     println(normalized);
 
@@ -43,16 +43,16 @@ fn main() {
     var test_path: string = "/home/user/documents/report.pdf";
 
     print("dirname(\"/home/user/documents/report.pdf\") = ");
-    println(path::dirname(test_path));
+    println(dirname(test_path));
 
     print("basename(\"/home/user/documents/report.pdf\") = ");
-    println(path::basename(test_path));
+    println(basename(test_path));
 
     print("extension(\"/home/user/documents/report.pdf\") = ");
-    println(path::extension(test_path));
+    println(extension(test_path));
 
     print("stem(\"/home/user/documents/report.pdf\") = ");
-    println(path::stem(test_path));
+    println(stem(test_path));
 
     // Test extension modification
     println("");
@@ -91,12 +91,12 @@ fn main() {
     println("");
     println("--- Slash Conversion ---");
     var win_style: string = "a\\b\\c";
-    var to_forward: string = path::to_slash(win_style);
+    var to_forward: string = to_slash(win_style);
     print("to_slash(\"a\\\\b\\\\c\") = ");
     println(to_forward);
 
     var unix_style: string = "a/b/c";
-    var from_forward: string = path::from_slash(unix_style);
+    var from_forward: string = from_slash(unix_style);
     print("from_slash(\"a/b/c\") = ");
     println(from_forward);
 
@@ -107,10 +107,10 @@ fn main() {
     var full: string = "/home/user/docs/file.txt";
 
     print("starts_with(\"/home/user/docs/file.txt\", \"/home/user\") = ");
-    println(path::starts_with(full, base));
+    println(starts_with(full, base));
 
     print("ends_with(\"/home/user/docs/file.txt\", \"file.txt\") = ");
-    println(path::ends_with(full, "file.txt"));
+    println(ends_with(full, "file.txt"));
 
     // Test strip prefix
     println("");
