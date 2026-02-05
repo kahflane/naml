@@ -30,7 +30,8 @@ use super::misc::{
 use super::options::{
     compile_option_from_array_access, compile_option_from_array_get, compile_option_from_index_of,
     compile_option_from_last_index_of, compile_option_from_map_first,
-    compile_option_from_map_remove, compile_option_from_minmax, compile_option_from_remove_at,
+    compile_option_from_map_remove, compile_option_from_minmax, compile_option_from_nullable_ptr,
+    compile_option_from_remove_at,
 };
 use super::{ARRAY_LEN_OFFSET, CompileContext};
 use crate::ast::Expression;
@@ -323,6 +324,24 @@ pub enum BuiltinStrategy {
     PathComponents,
     /// () -> string (separator)
     PathSeparator,
+
+    // ========================================
+    // Env module strategies
+    // ========================================
+    /// (key) -> string (getenv)
+    EnvGetenv,
+    /// (key) -> option<string> (lookup_env)
+    EnvLookupEnv,
+    /// (key, value) -> unit throws EnvError (setenv)
+    EnvSetenv,
+    /// (key) -> unit throws EnvError (unsetenv)
+    EnvUnsetenv,
+    /// () -> unit throws EnvError (clearenv)
+    EnvClearenv,
+    /// () -> [string] (environ)
+    EnvEnviron,
+    /// (s) -> string (expand_env)
+    EnvExpandEnv,
 
     // ========================================
     // Encoding module strategies
@@ -1303,6 +1322,37 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "separator",
             strategy: BuiltinStrategy::PathSeparator,
+        },
+        // ========================================
+        // Env module
+        // ========================================
+        BuiltinFunction {
+            name: "getenv",
+            strategy: BuiltinStrategy::EnvGetenv,
+        },
+        BuiltinFunction {
+            name: "lookup_env",
+            strategy: BuiltinStrategy::EnvLookupEnv,
+        },
+        BuiltinFunction {
+            name: "setenv",
+            strategy: BuiltinStrategy::EnvSetenv,
+        },
+        BuiltinFunction {
+            name: "unsetenv",
+            strategy: BuiltinStrategy::EnvUnsetenv,
+        },
+        BuiltinFunction {
+            name: "clearenv",
+            strategy: BuiltinStrategy::EnvClearenv,
+        },
+        BuiltinFunction {
+            name: "environ",
+            strategy: BuiltinStrategy::EnvEnviron,
+        },
+        BuiltinFunction {
+            name: "expand_env",
+            strategy: BuiltinStrategy::EnvExpandEnv,
         },
         // ========================================
         // Encoding module
@@ -2368,6 +2418,57 @@ pub fn compile_builtin_call(
             let inst = builder.ins().call(func_ref, &[]);
             let results = builder.inst_results(inst);
             Ok(results[0])
+        }
+
+        // ========================================
+        // Env strategies
+        // ========================================
+        BuiltinStrategy::EnvGetenv => {
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_env_getenv", key)
+        }
+
+        BuiltinStrategy::EnvLookupEnv => {
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[0])?;
+            compile_option_from_nullable_ptr(ctx, builder, key, "naml_env_lookup_env")
+        }
+
+        BuiltinStrategy::EnvSetenv => {
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_naml_string(ctx, builder, value, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_env_setenv", key, value)
+        }
+
+        BuiltinStrategy::EnvUnsetenv => {
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_env_unsetenv", key)
+        }
+
+        BuiltinStrategy::EnvClearenv => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_env_clearenv")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::EnvEnviron => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_env_environ")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::EnvExpandEnv => {
+            let s = compile_expression(ctx, builder, &args[0])?;
+            let s = ensure_naml_string(ctx, builder, s, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_env_expand_env", s)
         }
 
         // ========================================

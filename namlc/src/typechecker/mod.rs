@@ -265,6 +265,21 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let env_error_name = self.interner.get_or_intern("EnvError");
+        let key_name = self.interner.get_or_intern("key");
+        self.symbols.define_type(
+            env_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: env_error_name,
+                fields: vec![
+                    (msg_name, Type::String),
+                    (key_name, Type::String),
+                ],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -291,6 +306,7 @@ impl<'a> TypeChecker<'a> {
             "encoding::base64",
             "encoding::url",
             "encoding::json",
+            "env",
             "net",
             "net::tcp",
             "net::tcp::server",
@@ -2286,6 +2302,34 @@ impl<'a> TypeChecker<'a> {
             }
             "collections::arrays" => Some(Self::get_collections_array_functions()),
             "collections::maps" => Some(Self::get_collections_map_functions()),
+            "env" => Some(vec![
+                StdModuleFn::new("getenv", vec![("key", Type::String)], Type::String),
+                StdModuleFn::new(
+                    "lookup_env",
+                    vec![("key", Type::String)],
+                    Type::Option(Box::new(Type::String)),
+                ),
+                StdModuleFn::throwing(
+                    "setenv",
+                    vec![("key", Type::String), ("value", Type::String)],
+                    Type::Unit,
+                    vec!["EnvError"],
+                ),
+                StdModuleFn::throwing(
+                    "unsetenv",
+                    vec![("key", Type::String)],
+                    Type::Unit,
+                    vec!["EnvError"],
+                ),
+                StdModuleFn::throwing(
+                    "clearenv",
+                    vec![],
+                    Type::Unit,
+                    vec!["EnvError"],
+                ),
+                StdModuleFn::new("environ", vec![], Type::Array(Box::new(Type::String))),
+                StdModuleFn::new("expand_env", vec![("s", Type::String)], Type::String),
+            ]),
             "fs" => Some(Self::get_fs_functions()),
             "path" => Some(vec![
                 // Path joining and construction

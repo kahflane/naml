@@ -7,6 +7,57 @@ use crate::codegen::cranelift::{CompileContext, ARRAY_LEN_OFFSET};
 use crate::codegen::cranelift::runtime::rt_func_ref;
 use crate::codegen::cranelift::misc::ensure_i64;
 
+pub fn compile_option_from_nullable_ptr(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    arg: Value,
+    runtime_fn: &str,
+) -> Result<Value, CodegenError> {
+    let option_slot =
+        builder.create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0));
+    let option_ptr = builder
+        .ins()
+        .stack_addr(cranelift::prelude::types::I64, option_slot, 0);
+
+    let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+    let call = builder.ins().call(func_ref, &[arg]);
+    let result_ptr = builder.inst_results(call)[0];
+
+    let some_block = builder.create_block();
+    let none_block = builder.create_block();
+    let merge_block = builder.create_block();
+
+    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    let is_null = builder.ins().icmp(IntCC::Equal, result_ptr, zero);
+    builder
+        .ins()
+        .brif(is_null, none_block, &[], some_block, &[]);
+
+    builder.switch_to_block(none_block);
+    builder.seal_block(none_block);
+    let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+    builder
+        .ins()
+        .store(MemFlags::new(), none_tag, option_ptr, 0);
+    let zero_value = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+    builder.ins().store(MemFlags::new(), zero_value, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(some_block);
+    builder.seal_block(some_block);
+    let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+    builder
+        .ins()
+        .store(MemFlags::new(), some_tag, option_ptr, 0);
+    builder.ins().store(MemFlags::new(), result_ptr, option_ptr, 8);
+    builder.ins().jump(merge_block, &[]);
+
+    builder.switch_to_block(merge_block);
+    builder.seal_block(merge_block);
+
+    Ok(option_ptr)
+}
+
 pub fn compile_option_from_array_access(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,

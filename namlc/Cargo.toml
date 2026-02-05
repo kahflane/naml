@@ -115,6 +115,7 @@ naml-std-fs.workspace = true
 naml-std-path.workspace = true
 naml-std-encoding.workspace = true
 naml-std-net.workspace = true
+naml-std-env.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

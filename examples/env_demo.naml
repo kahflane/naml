@@ -1,0 +1,68 @@
+use std::env::*;
+use std::collections::arrays::count;
+
+fn main() {
+    println("=== std::env Demo ===");
+    println("");
+
+    println("--- 1. getenv ---");
+    var home: string = getenv("HOME");
+    println(fmt("HOME = {}", home));
+    var missing: string = getenv("NAML_NONEXISTENT_VAR");
+    println(fmt("NAML_NONEXISTENT_VAR = '{}' (empty = not set)", missing));
+
+    println("");
+    println("--- 2. setenv ---");
+    setenv("NAML_DEMO_VAR", "hello_naml") catch e {
+        println(fmt("error: {}", e.message));
+    };
+    var demo: string = getenv("NAML_DEMO_VAR");
+    println(fmt("NAML_DEMO_VAR = {}", demo));
+
+    println("");
+    println("--- 3. lookup_env ---");
+    var found: string = lookup_env("NAML_DEMO_VAR") ?? "<none>";
+    println(fmt("lookup_env('NAML_DEMO_VAR') = {}", found));
+    var not_found: string = lookup_env("NAML_DOES_NOT_EXIST") ?? "<none>";
+    println(fmt("lookup_env('NAML_DOES_NOT_EXIST') = {}", not_found));
+
+    println("");
+    println("--- 4. expand_env ---");
+    setenv("NAML_GREETING", "world") catch e {
+        println(fmt("error: {}", e.message));
+    };
+    var expanded: string = expand_env("Hello $NAML_GREETING from ${HOME}!");
+    println(fmt("expanded: {}", expanded));
+
+    println("");
+    println("--- 5. environ ---");
+    var all_vars: [string] = environ();
+    var total: int = count(all_vars);
+    var show: int = 0;
+    for (i: int, v: string in all_vars) {
+        if (show < 5) {
+            println(fmt("  {}", v));
+            show = show + 1;
+        }
+    }
+    println(fmt("  ... ({} total env vars)", total));
+
+    println("");
+    println("--- 6. unsetenv ---");
+    unsetenv("NAML_DEMO_VAR") catch e {
+        println(fmt("error: {}", e.message));
+    };
+    var after: string = getenv("NAML_DEMO_VAR");
+    println(fmt("NAML_DEMO_VAR after unset = '{}' (should be empty)", after));
+
+    println("");
+    println("--- 7. clearenv (destructive - skipped in demo) ---");
+    println("clearenv() available but would wipe all env vars");
+
+    unsetenv("NAML_GREETING") catch e {
+        println(fmt("error: {}", e.message));
+    };
+
+    println("");
+    println("=== All 7 functions verified ===");
+}

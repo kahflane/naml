@@ -29,6 +29,7 @@ pub const EXCEPTION_TYPE_DECODE_ERROR: i64 = 3;
 pub const EXCEPTION_TYPE_PATH_ERROR: i64 = 4;
 pub const EXCEPTION_TYPE_NETWORK_ERROR: i64 = 5;
 pub const EXCEPTION_TYPE_TIMEOUT_ERROR: i64 = 6;
+pub const EXCEPTION_TYPE_ENV_ERROR: i64 = 7;
 
 /// Set the current exception (called by throw)
 #[unsafe(no_mangle)]

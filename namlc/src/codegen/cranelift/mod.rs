@@ -1108,6 +1108,40 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_path_strip_prefix as *const u8,
         );
 
+        // Environment operations (from naml-std-env)
+        builder.symbol(
+            "naml_env_getenv",
+            crate::runtime::naml_env_getenv as *const u8,
+        );
+        builder.symbol(
+            "naml_env_lookup_env",
+            crate::runtime::naml_env_lookup_env as *const u8,
+        );
+        builder.symbol(
+            "naml_env_setenv",
+            crate::runtime::naml_env_setenv as *const u8,
+        );
+        builder.symbol(
+            "naml_env_unsetenv",
+            crate::runtime::naml_env_unsetenv as *const u8,
+        );
+        builder.symbol(
+            "naml_env_clearenv",
+            crate::runtime::naml_env_clearenv as *const u8,
+        );
+        builder.symbol(
+            "naml_env_environ",
+            crate::runtime::naml_env_environ as *const u8,
+        );
+        builder.symbol(
+            "naml_env_expand_env",
+            crate::runtime::naml_env_expand_env as *const u8,
+        );
+        builder.symbol(
+            "naml_env_error_new",
+            crate::runtime::naml_env_error_new as *const u8,
+        );
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -1744,6 +1778,18 @@ impl<'a> JitCompiler<'a> {
                 type_id: 0xFFFF_0003, // Reserved type ID for DecodeError
                 fields: vec!["message".to_string(), "position".to_string()],
                 field_heap_types: vec![Some(HeapType::String), None], // message is string, position is int
+            },
+        );
+
+        // EnvError exception from std::env module
+        // Fields: message (string), key (string)
+        self.exception_names.insert("EnvError".to_string());
+        self.struct_defs.insert(
+            "EnvError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0007, // Reserved type ID for EnvError
+                fields: vec!["message".to_string(), "key".to_string()],
+                field_heap_types: vec![Some(HeapType::String), Some(HeapType::String)],
             },
         );
     }
@@ -3678,6 +3724,64 @@ impl<'a> JitCompiler<'a> {
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_path_strip_prefix",
+            &[ptr, ptr],
+            &[ptr],
+        )?;
+
+        // Environment operations (from naml-std-env)
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_getenv",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_lookup_env",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_setenv",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_unsetenv",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_clearenv",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_environ",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_expand_env",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_env_error_new",
             &[ptr, ptr],
             &[ptr],
         )?;

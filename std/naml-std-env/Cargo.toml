@@ -1,0 +1,27 @@
+##
+## naml-std-env - Environment Variable Operations
+##
+## Provides environment variable access for naml programs:
+## - getenv(key) -> string: Get env var, empty if not set
+## - lookup_env(key) -> option<string>: Get env var with exists check
+## - setenv(key, value) throws EnvError: Set env var
+## - unsetenv(key) throws EnvError: Remove env var
+## - clearenv() throws EnvError: Clear all env vars
+## - environ() -> [string]: Get all env vars as "KEY=VALUE" array
+## - expand_env(s) -> string: Expand $VAR and ${VAR} in string
+##
+
+[package]
+name = "naml-std-env"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Environment variable operations for the naml programming language"
+
+[lib]
+name = "naml_std_env"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
