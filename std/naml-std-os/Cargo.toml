@@ -1,0 +1,33 @@
+##
+## naml-std-os - Operating System Information
+##
+## Provides OS-level information and user identity functions:
+## - hostname() -> string throws OSError: Get machine hostname
+## - temp_dir() -> string: Get temp directory path
+## - home_dir() -> string throws OSError: Get user home directory
+## - cache_dir() -> string throws OSError: Get user cache directory
+## - config_dir() -> string throws OSError: Get user config directory
+## - executable() -> string throws OSError: Get current executable path
+## - pagesize() -> int: Get system page size
+## - getuid() -> int: Get real user ID (Unix)
+## - geteuid() -> int: Get effective user ID (Unix)
+## - getgid() -> int: Get real group ID (Unix)
+## - getegid() -> int: Get effective group ID (Unix)
+## - getgroups() -> [int] throws OSError: Get supplementary group list (Unix)
+##
+
+[package]
+name = "naml-std-os"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Operating system information for the naml programming language"
+
+[lib]
+name = "naml_std_os"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
+libc.workspace = true

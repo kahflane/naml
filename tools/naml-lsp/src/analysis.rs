@@ -227,6 +227,20 @@ static STD_MODULE_MAP: LazyLock<HashMap<&'static str, Vec<&'static str>>> = Lazy
     add(&mut m, "encode", "std::encoding::url");
     add(&mut m, "decode", "std::encoding::url");
 
+    // std::os
+    add(&mut m, "hostname", "std::os");
+    add(&mut m, "temp_dir", "std::os");
+    add(&mut m, "home_dir", "std::os");
+    add(&mut m, "cache_dir", "std::os");
+    add(&mut m, "config_dir", "std::os");
+    add(&mut m, "executable", "std::os");
+    add(&mut m, "pagesize", "std::os");
+    add(&mut m, "getuid", "std::os");
+    add(&mut m, "geteuid", "std::os");
+    add(&mut m, "getgid", "std::os");
+    add(&mut m, "getegid", "std::os");
+    add(&mut m, "getgroups", "std::os");
+
     // std::env
     add(&mut m, "getenv", "std::env");
     add(&mut m, "lookup_env", "std::env");

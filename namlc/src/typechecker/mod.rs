@@ -280,6 +280,20 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let os_error_name = self.interner.get_or_intern("OSError");
+        self.symbols.define_type(
+            os_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: os_error_name,
+                fields: vec![
+                    (msg_name, Type::String),
+                    (code_name, Type::Int),
+                ],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -307,6 +321,7 @@ impl<'a> TypeChecker<'a> {
             "encoding::url",
             "encoding::json",
             "env",
+            "os",
             "net",
             "net::tcp",
             "net::tcp::server",
@@ -2329,6 +2344,50 @@ impl<'a> TypeChecker<'a> {
                 ),
                 StdModuleFn::new("environ", vec![], Type::Array(Box::new(Type::String))),
                 StdModuleFn::new("expand_env", vec![("s", Type::String)], Type::String),
+            ]),
+            "os" => Some(vec![
+                StdModuleFn::throwing(
+                    "hostname",
+                    vec![],
+                    Type::String,
+                    vec!["OSError"],
+                ),
+                StdModuleFn::new("temp_dir", vec![], Type::String),
+                StdModuleFn::throwing(
+                    "home_dir",
+                    vec![],
+                    Type::String,
+                    vec!["OSError"],
+                ),
+                StdModuleFn::throwing(
+                    "cache_dir",
+                    vec![],
+                    Type::String,
+                    vec!["OSError"],
+                ),
+                StdModuleFn::throwing(
+                    "config_dir",
+                    vec![],
+                    Type::String,
+                    vec!["OSError"],
+                ),
+                StdModuleFn::throwing(
+                    "executable",
+                    vec![],
+                    Type::String,
+                    vec!["OSError"],
+                ),
+                StdModuleFn::new("pagesize", vec![], Type::Int),
+                StdModuleFn::new("getuid", vec![], Type::Int),
+                StdModuleFn::new("geteuid", vec![], Type::Int),
+                StdModuleFn::new("getgid", vec![], Type::Int),
+                StdModuleFn::new("getegid", vec![], Type::Int),
+                StdModuleFn::throwing(
+                    "getgroups",
+                    vec![],
+                    Type::Array(Box::new(Type::Int)),
+                    vec!["OSError"],
+                ),
             ]),
             "fs" => Some(Self::get_fs_functions()),
             "path" => Some(vec![

@@ -22,6 +22,7 @@ members = [
     "std/naml-std-encoding",
     "std/naml-std-net",
     "std/naml-std-env",
+    "std/naml-std-os",
     "tools/naml-lsp",
 ]
 
@@ -166,6 +167,7 @@ naml-std-path = { path = "std/naml-std-path" }
 naml-std-encoding = { path = "std/naml-std-encoding" }
 naml-std-net = { path = "std/naml-std-net" }
 naml-std-env = { path = "std/naml-std-env" }
+naml-std-os = { path = "std/naml-std-os" }
 
 [profile.release]
 lto = true

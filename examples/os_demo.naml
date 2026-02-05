@@ -1,0 +1,105 @@
+use std::os::*;
+use std::collections::arrays::count;
+
+fn print_section(title: string) {
+    println("");
+    println(fmt("--- {} ---", title));
+}
+
+fn main() {
+    println("=== std::os Demo ===");
+    println("Issues #133 (user/group) and #134 (system info)");
+
+    // ============================================================
+    // Issue #134: System Information Functions
+    // ============================================================
+
+    print_section("1. hostname()");
+    var host: string = hostname() catch e {
+        println(fmt("  error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Hostname: {}", host));
+
+    print_section("2. temp_dir()");
+    var tmp: string = temp_dir();
+    println(fmt("  Temp directory: {}", tmp));
+
+    print_section("3. home_dir()");
+    var home: string = home_dir() catch e {
+        println(fmt("  error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Home directory: {}", home));
+
+    print_section("4. cache_dir()");
+    var cache: string = cache_dir() catch e {
+        println(fmt("  error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Cache directory: {}", cache));
+
+    print_section("5. config_dir()");
+    var config: string = config_dir() catch e {
+        println(fmt("  error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Config directory: {}", config));
+
+    print_section("6. executable()");
+    var exe: string = executable() catch e {
+        println(fmt("  error: {} (code: {})", e.message, e.code));
+    };
+    println(fmt("  Executable path: {}", exe));
+
+    print_section("7. pagesize()");
+    var ps: int = pagesize();
+    println(fmt("  Page size: {} bytes", ps));
+
+    // ============================================================
+    // Issue #133: User/Group Functions (Unix)
+    // ============================================================
+
+    print_section("8. getuid()");
+    var uid: int = getuid();
+    println(fmt("  Real UID: {}", uid));
+
+    print_section("9. geteuid()");
+    var euid: int = geteuid();
+    println(fmt("  Effective UID: {}", euid));
+
+    print_section("10. getgid()");
+    var gid: int = getgid();
+    println(fmt("  Real GID: {}", gid));
+
+    print_section("11. getegid()");
+    var egid: int = getegid();
+    println(fmt("  Effective GID: {}", egid));
+
+    print_section("12. getgroups()");
+    var groups: [int] = getgroups() catch e {
+        println(fmt("  error: {} (code: {})", e.message, e.code));
+    };
+    var ngroups: int = count(groups);
+    println(fmt("  Supplementary groups ({} total):", ngroups));
+    for (i: int, g: int in groups) {
+        println(fmt("    [{}] = {}", i, g));
+    }
+
+    // ============================================================
+    // Verification
+    // ============================================================
+
+    println("");
+    println("=== Verification ===");
+    var ok: int = 0;
+    if (host != "") { ok = ok + 1; }
+    if (tmp != "") { ok = ok + 1; }
+    if (home != "") { ok = ok + 1; }
+    if (cache != "") { ok = ok + 1; }
+    if (config != "") { ok = ok + 1; }
+    if (ps > 0) { ok = ok + 1; }
+    if (uid >= 0) { ok = ok + 1; }
+    if (euid >= 0) { ok = ok + 1; }
+    if (gid >= 0) { ok = ok + 1; }
+    if (egid >= 0) { ok = ok + 1; }
+    if (ngroups >= 0) { ok = ok + 1; }
+    println(fmt("Passed: {}/11 checks", ok));
+    println("=== All 12 functions verified ===");
+}

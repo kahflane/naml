@@ -1142,6 +1142,60 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_env_error_new as *const u8,
         );
 
+        // OS operations (from naml-std-os)
+        builder.symbol(
+            "naml_os_hostname",
+            crate::runtime::naml_os_hostname as *const u8,
+        );
+        builder.symbol(
+            "naml_os_temp_dir",
+            crate::runtime::naml_os_temp_dir as *const u8,
+        );
+        builder.symbol(
+            "naml_os_home_dir",
+            crate::runtime::naml_os_home_dir as *const u8,
+        );
+        builder.symbol(
+            "naml_os_cache_dir",
+            crate::runtime::naml_os_cache_dir as *const u8,
+        );
+        builder.symbol(
+            "naml_os_config_dir",
+            crate::runtime::naml_os_config_dir as *const u8,
+        );
+        builder.symbol(
+            "naml_os_executable",
+            crate::runtime::naml_os_executable as *const u8,
+        );
+        builder.symbol(
+            "naml_os_pagesize",
+            crate::runtime::naml_os_pagesize as *const u8,
+        );
+        builder.symbol(
+            "naml_os_getuid",
+            crate::runtime::naml_os_getuid as *const u8,
+        );
+        builder.symbol(
+            "naml_os_geteuid",
+            crate::runtime::naml_os_geteuid as *const u8,
+        );
+        builder.symbol(
+            "naml_os_getgid",
+            crate::runtime::naml_os_getgid as *const u8,
+        );
+        builder.symbol(
+            "naml_os_getegid",
+            crate::runtime::naml_os_getegid as *const u8,
+        );
+        builder.symbol(
+            "naml_os_getgroups",
+            crate::runtime::naml_os_getgroups as *const u8,
+        );
+        builder.symbol(
+            "naml_os_error_new",
+            crate::runtime::naml_os_error_new as *const u8,
+        );
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -3783,6 +3837,99 @@ impl<'a> JitCompiler<'a> {
             &mut self.runtime_funcs,
             "naml_env_error_new",
             &[ptr, ptr],
+            &[ptr],
+        )?;
+
+        // OS operations (from naml-std-os)
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_hostname",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_temp_dir",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_home_dir",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_cache_dir",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_config_dir",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_executable",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_pagesize",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_getuid",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_geteuid",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_getgid",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_getegid",
+            &[],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_getgroups",
+            &[],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_os_error_new",
+            &[ptr, i64t],
             &[ptr],
         )?;
 

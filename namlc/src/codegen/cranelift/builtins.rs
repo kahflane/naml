@@ -344,6 +344,34 @@ pub enum BuiltinStrategy {
     EnvExpandEnv,
 
     // ========================================
+    // OS module strategies
+    // ========================================
+    /// () -> string throws OSError (hostname)
+    OsHostname,
+    /// () -> string (temp_dir)
+    OsTempDir,
+    /// () -> string throws OSError (home_dir)
+    OsHomeDir,
+    /// () -> string throws OSError (cache_dir)
+    OsCacheDir,
+    /// () -> string throws OSError (config_dir)
+    OsConfigDir,
+    /// () -> string throws OSError (executable)
+    OsExecutable,
+    /// () -> int (pagesize)
+    OsPagesize,
+    /// () -> int (getuid)
+    OsGetuid,
+    /// () -> int (geteuid)
+    OsGeteuid,
+    /// () -> int (getgid)
+    OsGetgid,
+    /// () -> int (getegid)
+    OsGetegid,
+    /// () -> [int] throws OSError (getgroups)
+    OsGetgroups,
+
+    // ========================================
     // Encoding module strategies
     // ========================================
     /// (bytes) -> string (encode bytes to string)
@@ -1353,6 +1381,57 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "expand_env",
             strategy: BuiltinStrategy::EnvExpandEnv,
+        },
+        // ========================================
+        // OS module
+        // ========================================
+        BuiltinFunction {
+            name: "hostname",
+            strategy: BuiltinStrategy::OsHostname,
+        },
+        BuiltinFunction {
+            name: "temp_dir",
+            strategy: BuiltinStrategy::OsTempDir,
+        },
+        BuiltinFunction {
+            name: "home_dir",
+            strategy: BuiltinStrategy::OsHomeDir,
+        },
+        BuiltinFunction {
+            name: "cache_dir",
+            strategy: BuiltinStrategy::OsCacheDir,
+        },
+        BuiltinFunction {
+            name: "config_dir",
+            strategy: BuiltinStrategy::OsConfigDir,
+        },
+        BuiltinFunction {
+            name: "executable",
+            strategy: BuiltinStrategy::OsExecutable,
+        },
+        BuiltinFunction {
+            name: "pagesize",
+            strategy: BuiltinStrategy::OsPagesize,
+        },
+        BuiltinFunction {
+            name: "getuid",
+            strategy: BuiltinStrategy::OsGetuid,
+        },
+        BuiltinFunction {
+            name: "geteuid",
+            strategy: BuiltinStrategy::OsGeteuid,
+        },
+        BuiltinFunction {
+            name: "getgid",
+            strategy: BuiltinStrategy::OsGetgid,
+        },
+        BuiltinFunction {
+            name: "getegid",
+            strategy: BuiltinStrategy::OsGetegid,
+        },
+        BuiltinFunction {
+            name: "getgroups",
+            strategy: BuiltinStrategy::OsGetgroups,
         },
         // ========================================
         // Encoding module
@@ -2469,6 +2548,105 @@ pub fn compile_builtin_call(
             let s = compile_expression(ctx, builder, &args[0])?;
             let s = ensure_naml_string(ctx, builder, s, &args[0])?;
             call_one_arg_ptr_runtime(ctx, builder, "naml_env_expand_env", s)
+        }
+
+        // ========================================
+        // OS strategies
+        // ========================================
+        BuiltinStrategy::OsHostname => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_hostname")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsTempDir => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_temp_dir")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsHomeDir => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_home_dir")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsCacheDir => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_cache_dir")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsConfigDir => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_config_dir")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsExecutable => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_executable")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsPagesize => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_pagesize")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsGetuid => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_getuid")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsGeteuid => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_geteuid")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsGetgid => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_getgid")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsGetegid => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_getegid")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
+        }
+
+        BuiltinStrategy::OsGetgroups => {
+            use super::runtime::rt_func_ref;
+            let func_ref = rt_func_ref(ctx, builder, "naml_os_getgroups")?;
+            let inst = builder.ins().call(func_ref, &[]);
+            let results = builder.inst_results(inst);
+            Ok(results[0])
         }
 
         // ========================================
