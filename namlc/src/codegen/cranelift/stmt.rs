@@ -386,57 +386,96 @@ pub fn compile_statement(
         }
 
         Statement::Return(ret) => {
-            // Pop from shadow stack before returning
-            emit_stack_pop(ctx, builder)?;
+            // Check if we're inside an inlined function
+            if let (Some(exit_block), Some(result_var)) = (ctx.inline_exit_block, ctx.inline_result_var) {
+                // We're in an inlined function - store result and jump to exit block
+                if let Some(ref expr) = ret.value {
+                    let mut val = compile_expression(ctx, builder, expr)?;
 
-            if let Some(ref expr) = ret.value {
-                let mut val = compile_expression(ctx, builder, expr)?;
-
-                // Convert string literals to NamlString when returning
-                let return_type = ctx.annotations.get_type(expr.span());
-                if matches!(return_type, Some(Type::String))
-                    && matches!(
-                        expr,
-                        Expression::Literal(LiteralExpr {
-                            value: Literal::String(_),
-                            ..
-                        })
-                    )
-                {
-                    val = call_string_from_cstr(ctx, builder, val)?;
-                }
-
-                // Determine if we're returning a local heap variable (ownership transfer)
-                let returned_var =
-                    get_returned_var_name(expr, ctx.interner);
-                let exclude_var = returned_var.as_ref().and_then(|name| {
-                    if ctx.var_heap_types.contains_key(name) {
-                        Some(name.as_str())
-                    } else {
-                        None
+                    // Convert string literals to NamlString when returning
+                    let return_type = ctx.annotations.get_type(expr.span());
+                    if matches!(return_type, Some(Type::String))
+                        && matches!(
+                            expr,
+                            Expression::Literal(LiteralExpr {
+                                value: Literal::String(_),
+                                ..
+                            })
+                        )
+                    {
+                        val = call_string_from_cstr(ctx, builder, val)?;
                     }
-                });
 
-                // Cleanup all local heap variables except the returned one
-                emit_cleanup_all_vars(ctx, builder, exclude_var)?;
+                    // Handle type coercion for i8 to i64
+                    let val_type = builder.func.dfg.value_type(val);
+                    let result_val = builder.use_var(result_var);
+                    let result_ty = builder.func.dfg.value_type(result_val);
+                    let val = if val_type == cranelift::prelude::types::I8
+                        && result_ty == cranelift::prelude::types::I64
+                    {
+                        builder.ins().uextend(cranelift::prelude::types::I64, val)
+                    } else {
+                        val
+                    };
 
-                // Only extend i8 to i64 if the function signature expects i64 (lambdas)
-                // Regular bool-returning functions should return i8 directly
-                let val_type = builder.func.dfg.value_type(val);
-                let val = if val_type == cranelift::prelude::types::I8
-                    && ctx.func_return_type == Some(cranelift::prelude::types::I64)
-                {
-                    builder.ins().uextend(cranelift::prelude::types::I64, val)
-                } else {
-                    val
-                };
-                builder.ins().return_(&[val]);
+                    builder.def_var(result_var, val);
+                }
+                builder.ins().jump(exit_block, &[]);
+                ctx.block_terminated = true;
             } else {
-                // Void return - cleanup all heap variables
-                emit_cleanup_all_vars(ctx, builder, None)?;
-                builder.ins().return_(&[]);
+                // Normal return - emit actual return instruction
+                // Pop from shadow stack before returning
+                emit_stack_pop(ctx, builder)?;
+
+                if let Some(ref expr) = ret.value {
+                    let mut val = compile_expression(ctx, builder, expr)?;
+
+                    // Convert string literals to NamlString when returning
+                    let return_type = ctx.annotations.get_type(expr.span());
+                    if matches!(return_type, Some(Type::String))
+                        && matches!(
+                            expr,
+                            Expression::Literal(LiteralExpr {
+                                value: Literal::String(_),
+                                ..
+                            })
+                        )
+                    {
+                        val = call_string_from_cstr(ctx, builder, val)?;
+                    }
+
+                    // Determine if we're returning a local heap variable (ownership transfer)
+                    let returned_var =
+                        get_returned_var_name(expr, ctx.interner);
+                    let exclude_var = returned_var.as_ref().and_then(|name| {
+                        if ctx.var_heap_types.contains_key(name) {
+                            Some(name.as_str())
+                        } else {
+                            None
+                        }
+                    });
+
+                    // Cleanup all local heap variables except the returned one
+                    emit_cleanup_all_vars(ctx, builder, exclude_var)?;
+
+                    // Only extend i8 to i64 if the function signature expects i64 (lambdas)
+                    // Regular bool-returning functions should return i8 directly
+                    let val_type = builder.func.dfg.value_type(val);
+                    let val = if val_type == cranelift::prelude::types::I8
+                        && ctx.func_return_type == Some(cranelift::prelude::types::I64)
+                    {
+                        builder.ins().uextend(cranelift::prelude::types::I64, val)
+                    } else {
+                        val
+                    };
+                    builder.ins().return_(&[val]);
+                } else {
+                    // Void return - cleanup all heap variables
+                    emit_cleanup_all_vars(ctx, builder, None)?;
+                    builder.ins().return_(&[]);
+                }
+                ctx.block_terminated = true;
             }
-            ctx.block_terminated = true;
         }
 
         Statement::Expression(expr_stmt) => {

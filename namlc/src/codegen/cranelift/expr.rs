@@ -369,6 +369,8 @@ pub fn compile_expression(
                         // Create local variables for parameters
                         let saved_vars = ctx.variables.clone();
                         let saved_depth = ctx.inline_depth;
+                        let saved_exit_block = ctx.inline_exit_block.take();
+                        let saved_result_var = ctx.inline_result_var.take();
                         ctx.inline_depth += 1;
 
                         for (i, param_name) in inline_info.param_names.iter().enumerate() {
@@ -381,33 +383,56 @@ pub fn compile_expression(
                             ctx.variables.insert(param_name.clone(), var);
                         }
 
+                        // Set up exit block and result variable for handling returns
+                        let exit_block = builder.create_block();
+                        let result_var = Variable::new(ctx.var_counter);
+                        ctx.var_counter += 1;
+                        let result_ty = inline_info.return_type.as_ref()
+                            .map(|ty| super::types::naml_to_cranelift(ty))
+                            .unwrap_or(cranelift::prelude::types::I64);
+                        builder.declare_var(result_var, result_ty);
+
+                        // Initialize result var with default value
+                        let default_val = if result_ty == cranelift::prelude::types::F64 {
+                            builder.ins().f64const(0.0)
+                        } else {
+                            builder.ins().iconst(result_ty, 0)
+                        };
+                        builder.def_var(result_var, default_val);
+
+                        ctx.inline_exit_block = Some(exit_block);
+                        ctx.inline_result_var = Some(result_var);
+
                         // Compile the function body inline
-                        let mut result_value = None;
                         if let Some(ref body) = func_ast.body {
                             for stmt in &body.statements {
-                                // Handle return statements specially for inlining
-                                if let crate::ast::Statement::Return(ret_stmt) = stmt {
-                                    if let Some(ref ret_expr) = ret_stmt.value {
-                                        result_value = Some(compile_expression(ctx, builder, ret_expr)?);
-                                    }
+                                compile_statement(ctx, builder, stmt)?;
+                                if ctx.block_terminated {
                                     break;
-                                } else {
-                                    compile_statement(ctx, builder, stmt)?;
-                                    if ctx.block_terminated {
-                                        break;
-                                    }
                                 }
                             }
                         }
 
+                        // Jump to exit block if not already terminated
+                        if !ctx.block_terminated {
+                            builder.ins().jump(exit_block, &[]);
+                        }
+
+                        // Switch to exit block and seal it
+                        builder.switch_to_block(exit_block);
+                        builder.seal_block(exit_block);
+                        ctx.block_terminated = false;
+
+                        // Get result value from the result variable
+                        let result_value = builder.use_var(result_var);
+
                         // Restore context
                         ctx.variables = saved_vars;
                         ctx.inline_depth = saved_depth;
+                        ctx.inline_exit_block = saved_exit_block;
+                        ctx.inline_result_var = saved_result_var;
 
-                        // Return the result value
-                        return Ok(result_value.unwrap_or_else(|| {
-                            builder.ins().iconst(cranelift::prelude::types::I64, 0)
-                        }));
+                        return Ok(result_value);
                     }
 
                     // Regular call path
@@ -800,6 +825,37 @@ pub fn compile_expression(
                 {
                     value = call_string_from_cstr(ctx, builder, value)?;
                 }
+
+                // Convert stack-allocated option to nullable pointer for struct storage
+                if matches!(ctx.annotations.get_type(field.value.span()), Some(Type::Option(_))) {
+                    let tag = builder.ins().load(
+                        cranelift::prelude::types::I32, MemFlags::new(), value, 0,
+                    );
+                    let is_some = builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
+                    let some_block = builder.create_block();
+                    let none_block = builder.create_block();
+                    let merge_block = builder.create_block();
+                    builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+                    builder.ins().brif(is_some, some_block, &[], none_block, &[]);
+
+                    builder.switch_to_block(some_block);
+                    builder.seal_block(some_block);
+                    let inner_val = builder.ins().load(
+                        cranelift::prelude::types::I64, MemFlags::new(), value, 8,
+                    );
+                    builder.ins().jump(merge_block, &[inner_val]);
+
+                    builder.switch_to_block(none_block);
+                    builder.seal_block(none_block);
+                    let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    builder.ins().jump(merge_block, &[zero]);
+
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
+                    value = builder.block_params(merge_block)[0];
+                }
+
                 let idx_val = builder
                     .ins()
                     .iconst(cranelift::prelude::types::I32, field_idx as i64);
@@ -865,6 +921,44 @@ pub fn compile_expression(
                             struct_ptr,
                             offset,
                         );
+
+                        // Wrap nullable pointer into stack option for option-typed fields
+                        if matches!(field_type, Some(Type::Option(_))) {
+                            let option_slot = builder.create_sized_stack_slot(
+                                StackSlotData::new(StackSlotKind::ExplicitSlot, 16, 0),
+                            );
+                            let option_ptr = builder.ins().stack_addr(
+                                cranelift::prelude::types::I64, option_slot, 0,
+                            );
+
+                            let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                            let is_null = builder.ins().icmp(IntCC::Equal, value, zero);
+
+                            let none_block = builder.create_block();
+                            let some_block = builder.create_block();
+                            let done_block = builder.create_block();
+
+                            builder.ins().brif(is_null, none_block, &[], some_block, &[]);
+
+                            builder.switch_to_block(none_block);
+                            builder.seal_block(none_block);
+                            let none_tag = builder.ins().iconst(cranelift::prelude::types::I32, 0);
+                            builder.ins().store(MemFlags::new(), none_tag, option_ptr, 0);
+                            builder.ins().store(MemFlags::new(), zero, option_ptr, 8);
+                            builder.ins().jump(done_block, &[]);
+
+                            builder.switch_to_block(some_block);
+                            builder.seal_block(some_block);
+                            let some_tag = builder.ins().iconst(cranelift::prelude::types::I32, 1);
+                            builder.ins().store(MemFlags::new(), some_tag, option_ptr, 0);
+                            builder.ins().store(MemFlags::new(), value, option_ptr, 8);
+                            builder.ins().jump(done_block, &[]);
+
+                            builder.switch_to_block(done_block);
+                            builder.seal_block(done_block);
+                            return Ok(option_ptr);
+                        }
+
                         return Ok(value);
                     }
                 } else if let crate::typechecker::Type::StackFrame = type_ann {

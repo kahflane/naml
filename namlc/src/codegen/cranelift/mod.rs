@@ -138,6 +138,8 @@ pub struct CompileContext<'a> {
     unsafe_mode: bool,
     inline_functions: &'a HashMap<String, InlineFuncInfo>,
     inline_depth: u32,
+    inline_exit_block: Option<Block>,
+    inline_result_var: Option<Variable>,
 }
 
 unsafe impl Send for LambdaInfo {}
@@ -5061,6 +5063,8 @@ impl<'a> JitCompiler<'a> {
             unsafe_mode: self.unsafe_mode,
             inline_functions: &self.inline_functions,
             inline_depth: 0,
+            inline_exit_block: None,
+            inline_result_var: None,
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -5612,6 +5616,8 @@ impl<'a> JitCompiler<'a> {
             unsafe_mode: self.unsafe_mode,
             inline_functions: &self.inline_functions,
             inline_depth: 0,
+            inline_exit_block: None,
+            inline_result_var: None,
         };
 
         // Load captured variables from closure data
@@ -5759,6 +5765,8 @@ impl<'a> JitCompiler<'a> {
             unsafe_mode: self.unsafe_mode,
             inline_functions: &self.inline_functions,
             inline_depth: 0,
+            inline_exit_block: None,
+            inline_result_var: None,
         };
 
         // Load captured variables from closure data
@@ -5987,6 +5995,8 @@ impl<'a> JitCompiler<'a> {
             unsafe_mode: self.unsafe_mode,
             inline_functions: &self.inline_functions,
             inline_depth: 0,
+            inline_exit_block: None,
+            inline_result_var: None,
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -6222,6 +6232,8 @@ impl<'a> JitCompiler<'a> {
             unsafe_mode: self.unsafe_mode,
             inline_functions: &self.inline_functions,
             inline_depth: 0,
+            inline_exit_block: None,
+            inline_result_var: None,
         };
 
         // Set up receiver variable (self)

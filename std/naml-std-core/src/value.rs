@@ -359,16 +359,12 @@ pub unsafe extern "C" fn naml_string_trim(s: *const NamlString) -> *mut NamlStri
     }
 }
 
-/// Allocate a new struct on the heap
+/// Allocate a new struct on the heap using arena allocation
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut NamlStruct {
     unsafe {
-        let layout = Layout::from_size_align(
-            std::mem::size_of::<NamlStruct>() + (field_count as usize) * std::mem::size_of::<i64>(),
-            std::mem::align_of::<NamlStruct>(),
-        ).unwrap();
-
-        let ptr = alloc(layout) as *mut NamlStruct;
+        let size = crate::arena::struct_alloc_size(field_count);
+        let ptr = crate::arena::arena_alloc(size) as *mut NamlStruct;
         if ptr.is_null() {
             panic!("Failed to allocate struct");
         }
@@ -378,9 +374,7 @@ pub unsafe extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut
         (*ptr).field_count = field_count;
 
         let fields_ptr = (*ptr).fields.as_mut_ptr();
-        for i in 0..field_count as usize {
-            *fields_ptr.add(i) = 0;
-        }
+        std::ptr::write_bytes(fields_ptr, 0, field_count as usize);
 
         ptr
     }
@@ -401,11 +395,8 @@ pub unsafe extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
         unsafe {
             if (*s).header.decref() {
                 let field_count = (*s).field_count;
-                let layout = Layout::from_size_align(
-                    std::mem::size_of::<NamlStruct>() + (field_count as usize) * std::mem::size_of::<i64>(),
-                    std::mem::align_of::<NamlStruct>(),
-                ).unwrap();
-                dealloc(s as *mut u8, layout);
+                let size = crate::arena::struct_alloc_size(field_count);
+                crate::arena::arena_free(s as *mut u8, size);
             }
         }
     }
@@ -417,11 +408,8 @@ pub unsafe extern "C" fn naml_struct_free(s: *mut NamlStruct) {
     if !s.is_null() {
         unsafe {
             let field_count = (*s).field_count;
-            let layout = Layout::from_size_align(
-                std::mem::size_of::<NamlStruct>() + (field_count as usize) * std::mem::size_of::<i64>(),
-                std::mem::align_of::<NamlStruct>(),
-            ).unwrap();
-            dealloc(s as *mut u8, layout);
+            let size = crate::arena::struct_alloc_size(field_count);
+            crate::arena::arena_free(s as *mut u8, size);
         }
     }
 }

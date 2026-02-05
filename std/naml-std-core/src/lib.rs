@@ -19,9 +19,11 @@ pub mod array;
 pub mod bytes;
 pub mod exception;
 pub mod stack;
+pub mod arena;
 
 pub use value::*;
 pub use array::*;
 pub use bytes::*;
 pub use exception::*;
 pub use stack::*;
+pub use arena::*;
