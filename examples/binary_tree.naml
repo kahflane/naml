@@ -10,6 +10,7 @@
 ///
 
 use std::collections::arrays::{count, push};
+use std::testing::*;
 
 fn insert(vals: [int], lefts: [int], rights: [int], root: int, val: int) -> int {
     var idx: int = count(vals);
@@ -168,15 +169,23 @@ fn main() {
 
     println("");
     println("Size: {}", tree_size(lefts, rights, root));
+    assert_eq(tree_size(lefts, rights, root), 7, "tree size should be 7");
     println("Height: {}", tree_height(lefts, rights, root));
+    assert_eq(tree_height(lefts, rights, root), 3, "tree height should be 3");
     println("Min: {}", find_min(vals, lefts, root));
+    assert_eq(find_min(vals, lefts, root), 20, "min should be 20");
     println("Max: {}", find_max(vals, rights, root));
+    assert_eq(find_max(vals, rights, root), 80, "max should be 80");
 
     println("");
     println("Search 40: {}", search(vals, lefts, rights, root, 40));
+    assert_true(search(vals, lefts, rights, root, 40), "should find 40");
     println("Search 25: {}", search(vals, lefts, rights, root, 25));
+    assert_false(search(vals, lefts, rights, root, 25), "should not find 25");
     println("Search 80: {}", search(vals, lefts, rights, root, 80));
+    assert_true(search(vals, lefts, rights, root, 80), "should find 80");
     println("Search 99: {}", search(vals, lefts, rights, root, 99));
+    assert_false(search(vals, lefts, rights, root, 99), "should not find 99");
 
     println("");
     println("Inserting: 25, 35");

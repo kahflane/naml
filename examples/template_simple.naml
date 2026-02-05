@@ -1,8 +1,12 @@
+use std::testing::*;
+
 fn main() {
     var simple: string = `Hello, World!`;
     println(simple);
+    assert_eq_string(simple, "Hello, World!", "Simple template should match");
 
     var name: string = "Alice";
     var greeting: string = `Hello {name}!`;
     println(greeting);
+    assert_eq_string(greeting, "Hello Alice!", "Greeting template should interpolate name");
 }

@@ -2,6 +2,8 @@
 /// Tier 3 Test: Printf Format Strings
 ///
 
+use std::testing::*;
+
 fn main() {
     println("=== Printf Format String Tests ===");
 
@@ -10,23 +12,36 @@ fn main() {
     var score: float = 95.5;
 
     // Basic format string
-    println("Hello, {}!", name);
+    var basic_fmt: string = fmt("Hello, {}!", name);
+    println(basic_fmt);
+    assert_eq_string(basic_fmt, "Hello, Alice!", "basic format should interpolate name");
 
     // Multiple placeholders
-    println("{} is {} years old", name, age);
+    var multi_fmt: string = fmt("{} is {} years old", name, age);
+    println(multi_fmt);
+    assert_eq_string(multi_fmt, "Alice is 30 years old", "multiple placeholders should work");
 
     // Mixed types
-    println("{} scored {} points", name, score);
+    var mixed_fmt: string = fmt("{} scored {} points", name, score);
+    println(mixed_fmt);
+    assert_contains(mixed_fmt, "Alice scored", "mixed types should format correctly");
+    assert_contains(mixed_fmt, "95.5", "float should be formatted");
 
     // Numbers in format
-    println("Sum of {} + {} = {}", 10, 20, 30);
+    var nums_fmt: string = fmt("Sum of {} + {} = {}", 10, 20, 30);
+    println(nums_fmt);
+    assert_eq_string(nums_fmt, "Sum of 10 + 20 = 30", "number formatting should work");
 
     // Without newline
-    print("Loading: {}%", 50);
+    var loading_fmt: string = fmt("Loading: {}%", 50);
+    print(loading_fmt);
     println(" complete");
+    assert_eq_string(loading_fmt, "Loading: 50%", "percent formatting should work");
 
     // Format string without placeholders still works
-    println("No placeholders here");
+    var no_placeholder: string = fmt("No placeholders here");
+    println(no_placeholder);
+    assert_eq_string(no_placeholder, "No placeholders here", "format without placeholders should work");
 
     // Regular print without format string
     print(name);

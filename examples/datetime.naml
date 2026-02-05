@@ -5,6 +5,7 @@
 ///
 
 use std::datetime::*;
+use std::testing::*;
 
 fn main() {
     println("=== DateTime Demo ===");
@@ -45,8 +46,11 @@ fn main() {
     var known_ts: int = 1704067200000;
     println("Known Date (2024-01-01):");
     println("  Year:  {}", year(known_ts));
+    assert_eq(year(known_ts), 2024, "known_ts year should be 2024");
     println("  Month: {}", month(known_ts));
+    assert_eq(month(known_ts), 1, "known_ts month should be 1");
     println("  Day:   {}", day(known_ts));
+    assert_eq(day(known_ts), 1, "known_ts day should be 1");
 
     println("");
     println("Done!");

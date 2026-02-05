@@ -1,4 +1,5 @@
 use std::path::*;
+use std::testing::*;
 
 fn main() {
     println("=== Path Module Demo ===");
@@ -10,6 +11,7 @@ fn main() {
     var joined: string = join(parts);
     print("join([home, user, documents, file.txt]) = ");
     println(joined);
+    assert_eq_string(joined, "home/user/documents/file.txt", "join paths");
 
     // Test path normalization
     println("");
@@ -18,6 +20,7 @@ fn main() {
     var normalized: string = normalize(messy_path);
     print("normalize(\"a/b/../c/./d\") = ");
     println(normalized);
+    assert_eq_string(normalized, "a/c/d", "normalize path");
 
     // Test absolute/relative checks
     println("");
@@ -27,15 +30,19 @@ fn main() {
 
     print("is_absolute(\"/home/user/file.txt\") = ");
     println(is_absolute(abs_path));
+    assert_eq_bool(is_absolute(abs_path), true, "is_absolute for absolute path");
 
     print("is_absolute(\"relative/path/file.txt\") = ");
     println(is_absolute(rel_path));
+    assert_eq_bool(is_absolute(rel_path), false, "is_absolute for relative path");
 
     print("is_relative(\"relative/path/file.txt\") = ");
     println(is_relative(rel_path));
+    assert_eq_bool(is_relative(rel_path), true, "is_relative for relative path");
 
     print("has_root(\"/home/user/file.txt\") = ");
     println(has_root(abs_path));
+    assert_eq_bool(has_root(abs_path), true, "has_root for absolute path");
 
     // Test path component extraction
     println("");
@@ -44,15 +51,19 @@ fn main() {
 
     print("dirname(\"/home/user/documents/report.pdf\") = ");
     println(dirname(test_path));
+    assert_eq_string(dirname(test_path), "/home/user/documents", "dirname");
 
     print("basename(\"/home/user/documents/report.pdf\") = ");
     println(basename(test_path));
+    assert_eq_string(basename(test_path), "report.pdf", "basename");
 
     print("extension(\"/home/user/documents/report.pdf\") = ");
     println(extension(test_path));
+    assert_eq_string(extension(test_path), "pdf", "extension");
 
     print("stem(\"/home/user/documents/report.pdf\") = ");
     println(stem(test_path));
+    assert_eq_string(stem(test_path), "report", "stem");
 
     // Test extension modification
     println("");
@@ -61,6 +72,7 @@ fn main() {
     var new_path: string = with_extension(doc_path, "txt");
     print("with_extension(\"/docs/readme.md\", \"txt\") = ");
     println(new_path);
+    assert_eq_string(new_path, "/docs/readme.txt", "with_extension");
 
     // Test path components
     println("");
@@ -86,6 +98,7 @@ fn main() {
     print("separator() = \"");
     print(sep);
     println("\"");
+    assert_eq_string(sep, "/", "separator");
 
     // Test slash conversion
     println("");
@@ -94,11 +107,13 @@ fn main() {
     var to_forward: string = to_slash(win_style);
     print("to_slash(\"a\\\\b\\\\c\") = ");
     println(to_forward);
+    assert_eq_string(to_forward, "a/b/c", "to_slash");
 
     var unix_style: string = "a/b/c";
     var from_forward: string = from_slash(unix_style);
     print("from_slash(\"a/b/c\") = ");
     println(from_forward);
+    assert_eq_string(from_forward, "a/b/c", "from_slash");
 
     // Test path comparison
     println("");
@@ -108,9 +123,11 @@ fn main() {
 
     print("starts_with(\"/home/user/docs/file.txt\", \"/home/user\") = ");
     println(starts_with(full, base));
+    assert_eq_bool(starts_with(full, base), true, "starts_with");
 
     print("ends_with(\"/home/user/docs/file.txt\", \"file.txt\") = ");
     println(ends_with(full, "file.txt"));
+    assert_eq_bool(ends_with(full, "file.txt"), true, "ends_with");
 
     // Test strip prefix
     println("");
@@ -118,6 +135,7 @@ fn main() {
     var stripped: string = strip_prefix(full, base);
     print("strip_prefix(\"/home/user/docs/file.txt\", \"/home/user\") = ");
     println(stripped);
+    assert_eq_string(stripped, "docs/file.txt", "strip_prefix");
 
     println("");
     println("=== All tests complete! ===");

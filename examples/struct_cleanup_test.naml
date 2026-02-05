@@ -6,6 +6,7 @@
 ///
 
 use std::collections::arrays::count;
+use std::testing::*;
 
 struct Person {
     name: string,
@@ -28,8 +29,10 @@ fn test_simple_struct() {
     var s: SimpleStruct = SimpleStruct { value: 42, count_val: 10 };
     print("Value: ");
     println(s.value);
+    assert_eq(s.value, 42, "Simple struct value should be 42");
     print("Count: ");
     println(s.count_val);
+    assert_eq(s.count_val, 10, "Simple struct count_val should be 10");
 }
 
 fn test_struct_with_string() {
@@ -37,8 +40,10 @@ fn test_struct_with_string() {
     var p: Person = Person { name: "Alice", age: 30 };
     print("Name: ");
     println(p.name);
+    assert_eq_string(p.name, "Alice", "Person name should be Alice");
     print("Age: ");
     println(p.age);
+    assert_eq(p.age, 30, "Person age should be 30");
 }
 
 fn test_struct_with_array() {
@@ -51,18 +56,23 @@ fn test_struct_with_array() {
     ps.metadata["grade"] = 100;
     print("Name: ");
     println(ps.name);
+    assert_eq_string(ps.name, "Bob", "PersonWithScores name should be Bob");
     print("Scores length: ");
     println(count(ps.scores));
+    assert_eq(count(ps.scores), 3, "PersonWithScores should have 3 scores");
 }
 
 fn test_struct_reassignment() {
     println("=== Struct Reassignment Test ===");
     var p: Person = Person { name: "First", age: 20 };
     println(p.name);
+    assert_eq_string(p.name, "First", "First reassignment should be 'First'");
     p = Person { name: "Second", age: 25 };
     println(p.name);
+    assert_eq_string(p.name, "Second", "Second reassignment should be 'Second'");
     p = Person { name: "Third", age: 30 };
     println(p.name);
+    assert_eq_string(p.name, "Third", "Third reassignment should be 'Third'");
 }
 
 fn test_loop_struct_creation() {

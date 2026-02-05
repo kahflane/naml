@@ -1,6 +1,8 @@
 // Interfaces Example
 // Demonstrates interface definitions, struct implementations, and method calls
 
+use std::testing::*;
+
 // Define an interface with a required method
 interface Describable {
     fn describe() -> string;
@@ -58,8 +60,11 @@ fn main() {
     var p:Point = Point { x: 10, y: 20 };
     println("Point coordinates:");
     println(p.get_x());
+    assert_eq(p.get_x(), 10, "Point.get_x() should return 10");
     println(p.get_y());
+    assert_eq(p.get_y(), 20, "Point.get_y() should return 20");
     println(p.describe());
+    assert_eq_string(p.describe(), "Point", "Point.describe() should return 'Point'");
 
     println("");
 
@@ -67,10 +72,13 @@ fn main() {
     var rect: Rectangle = Rectangle { width: 5, height: 10 };
     println("Rectangle properties:");
     println(rect.area());
+    assert_eq(rect.area(), 50, "Rectangle area should be 50");
     println(rect.perimeter());
+    assert_eq(rect.perimeter(), 30, "Rectangle perimeter should be 30");
 
     // Create a square
     var square: Rectangle = Rectangle { width: 4, height: 4 };
     println("Square area:");
     println(square.area());
+    assert_eq(square.area(), 16, "Square area should be 16");
 }

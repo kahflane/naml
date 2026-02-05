@@ -2,6 +2,8 @@
 /// Generics Test - Basic generic features
 ///
 
+use std::testing::*;
+
 enum UserStatus {
     Active,
     Inactive,
@@ -98,6 +100,7 @@ fn test_generic_struct() {
     } else {
         println("FAIL");
     }
+    assert_eq(int_pair.first, 10, "Pair<int, int>.first should be 10");
 
     print("Testing Pair<int, int>.second: ");
     if (int_pair.second == 20) {
@@ -105,6 +108,7 @@ fn test_generic_struct() {
     } else {
         println("FAIL");
     }
+    assert_eq(int_pair.second, 20, "Pair<int, int>.second should be 20");
 
     var mixed_pair: Pair<string, int> = Pair { first: "hello", second: 42 };
 
@@ -114,6 +118,7 @@ fn test_generic_struct() {
     } else {
         println("FAIL");
     }
+    assert_eq_string(mixed_pair.first, "hello", "Pair<string, int>.first should be 'hello'");
 
     print("Testing Pair<string, int>.second: ");
     if (mixed_pair.second == 42) {
@@ -121,6 +126,7 @@ fn test_generic_struct() {
     } else {
         println("FAIL");
     }
+    assert_eq(mixed_pair.second, 42, "Pair<string, int>.second should be 42");
 
     var nested: Pair<Box<int>, string> = Pair { first: Box { value: 100 }, second: "nested" };
     print("Testing nested generic: ");
@@ -129,6 +135,7 @@ fn test_generic_struct() {
     } else {
         println("FAIL");
     }
+    assert_eq_string(nested.second, "nested", "Nested pair second should be 'nested'");
 }
 
 fn test_generic_box() {
@@ -141,6 +148,7 @@ fn test_generic_box() {
     } else {
         println("FAIL");
     }
+    assert_eq(int_box.value, 42, "Box<int>.value should be 42");
 
     var str_box: Box<string> = Box { value: "boxed string" };
     print("Testing Box<string>.value: ");
@@ -149,6 +157,7 @@ fn test_generic_box() {
     } else {
         println("FAIL");
     }
+    assert_eq_string(str_box.value, "boxed string", "Box<string>.value should be 'boxed string'");
 
     var point_box: Box<Pair<int, int>> = Box { value: Pair { first: 1, second: 2 } };
     print("Testing Box<Pair>.value.first: ");
@@ -157,6 +166,7 @@ fn test_generic_box() {
     } else {
         println("FAIL");
     }
+    assert_eq(point_box.value.first, 1, "Box<Pair>.value.first should be 1");
 }
 
 fn main() {

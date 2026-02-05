@@ -1,4 +1,5 @@
 use std::collections::arrays::{count, push, pop};
+use std::testing::*;
 
 fn main() {
     println("Testing arrays with for loop:");
@@ -6,6 +7,7 @@ fn main() {
 
     print("Array length: ");
     println(count(arr));
+    assert_eq(count(arr), 5, "array length should be 5");
 
     println("Iterating with for loop:");
     for (val: int in arr) {
@@ -28,12 +30,16 @@ fn main() {
     }
     print("  Total: ");
     println(sum);
+    assert_eq(sum, 150, "sum should be 150");
 
     var numbers: [int] = [1,2,3,4];
     var first: int = numbers[0]!;     // Indexing returns option<T>, use ! to unwrap
+    assert_eq(first, 1, "first element should be 1");
     var len: int = count(numbers);    // Length
     print("Length {}\n",len);
+    assert_eq(len, 4, "length should be 4");
     push(numbers, 6);                  // Append
     var last: option<int> = pop(numbers);    // Remove last
     print("{} \n",last ?? -1);
+    assert_eq(last ?? -1, 6, "popped element should be 6");
 }

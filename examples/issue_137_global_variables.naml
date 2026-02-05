@@ -9,6 +9,8 @@
 /// tracked in issue #140 (initialization order not preserved).
 ///
 
+use std::testing::*;
+
 // Define global constants (independent - no dependencies between them)
 var PI: float = 3.141592653589793;
 var DAYS_PER_YEAR: float = 365.24;
@@ -36,6 +38,7 @@ fn main() {
     println("--- Direct Access ---");
     print("PI = ");
     println(PI);
+    assert_approx(PI, 3.14159, 0.001, "PI should be approximately 3.14159");
 
     print("DAYS_PER_YEAR = ");
     println(DAYS_PER_YEAR);
@@ -45,12 +48,14 @@ fn main() {
 
     print("SPEED_OF_LIGHT = ");
     println(SPEED_OF_LIGHT);
+    assert_eq(SPEED_OF_LIGHT, 299792458, "SPEED_OF_LIGHT should be 299792458");
 
     // Access globals through functions
     println("\n--- Access Through Functions ---");
 
     print("get_pi() = ");
     println(get_pi());
+    assert_approx(get_pi(), 3.14159, 0.001, "get_pi() should return PI");
 
     print("get_days_per_year() = ");
     println(get_days_per_year());
@@ -58,6 +63,7 @@ fn main() {
     var force: float = calculate_with_gravity(10.0);
     print("calculate_with_gravity(10.0) = ");
     println(force);
+    assert_approx(force, 98.1, 0.1, "force should be approximately 98.1");
 
     // Compute derived values in main (avoiding issue #140)
     println("\n--- Computed Values ---");

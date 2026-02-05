@@ -3,6 +3,7 @@
 ///
 
 use std::encoding::json::*;
+use std::testing::*;
 
 fn extract_user_name(user: json) -> string {
     var name_json: json = user["name"];
@@ -87,6 +88,7 @@ fn main() {
     } else {
         println(fmt("  FAIL: Expected type 'object', got '{}'", actual_type));
     }
+    assert_eq_string(actual_type, "object", "user type should be object");
     println("");
 
     // Test 2: Indexing and type checking
@@ -106,24 +108,28 @@ fn main() {
     } else {
         println("  FAIL: name should be json_string");
     }
+    assert_true(name is json_string, "name should be json_string");
 
     if (age is json_number) {
         println("  PASS: age is json_number");
     } else {
         println("  FAIL: age should be json_number");
     }
+    assert_true(age is json_number, "age should be json_number");
 
     if (active is json_bool) {
         println("  PASS: active is json_bool");
     } else {
         println("  FAIL: active should be json_bool");
     }
+    assert_true(active is json_bool, "active should be json_bool");
 
     if (missing is json_null) {
         println("  PASS: missing is json_null");
     } else {
         println("  FAIL: missing should be json_null");
     }
+    assert_true(missing is json_null, "missing should be json_null");
     println("");
 
     // Test 3: Casting
@@ -138,12 +144,14 @@ fn main() {
     } else {
         println(fmt("  FAIL: Expected 'Alice', got '{}'", name_str));
     }
+    assert_eq_string(name_str, "Alice", "name should be Alice");
 
     if (age_int == 30) {
         println("  PASS: age cast correct");
     } else {
         println(fmt("  FAIL: Expected 30, got {}", age_int));
     }
+    assert_eq(age_int, 30, "age should be 30");
     println("");
 
     // Test 4: User-defined functions with json parameters
@@ -155,6 +163,7 @@ fn main() {
 
     var users: json = data["users"];
     println(fmt("  Users count: {}", count(users)));
+    assert_eq(count(users), 3, "users count should be 3");
 
     var alice_name: string = extract_user_name(users[0]);
     println(fmt("  First user name: {}", alice_name));
@@ -163,6 +172,7 @@ fn main() {
     } else {
         println("  FAIL: extract_user_name failed");
     }
+    assert_eq_string(alice_name, "Alice", "alice_name should be Alice");
 
     var bob_age: int = extract_user_age(users[1]);
     println(fmt("  Bob's age: {}", bob_age));
@@ -171,6 +181,7 @@ fn main() {
     } else {
         println("  FAIL: extract_user_age failed");
     }
+    assert_eq(bob_age, 25, "bob_age should be 25");
 
     var active_count: int = count_active_users(users);
     println(fmt("  Active users: {}", active_count));
@@ -179,6 +190,7 @@ fn main() {
     } else {
         println(fmt("  FAIL: Expected 2 active users, got {}", active_count));
     }
+    assert_eq(active_count, 2, "active_count should be 2");
 
     var total_age: int = sum_all_ages(users);
     println(fmt("  Sum of ages: {}", total_age));
@@ -187,6 +199,7 @@ fn main() {
     } else {
         println(fmt("  FAIL: Expected 90, got {}", total_age));
     }
+    assert_eq(total_age, 90, "total_age should be 90");
     println("");
 
     // Test 5: Path-based navigation (jq-style)
@@ -206,12 +219,14 @@ fn main() {
     } else {
         println("  FAIL: path navigation failed");
     }
+    assert_eq_string(first_name as string, "Alice", "path .users[0].name should be Alice");
 
     if ((theme as string) == "dark") {
         println("  PASS: path .settings.theme works");
     } else {
         println("  FAIL: path navigation failed");
     }
+    assert_eq_string(theme as string, "dark", "path .settings.theme should be dark");
     println("");
 
     // Test 6: Nested processing
@@ -225,6 +240,7 @@ fn main() {
     } else {
         println(fmt("  FAIL: Expected 'Theme: dark, Font: 14', got '{}'", settings_str));
     }
+    assert_eq_string(settings_str, "Theme: dark, Font: 14", "settings_str should match expected");
     println("");
 
     // Test 7: JSON keys
@@ -240,6 +256,8 @@ fn main() {
     } else {
         println("  FAIL: keys() missing expected keys");
     }
+    assert_eq_bool(has_theme, true, "should have theme");
+    assert_eq_bool(has_font, true, "should have font_size");
     println("");
 
     // Test 8: Pretty printing
@@ -260,6 +278,8 @@ fn main() {
     } else {
         println("  FAIL: exists() not working");
     }
+    assert_eq_bool(has_name2, true, "should have name");
+    assert_eq_bool(has_email, false, "should not have email");
     println("");
 
     // Test 10: Array access
@@ -270,6 +290,7 @@ fn main() {
     };
     println(fmt("  Array type: {}", type_name(arr)));
     println(fmt("  Array count: {}", count(arr)));
+    assert_eq(count(arr), 5, "array count should be 5");
 
     var third: json = arr[2];
     var third_val: int = third as int;
@@ -279,6 +300,7 @@ fn main() {
     } else {
         println(fmt("  FAIL: Expected 30, got {}", third_val));
     }
+    assert_eq(third_val, 30, "arr[2] should be 30");
     println("");
 
     println("=== All tests completed ===");

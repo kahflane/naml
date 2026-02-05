@@ -3,9 +3,11 @@
 ///
 
 use std::strings::*;
+use std::testing::*;
 
 fn main() {
     var s: string = "Hello World";
     var parts: [string] = split(s, " ");
     println("Split worked");
+    assert_eq(count(parts), 2, "Split should produce 2 parts");
 }

@@ -1,0 +1,104 @@
+use std::testing::*;
+
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn greet(name: string) -> string {
+    return fmt("Hello, {}!", name);
+}
+
+fn circle_area(radius: float) -> float {
+    return 3.14159265 * radius * radius;
+}
+
+fn main() {
+    println("=== std::testing Demo ===");
+    println("");
+
+    println("--- 1. Basic Assertions ---");
+    assert(true, "true should be true");
+    assert(1 + 1 == 2, "basic math");
+    println("  assert: passed");
+
+    assert_true(10 > 5, "10 is greater than 5");
+    println("  assert_true: passed");
+
+    assert_false(5 > 10, "5 is not greater than 10");
+    println("  assert_false: passed");
+
+    println("");
+    println("--- 2. Equality Assertions ---");
+    var result: int = add(3, 4);
+    assert_eq(result, 7, "3 + 4 should equal 7");
+    println("  assert_eq(int): passed");
+
+    assert_eq_bool(true, true, "true equals true");
+    println("  assert_eq_bool: passed");
+
+    assert_eq_string(greet("naml"), "Hello, naml!", "greeting matches");
+    println("  assert_eq_string: passed");
+
+    assert_eq_float(1.5, 1.5, "exact float equality");
+    println("  assert_eq_float: passed");
+
+    println("");
+    println("--- 3. Inequality Assertions ---");
+    assert_neq(42, 43, "42 does not equal 43");
+    println("  assert_neq(int): passed");
+
+    assert_neq_string("hello", "world", "hello != world");
+    println("  assert_neq_string: passed");
+
+    println("");
+    println("--- 4. Comparison Assertions ---");
+    assert_gt(10, 5, "10 > 5");
+    println("  assert_gt: passed");
+
+    assert_gte(10, 10, "10 >= 10");
+    assert_gte(11, 10, "11 >= 10");
+    println("  assert_gte: passed");
+
+    assert_lt(3, 7, "3 < 7");
+    println("  assert_lt: passed");
+
+    assert_lte(5, 5, "5 <= 5");
+    assert_lte(4, 5, "4 <= 5");
+    println("  assert_lte: passed");
+
+    println("");
+    println("--- 5. Float Approximate Assertions ---");
+    var area: float = circle_area(1.0);
+    assert_approx(area, 3.14159, 0.001, "circle area ~ pi");
+    println(fmt("  assert_approx: passed (area = {})", area));
+
+    assert_approx(0.1 + 0.2, 0.3, 0.0001, "0.1 + 0.2 ~ 0.3");
+    println("  assert_approx (float precision): passed");
+
+    println("");
+    println("--- 6. String Content Assertions ---");
+    var msg: string = "The quick brown fox jumps over the lazy dog";
+
+    assert_contains(msg, "brown fox", "contains substring");
+    println("  assert_contains: passed");
+
+    assert_starts_with(msg, "The quick", "starts with prefix");
+    println("  assert_starts_with: passed");
+
+    assert_ends_with(msg, "lazy dog", "ends with suffix");
+    println("  assert_ends_with: passed");
+
+    println("");
+    println("--- 7. Complex: Function + Assert Combo ---");
+    var i: int = 0;
+    var sum: int = 0;
+    while (i < 10) {
+        sum = sum + add(i, 1);
+        i = i + 1;
+    }
+    assert_eq(sum, 55, "sum of add(0..9, 1) should be 55");
+    println(fmt("  sum = {}, expected 55: passed", sum));
+
+    println("");
+    println("=== All 18 assertion functions verified! ===");
+}

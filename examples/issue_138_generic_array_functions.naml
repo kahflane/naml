@@ -6,6 +6,7 @@
 ///
 
 use std::collections::arrays::{count, push, take, drop, slice, reversed};
+use std::testing::*;
 
 fn main() {
     println("=== Issue #138: Generic Array Functions ===\n");
@@ -16,24 +17,30 @@ fn main() {
 
     print("Initial float array: [1.1, 2.2, 3.3], count = ");
     println(count(floats));
+    assert_eq(count(floats), 3, "initial float array count should be 3");
 
     push(floats, 4.4);
     print("After push(4.4), count = ");
     println(count(floats));
+    assert_eq(count(floats), 4, "count after first push should be 4");
 
     push(floats, 5.5);
     print("After push(5.5), count = ");
     println(count(floats));
+    assert_eq(count(floats), 5, "count after second push should be 5");
 
     // Verify values using force unwrap
     print("floats[0]! = ");
     println(floats[0]!);
+    assert_eq_float(floats[0]!, 1.1, "floats[0] should be 1.1");
 
     print("floats[3]! = ");
     println(floats[3]!);
+    assert_eq_float(floats[3]!, 4.4, "floats[3] should be 4.4");
 
     print("floats[4]! = ");
     println(floats[4]!);
+    assert_eq_float(floats[4]!, 5.5, "floats[4] should be 5.5");
 
     // Test with string arrays
     println("\n--- String Arrays ---");
@@ -41,10 +48,12 @@ fn main() {
 
     print("Initial string array: [\"hello\", \"world\"], count = ");
     println(count(strings));
+    assert_eq(count(strings), 2, "initial string array count should be 2");
 
     push(strings, "naml");
     print("After push(\"naml\"), count = ");
     println(count(strings));
+    assert_eq(count(strings), 3, "string array count after push should be 3");
 
     // Test with bool arrays
     println("\n--- Bool Arrays ---");
@@ -52,10 +61,12 @@ fn main() {
 
     print("Initial bool array: [true, false, true], count = ");
     println(count(bools));
+    assert_eq(count(bools), 3, "initial bool array count should be 3");
 
     push(bools, false);
     print("After push(false), count = ");
     println(count(bools));
+    assert_eq(count(bools), 4, "bool array count after push should be 4");
 
     // Test slice operations with floats
     println("\n--- Slice Operations with Floats ---");
@@ -63,26 +74,32 @@ fn main() {
 
     print("Original array count: ");
     println(count(numbers));
+    assert_eq(count(numbers), 5, "numbers array count should be 5");
 
     var taken: [float] = take(numbers, 3);
     print("take(numbers, 3) count: ");
     println(count(taken));
+    assert_eq(count(taken), 3, "taken array count should be 3");
 
     var dropped: [float] = drop(numbers, 2);
     print("drop(numbers, 2) count: ");
     println(count(dropped));
+    assert_eq(count(dropped), 3, "dropped array count should be 3");
 
     var sliced: [float] = slice(numbers, 1, 4);
     print("slice(numbers, 1, 4) count: ");
     println(count(sliced));
+    assert_eq(count(sliced), 3, "sliced array count should be 3");
 
     // Test reversed with floats
     println("\n--- Reversed with Floats ---");
     var rev: [float] = reversed(numbers);
     print("Original first element: ");
     println(numbers[0]!);
+    assert_eq_float(numbers[0]!, 1.0, "numbers[0] should be 1.0");
     print("Reversed first element: ");
     println(rev[0]!);
+    assert_eq_float(rev[0]!, 5.0, "rev[0] should be 5.0");
 
     println("\n=== Issue #138 Fixed ===");
 

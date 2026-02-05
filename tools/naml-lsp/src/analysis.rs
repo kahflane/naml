@@ -261,6 +261,26 @@ static STD_MODULE_MAP: LazyLock<HashMap<&'static str, Vec<&'static str>>> = Lazy
     add(&mut m, "SIGSTOP", "std::process");
     add(&mut m, "SIGCONT", "std::process");
 
+    // std::testing
+    add(&mut m, "assert", "std::testing");
+    add(&mut m, "assert_eq", "std::testing");
+    add(&mut m, "assert_eq_float", "std::testing");
+    add(&mut m, "assert_eq_string", "std::testing");
+    add(&mut m, "assert_eq_bool", "std::testing");
+    add(&mut m, "assert_neq", "std::testing");
+    add(&mut m, "assert_neq_string", "std::testing");
+    add(&mut m, "assert_true", "std::testing");
+    add(&mut m, "assert_false", "std::testing");
+    add(&mut m, "assert_gt", "std::testing");
+    add(&mut m, "assert_gte", "std::testing");
+    add(&mut m, "assert_lt", "std::testing");
+    add(&mut m, "assert_lte", "std::testing");
+    add(&mut m, "fail", "std::testing");
+    add(&mut m, "assert_approx", "std::testing");
+    add(&mut m, "assert_contains", "std::testing");
+    add(&mut m, "assert_starts_with", "std::testing");
+    add(&mut m, "assert_ends_with", "std::testing");
+
     // std::env
     add(&mut m, "getenv", "std::env");
     add(&mut m, "lookup_env", "std::env");

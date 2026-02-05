@@ -9,6 +9,7 @@
 ///
 
 use std::collections::arrays::{count, push};
+use std::testing::*;
 
 fn push_front(vals: [int], nexts: [int], head: int) -> int {
     var idx: int = count(vals);
@@ -139,6 +140,7 @@ fn main() {
     print("  ");
     print_list(vals, nexts, head);
     println("  size: {}", list_size(nexts, head));
+    assert_eq(list_size(nexts, head), 3, "size after 3 push_front should be 3");
 
     println("");
     println("Push back: 40");
@@ -160,10 +162,15 @@ fn main() {
         println("  get({}): {}", i, get(vals, nexts, head, i));
         i = i + 1;
     }
+    assert_eq(get(vals, nexts, head, 0), 30, "get(0) should be 30");
+    assert_eq(get(vals, nexts, head, 2), 99, "get(2) should be 99");
+    assert_eq(get(vals, nexts, head, 4), 40, "get(4) should be 40");
 
     println("");
     println("Contains 99: {}", contains(vals, nexts, head, 99));
+    assert_true(contains(vals, nexts, head, 99), "should contain 99");
     println("Contains 55: {}", contains(vals, nexts, head, 55));
+    assert_false(contains(vals, nexts, head, 55), "should not contain 55");
 
     println("");
     println("Remove at position 0 (head)");
@@ -179,4 +186,5 @@ fn main() {
 
     println("");
     println("Final size: {}", list_size(nexts, head));
+    assert_eq(list_size(nexts, head), 3, "final size after removes should be 3");
 }

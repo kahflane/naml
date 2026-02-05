@@ -406,6 +406,46 @@ pub enum BuiltinStrategy {
     ProcessSigcont,
 
     // ========================================
+    // Testing module strategies
+    // ========================================
+    /// (condition: bool, message: string) -> unit
+    TestingAssert,
+    /// (actual: int, expected: int, message: string) -> unit
+    TestingAssertEq,
+    /// (actual: float, expected: float, message: string) -> unit
+    TestingAssertEqFloat,
+    /// (actual: string, expected: string, message: string) -> unit
+    TestingAssertEqString,
+    /// (actual: bool, expected: bool, message: string) -> unit
+    TestingAssertEqBool,
+    /// (actual: int, expected: int, message: string) -> unit
+    TestingAssertNeq,
+    /// (actual: string, expected: string, message: string) -> unit
+    TestingAssertNeqString,
+    /// (condition: bool, message: string) -> unit
+    TestingAssertTrue,
+    /// (condition: bool, message: string) -> unit
+    TestingAssertFalse,
+    /// (actual: int, expected: int, message: string) -> unit
+    TestingAssertGt,
+    /// (actual: int, expected: int, message: string) -> unit
+    TestingAssertGte,
+    /// (actual: int, expected: int, message: string) -> unit
+    TestingAssertLt,
+    /// (actual: int, expected: int, message: string) -> unit
+    TestingAssertLte,
+    /// (message: string) -> unit
+    TestingFail,
+    /// (actual: float, expected: float, epsilon: float, message: string) -> unit
+    TestingAssertApprox,
+    /// (haystack: string, needle: string, message: string) -> unit
+    TestingAssertContains,
+    /// (value: string, prefix: string, message: string) -> unit
+    TestingAssertStartsWith,
+    /// (value: string, suffix: string, message: string) -> unit
+    TestingAssertEndsWith,
+
+    // ========================================
     // Encoding module strategies
     // ========================================
     /// (bytes) -> string (encode bytes to string)
@@ -1541,6 +1581,81 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "SIGCONT",
             strategy: BuiltinStrategy::ProcessSigcont,
+        },
+        // ========================================
+        // Testing module
+        // ========================================
+        BuiltinFunction {
+            name: "assert",
+            strategy: BuiltinStrategy::TestingAssert,
+        },
+        BuiltinFunction {
+            name: "assert_eq",
+            strategy: BuiltinStrategy::TestingAssertEq,
+        },
+        BuiltinFunction {
+            name: "assert_eq_float",
+            strategy: BuiltinStrategy::TestingAssertEqFloat,
+        },
+        BuiltinFunction {
+            name: "assert_eq_string",
+            strategy: BuiltinStrategy::TestingAssertEqString,
+        },
+        BuiltinFunction {
+            name: "assert_eq_bool",
+            strategy: BuiltinStrategy::TestingAssertEqBool,
+        },
+        BuiltinFunction {
+            name: "assert_neq",
+            strategy: BuiltinStrategy::TestingAssertNeq,
+        },
+        BuiltinFunction {
+            name: "assert_neq_string",
+            strategy: BuiltinStrategy::TestingAssertNeqString,
+        },
+        BuiltinFunction {
+            name: "assert_true",
+            strategy: BuiltinStrategy::TestingAssertTrue,
+        },
+        BuiltinFunction {
+            name: "assert_false",
+            strategy: BuiltinStrategy::TestingAssertFalse,
+        },
+        BuiltinFunction {
+            name: "assert_gt",
+            strategy: BuiltinStrategy::TestingAssertGt,
+        },
+        BuiltinFunction {
+            name: "assert_gte",
+            strategy: BuiltinStrategy::TestingAssertGte,
+        },
+        BuiltinFunction {
+            name: "assert_lt",
+            strategy: BuiltinStrategy::TestingAssertLt,
+        },
+        BuiltinFunction {
+            name: "assert_lte",
+            strategy: BuiltinStrategy::TestingAssertLte,
+        },
+        BuiltinFunction {
+            name: "fail",
+            strategy: BuiltinStrategy::TestingFail,
+        },
+        BuiltinFunction {
+            name: "assert_approx",
+            strategy: BuiltinStrategy::TestingAssertApprox,
+        },
+        BuiltinFunction {
+            name: "assert_contains",
+            strategy: BuiltinStrategy::TestingAssertContains,
+        },
+        BuiltinFunction {
+            name: "assert_starts_with",
+            strategy: BuiltinStrategy::TestingAssertStartsWith,
+        },
+        BuiltinFunction {
+            name: "assert_ends_with",
+            strategy: BuiltinStrategy::TestingAssertEndsWith,
         },
         // ========================================
         // Encoding module
@@ -2847,6 +2962,170 @@ pub fn compile_builtin_call(
         }
         BuiltinStrategy::ProcessSigcont => {
             call_int_runtime(ctx, builder, "naml_process_sigcont")
+        }
+
+        // ========================================
+        // Testing strategies
+        // ========================================
+        BuiltinStrategy::TestingAssert => {
+            let cond = compile_expression(ctx, builder, &args[0])?;
+            let cond = builder.ins().uextend(cranelift::prelude::types::I64, cond);
+            let msg = compile_expression(ctx, builder, &args[1])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[1])?;
+            call_two_arg_runtime(ctx, builder, "naml_testing_assert", cond, msg)
+        }
+
+        BuiltinStrategy::TestingAssertEq => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_eq", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertEqFloat => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_testing_assert_eq_float")?;
+            builder.ins().call(func_ref, &[actual, expected, msg]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        BuiltinStrategy::TestingAssertEqString => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let actual = ensure_naml_string(ctx, builder, actual, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let expected = ensure_naml_string(ctx, builder, expected, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_eq_string", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertEqBool => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let actual = builder.ins().uextend(cranelift::prelude::types::I64, actual);
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let expected = builder.ins().uextend(cranelift::prelude::types::I64, expected);
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_eq_bool", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertNeq => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_neq", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertNeqString => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let actual = ensure_naml_string(ctx, builder, actual, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let expected = ensure_naml_string(ctx, builder, expected, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_neq_string", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertTrue => {
+            let cond = compile_expression(ctx, builder, &args[0])?;
+            let cond = builder.ins().uextend(cranelift::prelude::types::I64, cond);
+            let msg = compile_expression(ctx, builder, &args[1])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[1])?;
+            call_two_arg_runtime(ctx, builder, "naml_testing_assert_true", cond, msg)
+        }
+
+        BuiltinStrategy::TestingAssertFalse => {
+            let cond = compile_expression(ctx, builder, &args[0])?;
+            let cond = builder.ins().uextend(cranelift::prelude::types::I64, cond);
+            let msg = compile_expression(ctx, builder, &args[1])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[1])?;
+            call_two_arg_runtime(ctx, builder, "naml_testing_assert_false", cond, msg)
+        }
+
+        BuiltinStrategy::TestingAssertGt => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_gt", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertGte => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_gte", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertLt => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_lt", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingAssertLte => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_lte", actual, expected, msg)
+        }
+
+        BuiltinStrategy::TestingFail => {
+            let msg = compile_expression(ctx, builder, &args[0])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_testing_fail")?;
+            builder.ins().call(func_ref, &[msg]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        BuiltinStrategy::TestingAssertApprox => {
+            let actual = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let epsilon = compile_expression(ctx, builder, &args[2])?;
+            let msg = compile_expression(ctx, builder, &args[3])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[3])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_testing_assert_approx")?;
+            builder.ins().call(func_ref, &[actual, expected, epsilon, msg]);
+            Ok(builder.ins().iconst(cranelift::prelude::types::I64, 0))
+        }
+
+        BuiltinStrategy::TestingAssertContains => {
+            let haystack = compile_expression(ctx, builder, &args[0])?;
+            let haystack = ensure_naml_string(ctx, builder, haystack, &args[0])?;
+            let needle = compile_expression(ctx, builder, &args[1])?;
+            let needle = ensure_naml_string(ctx, builder, needle, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_contains", haystack, needle, msg)
+        }
+
+        BuiltinStrategy::TestingAssertStartsWith => {
+            let value = compile_expression(ctx, builder, &args[0])?;
+            let value = ensure_naml_string(ctx, builder, value, &args[0])?;
+            let prefix = compile_expression(ctx, builder, &args[1])?;
+            let prefix = ensure_naml_string(ctx, builder, prefix, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_starts_with", value, prefix, msg)
+        }
+
+        BuiltinStrategy::TestingAssertEndsWith => {
+            let value = compile_expression(ctx, builder, &args[0])?;
+            let value = ensure_naml_string(ctx, builder, value, &args[0])?;
+            let suffix = compile_expression(ctx, builder, &args[1])?;
+            let suffix = ensure_naml_string(ctx, builder, suffix, &args[1])?;
+            let msg = compile_expression(ctx, builder, &args[2])?;
+            let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_ends_with", value, suffix, msg)
         }
 
         // ========================================

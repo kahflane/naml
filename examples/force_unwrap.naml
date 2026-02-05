@@ -1,4 +1,5 @@
 use std::collections::arrays::pop;
+use std::testing::*;
 
 fn main() {
     println("Testing force unwrap operator (!):");
@@ -8,23 +9,28 @@ fn main() {
     var value: int = opt!;
     print("Unwrapped value: ");
     println(value);
+    assert_eq(value, 42, "force unwrap on some(42)");
 
     // Test 2: Force unwrap on array pop result
     var arr: [int] = [1, 2, 3];
     var last: int = pop(arr)!;
     print("Popped and unwrapped: ");
     println(last);
+    assert_eq(last, 3, "force unwrap on pop result");
 
     // Test 3: Force unwrap in expression context
     var nums: [int] = [10, 20];
     var doubled: int = pop(nums)! * 2;
     print("Doubled: ");
     println(doubled);
+    assert_eq(doubled, 40, "force unwrap in expression with multiplication");
 
     // Test 4: Chain with function call
     var data: [int] = [100];
     print("Direct force unwrap: ");
-    println(pop(data)!);
+    var direct: int = pop(data)!;
+    println(direct);
+    assert_eq(direct, 100, "direct force unwrap on pop");
 
     println("All force unwrap tests passed!");
 }

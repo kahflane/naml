@@ -13,6 +13,7 @@
 //!
 
 use std::threads::*;
+use std::testing::*;
 
 fn main() {
     print("=== Concurrent Task Processing System ===\n\n");
@@ -75,6 +76,9 @@ fn main() {
             println(fmt("  Result {}: {}", result_count, val));
         }
     }
+
+    assert_eq(result_count, 10, "Should have processed exactly 10 results");
+    assert_eq(total_result, 1100, "Total result should be 1100 (sum of 2*10 + 2*20 + ... + 2*100)");
 
     // Read final stats
     print("\n=== Final Statistics ===\n");

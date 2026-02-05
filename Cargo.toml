@@ -24,6 +24,7 @@ members = [
     "std/naml-std-env",
     "std/naml-std-os",
     "std/naml-std-process",
+    "std/naml-std-testing",
     "tools/naml-lsp",
 ]
 
@@ -170,6 +171,7 @@ naml-std-net = { path = "std/naml-std-net" }
 naml-std-env = { path = "std/naml-std-env" }
 naml-std-os = { path = "std/naml-std-os" }
 naml-std-process = { path = "std/naml-std-process" }
+naml-std-testing = { path = "std/naml-std-testing" }
 
 [profile.release]
 lto = true

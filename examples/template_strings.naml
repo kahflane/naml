@@ -1,3 +1,5 @@
+use std::testing::*;
+
 fn main() {
     println("=== Template String Demo ===");
     println("");
@@ -6,6 +8,7 @@ fn main() {
     var simple: string = `Hello, World!`;
     print("Simple: ");
     println(simple);
+    assert_eq_string(simple, "Hello, World!", "simple template should match expected value");
 
     // Multi-line template string
     var multiline: string = `This is
@@ -20,35 +23,41 @@ template string.`;
     println("");
     print("Greeting: ");
     println(greeting);
+    assert_eq_string(greeting, "Hello Alice!", "greeting should interpolate name variable");
 
     // Template string with integer
     var age: int = 25;
     var age_msg: string = `You are {age} years old.`;
     print("Age message: ");
     println(age_msg);
+    assert_eq_string(age_msg, "You are 25 years old.", "age_msg should interpolate age variable");
 
     // Template string with float
     var pi: float = 3.14159;
     var pi_msg: string = `Pi is approximately {pi}`;
     print("Pi message: ");
     println(pi_msg);
+    assert_contains(pi_msg, "3.14159", "pi_msg should contain the float value");
 
     // Template with quotes (no escaping needed)
     var quotes: string = `He said "Hello" and she said 'Hi'`;
     print("Quotes: ");
     println(quotes);
+    assert_eq_string(quotes, "He said \"Hello\" and she said 'Hi'", "quotes should preserve quotes");
 
     // Empty template string
     var empty: string = ``;
     print("Empty: '");
     print(empty);
     println("'");
+    assert_eq_string(empty, "", "empty template should be empty string");
 
     // Template with escaped backtick
     var backtick: string = `This has a \` backtick`;
     println("");
     print("Backtick: ");
     println(backtick);
+    assert_contains(backtick, "backtick", "backtick string should contain word 'backtick'");
 
     // Multiple interpolations
     var first: string = "John";
@@ -56,12 +65,14 @@ template string.`;
     var full_name: string = `Full name: {first} {last}`;
     print("Full name: ");
     println(full_name);
+    assert_eq_string(full_name, "Full name: John Doe", "full_name should interpolate both variables");
 
     // Bool interpolation
     var active: bool = true;
     var status: string = `Status: {active}`;
     print("Bool: ");
     println(status);
+    assert_contains(status, "true", "status should contain boolean value");
 
     println("");
     println("=== All tests passed! ===");

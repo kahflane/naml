@@ -1,4 +1,5 @@
 use std::collections::arrays::*;
+use std::testing::*;
 
 fn main() {
   var nums: [int] = [1, 2, 3, 4, 5];
@@ -7,6 +8,8 @@ fn main() {
   var l: option<int> = last(nums);
   print("first: ");
   println(f!);
+  assert_eq(f!, 1, "first element should be 1");
   print("last: ");
   println(l!);
+  assert_eq(l!, 5, "last element should be 5");
 }

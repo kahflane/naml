@@ -2,6 +2,8 @@
 /// Tier 3 Test: Method Receivers (self mutability)
 ///
 
+use std::testing::*;
+
 struct Counter {
     value: int
 }
@@ -44,37 +46,51 @@ fn main() {
     var c: Counter = Counter { value: 0 };
 
     print("Initial value: ");
-    println(c.get_value());
+    var initial_val: int = c.get_value();
+    println(initial_val);
+    assert_eq(initial_val, 0, "counter initial value");
 
     c.increment();
     print("After increment: ");
-    println(c.get_value());
+    var after_inc: int = c.get_value();
+    println(after_inc);
+    assert_eq(after_inc, 1, "counter after increment");
 
     c.add(5);
     print("After add(5): ");
-    println(c.get_value());
+    var after_add: int = c.get_value();
+    println(after_add);
+    assert_eq(after_add, 6, "counter after add(5)");
 
     c.increment();
     c.increment();
     print("After 2 more increments: ");
-    println(c.get_value());
+    var final_val: int = c.get_value();
+    println(final_val);
+    assert_eq(final_val, 8, "counter after 2 more increments");
 
     print("Is zero? ");
-    if (c.is_zero()) {
+    var is_z: bool = c.is_zero();
+    if (is_z) {
         println("yes");
     } else {
         println("no");
     }
+    assert_false(is_z, "counter should not be zero");
 
     var p: Point = Point { x: 3, y: 4 };
     print("Point distance squared: ");
-    println(p.distance_squared());
+    var dist_sq: int = p.distance_squared();
+    println(dist_sq);
+    assert_eq(dist_sq, 25, "point distance squared");
 
     p.translate(1, 1);
     print("After translate(1,1) - x: ");
     print(p.x);
     print(", y: ");
     println(p.y);
+    assert_eq(p.x, 4, "point x after translate");
+    assert_eq(p.y, 5, "point y after translate");
 
     println("=== Method Receiver Tests Complete ===");
 }

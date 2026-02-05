@@ -31,7 +31,8 @@
       "Bash(time ./target/release/namlc run:*)",
       "Bash(./target/release/naml run:*)",
       "Bash(echo:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(ls:*)"
     ]
   },
   "hooks": {

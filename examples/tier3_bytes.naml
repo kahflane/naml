@@ -2,6 +2,8 @@
 /// Tier 3 Test: Bytes Type
 ///
 
+use std::testing::*;
+
 fn main() {
     println("=== Bytes Type Tests ===");
 
@@ -16,6 +18,7 @@ fn main() {
     var s2: string = b as string;
     print("Bytes as string: ");
     println(s2);
+    assert_eq_string(s2, "Hello", "bytes to string conversion should preserve value");
 
     // Test with different strings
     var greeting: string = "World";

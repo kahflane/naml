@@ -12,6 +12,7 @@
 ///
 
 use std::collections::arrays::count;
+use std::testing::*;
 
 enum Color {
     Red,
@@ -44,71 +45,96 @@ fn test_enums() {
     var c3: Color = Color::Blue;
 
     print("Testing Color::Red: ");
+    var c1_matched: int = 0;
     switch (c1) {
         case Red: {
             println("PASS - Red");
+            c1_matched = 1;
         }
         case Green: {
             println("FAIL");
+            c1_matched = 2;
         }
         case Blue: {
             println("FAIL");
+            c1_matched = 3;
         }
     }
+    assert_eq(c1_matched, 1, "Color::Red should match Red variant");
 
     print("Testing Color::Green: ");
+    var c2_matched: int = 0;
     switch (c2) {
         case Red: {
             println("FAIL");
+            c2_matched = 1;
         }
         case Green: {
             println("PASS - Green");
+            c2_matched = 2;
         }
         case Blue: {
             println("FAIL");
+            c2_matched = 3;
         }
     }
+    assert_eq(c2_matched, 2, "Color::Green should match Green variant");
 
     print("Testing Color::Blue: ");
+    var c3_matched: int = 0;
     switch (c3) {
         case Red: {
             println("FAIL");
+            c3_matched = 1;
         }
         case Green: {
             println("FAIL");
+            c3_matched = 2;
         }
         case Blue: {
             println("PASS - Blue");
+            c3_matched = 3;
         }
     }
+    assert_eq(c3_matched, 3, "Color::Blue should match Blue variant");
 
     var p: Priority = Priority::High;
     print("Testing Priority with default: ");
+    var p_matched: int = 0;
     switch (p) {
         case Low: {
             println("FAIL");
+            p_matched = 1;
         }
         case High: {
             println("PASS - High");
+            p_matched = 2;
         }
         default: {
             println("FAIL - default");
+            p_matched = 3;
         }
     }
+    assert_eq(p_matched, 2, "Priority::High should match High variant");
 
     var p2: Priority = Priority::Medium;
     print("Testing default branch: ");
+    var p2_matched: int = 0;
     switch (p2) {
         case Low: {
             println("FAIL");
+            p2_matched = 1;
         }
         case High: {
             println("FAIL");
+            p2_matched = 2;
         }
         default: {
             println("PASS - default matched Medium");
+            p2_matched = 3;
         }
     }
+    assert_eq(p2_matched, 3, "Priority::Medium should match default branch");
 }
 
 fn test_options() {
@@ -124,6 +150,7 @@ fn test_options() {
     } else {
         println("FAIL - wrong value");
     }
+    assert_eq(unwrapped, 42, "force unwrap on some(42)");
 
     print("Testing ?? operator on some: ");
     var with_default: int = opt_some ?? 0;
@@ -132,6 +159,7 @@ fn test_options() {
     } else {
         println("FAIL");
     }
+    assert_eq(with_default, 42, "?? operator on some should return value");
 
     print("Testing ?? operator on none: ");
     var none_default: int = opt_none ?? 99;
@@ -140,6 +168,7 @@ fn test_options() {
     } else {
         println("FAIL");
     }
+    assert_eq(none_default, 99, "?? operator on none should return default");
 
     print("Testing ?? with expression: ");
     var first: option<int> = none;
@@ -149,6 +178,7 @@ fn test_options() {
     } else {
         println("FAIL");
     }
+    assert_eq(result, 50, "?? with expression should evaluate correctly");
 
     var opt_point: option<Point> = some(Point { x: 10, y: 20 });
     print("Testing option<struct> force unwrap: ");
@@ -158,6 +188,8 @@ fn test_options() {
     } else {
         println("FAIL");
     }
+    assert_eq(pt.x, 10, "unwrapped struct x field");
+    assert_eq(pt.y, 20, "unwrapped struct y field");
 }
 
 fn test_maps() {
@@ -199,11 +231,13 @@ fn test_arrays() {
     var numbers: [int] = [10, 20, 30, 40, 50];
 
     print("Testing array length: ");
-    if (count(numbers) == 5) {
+    var arr_len: int = count(numbers);
+    if (arr_len == 5) {
         println("PASS");
     } else {
         println("FAIL");
     }
+    assert_eq(arr_len, 5, "array length");
 
     print("Testing for loop iteration: ");
     var sum: int = 0;
@@ -215,6 +249,7 @@ fn test_arrays() {
     } else {
         println("FAIL");
     }
+    assert_eq(sum, 150, "array element sum");
 
     print("Testing indexed for loop: ");
     var idx_sum: int = 0;
@@ -226,14 +261,17 @@ fn test_arrays() {
     } else {
         println("FAIL");
     }
+    assert_eq(idx_sum, 10, "array index sum");
 
     var empty: [int] = [];
     print("Testing empty array length: ");
-    if (count(empty) == 0) {
+    var empty_len: int = count(empty);
+    if (empty_len == 0) {
         println("PASS");
     } else {
         println("FAIL");
     }
+    assert_eq(empty_len, 0, "empty array length");
 }
 
 fn test_structs() {
@@ -247,6 +285,7 @@ fn test_structs() {
     } else {
         println("FAIL");
     }
+    assert_eq(p.x, 5, "struct field x");
 
     print("Testing struct field y: ");
     if (p.y == 10) {
@@ -254,6 +293,7 @@ fn test_structs() {
     } else {
         println("FAIL");
     }
+    assert_eq(p.y, 10, "struct field y");
 
     var rect: Rectangle = Rectangle { width: 100, height: 50 };
 
@@ -264,6 +304,7 @@ fn test_structs() {
     } else {
         println("FAIL");
     }
+    assert_eq(area, 5000, "rectangle area calculation");
 
     var nested: Point = Point { x: 15, y: 25 };
 
@@ -277,6 +318,8 @@ fn test_structs() {
     } else {
         println("FAIL");
     }
+    assert_eq(nested.x, 15, "nested struct field x");
+    assert_eq(nested.y, 25, "nested struct field y");
 }
 
 fn test_control_flow() {
@@ -289,6 +332,7 @@ fn test_control_flow() {
     } else {
         println("FAIL");
     }
+    assert_eq(x, 42, "if-else condition");
 
     print("Testing while loop: ");
     var count_val: int = 0;
@@ -302,36 +346,47 @@ fn test_control_flow() {
     } else {
         println("FAIL");
     }
+    assert_eq(count_val, 5, "while loop iteration count");
+    assert_eq(i, 5, "while loop counter final value");
 
     print("Testing nested if: ");
     var a: int = 10;
     var b: int = 20;
+    var nested_ok: bool = false;
     if (a < b) {
         if (b > 15) {
             println("PASS");
+            nested_ok = true;
         } else {
             println("FAIL");
         }
     } else {
         println("FAIL");
     }
+    assert_true(nested_ok, "nested if condition");
 
     print("Testing switch with int: ");
     var day: int = 3;
+    var day_matched: int = 0;
     switch (day) {
         case 1: {
             println("FAIL");
+            day_matched = 1;
         }
         case 2: {
             println("FAIL");
+            day_matched = 2;
         }
         case 3: {
             println("PASS");
+            day_matched = 3;
         }
         default: {
             println("FAIL");
+            day_matched = 4;
         }
     }
+    assert_eq(day_matched, 3, "switch with int should match case 3");
 }
 
 fn test_combined() {
@@ -348,6 +403,7 @@ fn test_combined() {
     } else {
         println("FAIL");
     }
+    assert_eq(color_count, 3, "enum array iteration count");
 
     print("Testing option ?? and else together: ");
     var opt1: option<int> = some(10);
@@ -359,6 +415,8 @@ fn test_combined() {
     } else {
         println("FAIL");
     }
+    assert_eq(opt1_value, 10, "some option ?? default");
+    assert_eq(opt2_value, -1, "none option ?? default");
 
     print("Testing map with computed values x: ");
     var data: map<string, int> = {};
@@ -384,6 +442,7 @@ fn test_combined() {
     } else {
         println("FAIL");
     }
+    assert_eq(x_sum, 9, "struct array x field sum");
 }
 
 fn main() {

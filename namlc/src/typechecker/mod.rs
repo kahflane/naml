@@ -334,6 +334,7 @@ impl<'a> TypeChecker<'a> {
             "encoding::base64",
             "encoding::url",
             "encoding::json",
+            "testing",
             "env",
             "os",
             "process",
@@ -2453,6 +2454,115 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("SIGTERM", vec![], Type::Int),
                 StdModuleFn::new("SIGSTOP", vec![], Type::Int),
                 StdModuleFn::new("SIGCONT", vec![], Type::Int),
+            ]),
+            "testing" => Some(vec![
+                StdModuleFn::new(
+                    "assert",
+                    vec![("condition", Type::Bool), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_eq",
+                    vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_eq_float",
+                    vec![("actual", Type::Float), ("expected", Type::Float), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_eq_string",
+                    vec![("actual", Type::String), ("expected", Type::String), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_eq_bool",
+                    vec![("actual", Type::Bool), ("expected", Type::Bool), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_neq",
+                    vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_neq_string",
+                    vec![("actual", Type::String), ("expected", Type::String), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_true",
+                    vec![("condition", Type::Bool), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_false",
+                    vec![("condition", Type::Bool), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_gt",
+                    vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_gte",
+                    vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_lt",
+                    vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_lte",
+                    vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "fail",
+                    vec![("message", Type::String)],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_approx",
+                    vec![
+                        ("actual", Type::Float),
+                        ("expected", Type::Float),
+                        ("epsilon", Type::Float),
+                        ("message", Type::String),
+                    ],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_contains",
+                    vec![
+                        ("haystack", Type::String),
+                        ("needle", Type::String),
+                        ("message", Type::String),
+                    ],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_starts_with",
+                    vec![
+                        ("value", Type::String),
+                        ("prefix", Type::String),
+                        ("message", Type::String),
+                    ],
+                    Type::Unit,
+                ),
+                StdModuleFn::new(
+                    "assert_ends_with",
+                    vec![
+                        ("value", Type::String),
+                        ("suffix", Type::String),
+                        ("message", Type::String),
+                    ],
+                    Type::Unit,
+                ),
             ]),
             "fs" => Some(Self::get_fs_functions()),
             "path" => Some(vec![

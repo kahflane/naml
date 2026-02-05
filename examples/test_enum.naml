@@ -1,3 +1,5 @@
+use std::testing::*;
+
 enum Color {
     Red,
     Green,
@@ -9,57 +11,80 @@ fn main() {
     println("Testing enum pattern matching:");
 
     var c: Color = Color::Red;
+    var matched_case: int = 0;
 
     switch (c) {
         case Red: {
             println("Color is red");
+            matched_case = 1;
         }
         case Green: {
             println("Color is green");
+            matched_case = 2;
         }
         case Blue: {
             println("Color is blue");
+            matched_case = 3;
         }
     }
+    assert_eq(matched_case, 1, "First switch should match Red case");
 
     c = Color::Green;
+    matched_case = 0;
     switch (c) {
         case Red: {
             println("Color is red");
+            matched_case = 1;
         }
         case Green: {
             println("Color is green");
+            matched_case = 2;
         }
         case Blue: {
             println("Color is blue");
+            matched_case = 3;
         }
     }
+    assert_eq(matched_case, 2, "Second switch should match Green case");
 
     c = Color::Blue;
+    matched_case = 0;
     switch (c) {
         case Red: {
             println("Color is red");
+            matched_case = 1;
         }
         case Green: {
             println("Color is green");
+            matched_case = 2;
         }
         case Blue: {
             println("Color is blue");
+            matched_case = 3;
         }
     }
+    assert_eq(matched_case, 3, "Third switch should match Blue case");
 
     c = Color::Black("me");
+    matched_case = 0;
+    var extracted_name: string = "";
     switch (c) {
         case Red: {
             println("Color is red");
+            matched_case = 1;
         }
         case Green: {
             println("Color is green");
+            matched_case = 2;
         }
         case Black(name): {
             print("Black is {}\n",name);
+            matched_case = 4;
+            extracted_name = name;
         }
     }
+    assert_eq(matched_case, 4, "Fourth switch should match Black case");
+    assert_eq_string(extracted_name, "me", "Black variant should contain 'me'");
 
     println("Done");
 }

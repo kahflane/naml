@@ -1,3 +1,5 @@
+use std::testing::*;
+
 struct Point {
     x: int,
     y: int
@@ -14,15 +16,21 @@ fn main() {
     var p: Point = Point { x: 10, y: 20 };
     print("Point x: ");
     println(p.x);
+    assert_eq(p.x, 10, "Point x should be 10");
     print("Point y: ");
     println(p.y);
+    assert_eq(p.y, 20, "Point y should be 20");
 
     var rect: Rectangle = Rectangle { width: 100, height: 50 };
     print("Rectangle width: ");
     println(rect.width);
+    assert_eq(rect.width, 100, "Rectangle width should be 100");
     print("Rectangle height: ");
     println(rect.height);
+    assert_eq(rect.height, 50, "Rectangle height should be 50");
 
+    var area: int = rect.width * rect.height;
     print("Area: ");
-    println(rect.width * rect.height);
+    println(area);
+    assert_eq(area, 5000, "Area should be 5000");
 }

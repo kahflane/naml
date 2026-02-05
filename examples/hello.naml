@@ -1,3 +1,5 @@
+use std::testing::*;
+
 fn main() {
     println("Hello, World!");
 
@@ -7,6 +9,7 @@ fn main() {
 
     print("Result: ");
     println(result);
+    assert_eq(result, 42, "Result should be 42");
 
     if (result == 42) {
         println("The answer!");
@@ -18,4 +21,5 @@ fn main() {
         println(i);
         i = i + 1;
     }
+    assert_eq(i, 3, "Loop counter should reach 3");
 }

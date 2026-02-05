@@ -1,4 +1,5 @@
 use std::threads::*;
+use std::testing::*;
 
 fn main() {
     println("Testing channels:");
@@ -17,14 +18,17 @@ fn main() {
     var v1: int = receive(ch)??0;
     print("Received: ");
     println(v1);
+    assert_eq(v1, 10, "First received value should be 10");
 
     var v2: int = receive(ch)??0;
     print("Received: ");
     println(v2);
+    assert_eq(v2, 20, "Second received value should be 20");
 
     var v3: int = receive(ch)??0;
     print("Received: ");
     println(v3);
+    assert_eq(v3, 30, "Third received value should be 30");
 
     // Test with a loop
     println("Testing channel with loop:");
@@ -42,6 +46,7 @@ fn main() {
     }
     print("Sum of received values: ");
     println(sum);
+    assert_eq(sum, 100, "Sum of received values should be 100");
 
     close(ch);
     println("Channel closed.");

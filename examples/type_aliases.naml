@@ -1,6 +1,8 @@
 // Type Aliases Example
 // Demonstrates type alias definitions and usage
 
+use std::testing::*;
+
 // Simple type alias for a handler function
 type handler = fn(int) -> int;
 
@@ -29,8 +31,10 @@ fn main() {
 
     // Direct function call
     println(apply(2));
+    assert_eq(apply(2), 4, "apply(2) should return 4");
 
     // First-class function: pass function as value
     println("Testing first-class function:");
     println(invoke_handler(apply, 2));
+    assert_eq(invoke_handler(apply, 2), 4, "invoke_handler(apply, 2) should return 4");
 }

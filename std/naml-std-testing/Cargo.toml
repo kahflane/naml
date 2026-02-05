@@ -1,0 +1,21 @@
+##
+## naml-std-testing - Assertion utilities for testing naml programs
+##
+## Provides assertion functions for equality, comparison, truthiness,
+## float approximation, and string content validation.
+##
+
+[package]
+name = "naml-std-testing"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Testing and assertion utilities for the naml programming language"
+
+[lib]
+name = "naml_std_testing"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true

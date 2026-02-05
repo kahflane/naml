@@ -1274,6 +1274,80 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_process_sigcont as *const u8,
         );
 
+        // Testing operations (from naml-std-testing)
+        builder.symbol(
+            "naml_testing_assert",
+            crate::runtime::naml_testing_assert as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_eq",
+            crate::runtime::naml_testing_assert_eq as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_eq_float",
+            crate::runtime::naml_testing_assert_eq_float as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_eq_string",
+            crate::runtime::naml_testing_assert_eq_string as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_eq_bool",
+            crate::runtime::naml_testing_assert_eq_bool as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_neq",
+            crate::runtime::naml_testing_assert_neq as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_neq_string",
+            crate::runtime::naml_testing_assert_neq_string as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_true",
+            crate::runtime::naml_testing_assert_true as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_false",
+            crate::runtime::naml_testing_assert_false as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_gt",
+            crate::runtime::naml_testing_assert_gt as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_gte",
+            crate::runtime::naml_testing_assert_gte as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_lt",
+            crate::runtime::naml_testing_assert_lt as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_lte",
+            crate::runtime::naml_testing_assert_lte as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_fail",
+            crate::runtime::naml_testing_fail as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_approx",
+            crate::runtime::naml_testing_assert_approx as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_contains",
+            crate::runtime::naml_testing_assert_contains as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_starts_with",
+            crate::runtime::naml_testing_assert_starts_with as *const u8,
+        );
+        builder.symbol(
+            "naml_testing_assert_ends_with",
+            crate::runtime::naml_testing_assert_ends_with as *const u8,
+        );
+
         // Exception handling
         builder.symbol(
             "naml_exception_set",
@@ -4154,6 +4228,134 @@ impl<'a> JitCompiler<'a> {
             "naml_process_sigcont",
             &[],
             &[i64t],
+        )?;
+
+        // Testing operations (from naml-std-testing)
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert",
+            &[i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_eq",
+            &[i64t, i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_eq_float",
+            &[f64t, f64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_eq_string",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_eq_bool",
+            &[i64t, i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_neq",
+            &[i64t, i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_neq_string",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_true",
+            &[i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_false",
+            &[i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_gt",
+            &[i64t, i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_gte",
+            &[i64t, i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_lt",
+            &[i64t, i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_lte",
+            &[i64t, i64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_fail",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_approx",
+            &[f64t, f64t, f64t, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_contains",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_starts_with",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_testing_assert_ends_with",
+            &[ptr, ptr, ptr],
+            &[],
         )?;
 
         // Bytes operations

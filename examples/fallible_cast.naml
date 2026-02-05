@@ -1,15 +1,21 @@
+use std::testing::*;
+
 fn main() {
     // Test fallible cast (as?) for string to int
     var valid_int: string = "42";
     var maybe_int: option<int> = valid_int as? int;
     println("Parsed valid int:");
-    println(maybe_int ?? 0);
+    var parsed_val: int = maybe_int ?? 0;
+    println(parsed_val);
+    assert_eq(parsed_val, 42, "fallible cast of '42' to int");
 
     // Test with invalid input - should return default
     var invalid_int: string = "not a number";
     var maybe_invalid: option<int> = invalid_int as? int;
     println("Invalid parse (default 0):");
-    println(maybe_invalid ?? 0);
+    var invalid_val: int = maybe_invalid ?? 0;
+    println(invalid_val);
+    assert_eq(invalid_val, 0, "fallible cast of invalid string should use default");
 
     // Comparison: regular cast vs fallible cast
     var bad_str: string = "hello";
@@ -22,4 +28,5 @@ fn main() {
     var result: int = safe_int ?? -1;
     println("Fallible cast of 'hello' to int (with default -1):");
     println(result);
+    assert_eq(result, -1, "fallible cast of 'hello' should use default -1");
 }

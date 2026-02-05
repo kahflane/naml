@@ -6,22 +6,28 @@ extern fn pow(base: float, exp: float) -> float;
 extern fn floor(x: float) -> float;
 extern fn ceil(x: float) -> float;
 
+use std::testing::*;
+
 fn main() {
     println("Testing FFI with math functions:");
 
     print("sqrt(16.0) = ");
     var s: float = sqrt(16.0);
     println(s);
+    assert_eq_float(s, 4.0, "sqrt(16.0) should be 4.0");
 
     print("pow(2.0, 10.0) = ");
     var p: float = pow(2.0, 10.0);
     println(p);
+    assert_eq_float(p, 1024.0, "pow(2.0, 10.0) should be 1024.0");
 
     print("floor(3.7) = ");
     var f: float = floor(3.7);
     println(f);
+    assert_eq_float(f, 3.0, "floor(3.7) should be 3.0");
 
     print("ceil(3.2) = ");
     var c: float = ceil(3.2);
     println(c);
+    assert_eq_float(c, 4.0, "ceil(3.2) should be 4.0");
 }

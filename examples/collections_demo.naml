@@ -1,4 +1,5 @@
 use std::collections::arrays::*;
+use std::testing::*;
 
 fn main() {
     println("=== std::collections Demo ===\n");
@@ -13,17 +14,22 @@ fn main() {
     var l: option<int> = last(nums);
     print("first: ");
     println(f!);
+    assert_eq(f!, 3, "first element should be 3");
     print("last: ");
     println(l!);
+    assert_eq(l!, 6, "last element should be 6");
 
     // Aggregation
     println("\nAggregation:");
     print("sum: ");
     println(sum(nums));
+    assert_eq(sum(nums), 31, "sum should be 31");
     print("min: ");
     println(min(nums)!);
+    assert_eq(min(nums)!, 1, "min should be 1");
     print("max: ");
     println(max(nums)!);
+    assert_eq(max(nums)!, 9, "max should be 9");
 
     // Transformation
     println("\nTransformation:");
@@ -40,10 +46,13 @@ fn main() {
     println("\nSearch:");
     print("index_of(5): ");
     println(index_of(nums, 5)!);
+    assert_eq(index_of(nums, 5)!, 4, "index_of(5) should be 4");
     print("contains(5): ");
     println(contains(nums, 5));
+    assert_true(contains(nums, 5), "should contain 5");
     print("contains(99): ");
     println(contains(nums, 99));
+    assert_false(contains(nums, 99), "should not contain 99");
 
     // Lambda-based functions (qualified calls for ambiguous functions)
     println("\nLambda-based:");
@@ -53,6 +62,7 @@ fn main() {
     println(all(nums, fn(x: int) -> bool { return x > 0; }));
     print("count_if > 3: ");
     println(count_if(nums, fn(x: int) -> bool { return x > 3; }));
+    assert_eq(count_if(nums, fn(x: int) -> bool { return x > 3; }), 4, "count_if > 3 should be 4");
 
     // apply (map)
     print("doubled: ");
@@ -74,6 +84,7 @@ fn main() {
     println("\nFold:");
     print("product: ");
     println(fold(nums, 1, fn(acc: int, x: int) -> int { return acc * x; }));
+    assert_eq(fold(nums, 1, fn(acc: int, x: int) -> int { return acc * x; }), 6480, "product should be 6480");
 
     // flatten
     println("\nFlatten:");
@@ -86,6 +97,8 @@ fn main() {
     var unsorted: [int] = [5, 2, 8, 1, 9];
     print("sorted: ");
     println(sort(unsorted));
+    var sorted_arr: [int] = sort(unsorted);
+    assert_eq(sorted_arr[0]!, 1, "first element of sorted array should be 1");
 
     // sort_by (descending)
     var unsorted2: [int] = [5, 2, 8, 1, 9];

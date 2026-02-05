@@ -1,4 +1,5 @@
 use std::collections::*;
+use std::testing::*;
 
 fn main() {
     println("=== Arrays and Maps Module Demo ===");
@@ -12,13 +13,16 @@ fn main() {
     var numbers: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     println("Numbers:", numbers);
     println("arrays::count:", arrays::count(numbers));
+    assert_eq(arrays::count(numbers), 10, "numbers array count should be 10");
 
     // Filtering with qualified names
     var evens: [int] = arrays::where(numbers, fn(n: int) -> bool { return n % 2 == 0; });
     println("arrays::where (evens):", evens);
+    assert_eq(arrays::count(evens), 5, "evens count should be 5");
 
     var odds: [int] = arrays::reject(numbers, fn(n: int) -> bool { return n % 2 == 0; });
     println("arrays::reject (odds):", odds);
+    assert_eq(arrays::count(odds), 5, "odds count should be 5");
 
     // Predicates
     var has_big: bool = arrays::any(numbers, fn(n: int) -> bool { return n > 8; });
@@ -32,11 +36,13 @@ fn main() {
     var big_count: int = arrays::count_if(numbers, fn(n: int) -> bool { return n > 5; });
     print("arrays::count_if > 5: ");
     println(big_count);
+    assert_eq(big_count, 5, "count_if > 5 should be 5");
 
     // Fold/reduce
     var total: int = arrays::fold(numbers, 0, fn(acc: int, n: int) -> int { return acc + n; });
     print("arrays::fold (sum): ");
     println(total);
+    assert_eq(total, 55, "fold sum should be 55");
 
     // Set operations
     var set1: [int] = [1, 2, 3, 4, 5];
@@ -60,12 +66,15 @@ fn main() {
     };
     println("Scores:", scores);
     println("maps::count:", maps::count(scores));
+    assert_eq(maps::count(scores), 5, "scores map count should be 5");
 
     // Key checking
     print("maps::contains_key 'alice': ");
     println(maps::contains_key(scores, "alice"));
+    assert_eq_bool(maps::contains_key(scores, "alice"), true, "should contain alice");
     print("maps::contains_key 'frank': ");
     println(maps::contains_key(scores, "frank"));
+    assert_eq_bool(maps::contains_key(scores, "frank"), false, "should not contain frank");
 
     // Extraction
     println("maps::keys:", maps::keys(scores));
@@ -94,11 +103,13 @@ fn main() {
     var count_high: int = maps::count_if(scores, fn(k: string, v: int) -> bool { return v >= 90; });
     print("maps::count_if >= 90: ");
     println(count_high);
+    assert_eq(count_high, 3, "count_if >= 90 should be 3");
 
     // Fold on maps
     var sum_scores: int = maps::fold(scores, 0, fn(acc: int, k: string, v: int) -> int { return acc + v; });
     print("maps::fold (sum): ");
     println(sum_scores);
+    assert_eq(sum_scores, 440, "fold sum should be 440");
 
     // ============================================
     // Combining Maps

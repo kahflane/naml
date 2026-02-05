@@ -1,5 +1,7 @@
 // Basic example that uses only features supported by the Rust codegen
 
+use std::testing::*;
+
 pub struct Point {
     pub x: int,
     pub y: int
@@ -56,21 +58,25 @@ fn main() {
     var sum: int = add(x, y);
     println("Sum: ");
     println(sum);
+    assert_eq(sum, 30, "Sum should be 30");
 
     // Factorial
     var fact: int = factorial(5);
     println("Factorial of 5: ");
     println(fact);
+    assert_eq(fact, 120, "Factorial of 5 should be 120");
 
     // Fibonacci
     var fib: int = fibonacci(10);
     println("Fibonacci(10): ");
     println(fib);
+    assert_eq(fib, 55, "Fibonacci(10) should be 55");
 
     // Struct usage
     var p: Point = Point { x: 5, y: 10 };
     println("Point x: ");
     println(p.x);
+    assert_eq(p.x, 5, "Point x should be 5");
 
     var rect: Rectangle = Rectangle {
         origin: Point { x: 0, y: 0 },
@@ -79,12 +85,14 @@ fn main() {
     };
     println("Rectangle width: ");
     println(rect.width);
+    assert_eq(rect.width, 100, "Rectangle width should be 100");
 
     // Array operations
     var numbers: [int] = [1, 2, 3, 4, 5];
     var total: int = sum_array(numbers);
     println("Sum of array: ");
     println(total);
+    assert_eq(total, 15, "Sum of array should be 15");
 
     // Control flow
     var i: int = 0;
@@ -92,7 +100,12 @@ fn main() {
         println(i);
         i = i + 1;
     }
-    
-    println(greet("World"));
-    println(applyx(2));
+
+    var greet_result: string = greet("World");
+    println(greet_result);
+    assert_eq_string(greet_result, "Hello World", "Greet should return 'Hello World'");
+
+    var applyx_result: int = applyx(2);
+    println(applyx_result);
+    assert_eq(applyx_result, 4, "applyx(2) should return 4");
 }

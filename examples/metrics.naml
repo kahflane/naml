@@ -5,6 +5,7 @@
 ///
 
 use std::metrics::*;
+use std::testing::*;
 
 fn fib(n: int) -> int {
     if (n <= 1) {
@@ -27,6 +28,7 @@ fn main() {
     }
 
     println("  Sum: {}", sum);
+    assert_eq(sum, 499999500000, "loop sum should be 499999500000");
     println("  Elapsed: {} ms", elapsed_ms(start));
     println("  Elapsed: {} us", elapsed_us(start));
     println("  Elapsed: {} ns", elapsed_ns(start));
@@ -39,6 +41,7 @@ fn main() {
     var result: int = fib(30);
 
     println("  Result: {}", result);
+    assert_eq(result, 832040, "fib(30) should be 832040");
     println("  Elapsed: {} ms", elapsed_ms(start));
     println("");
 
@@ -54,7 +57,9 @@ fn main() {
     var t2: int = elapsed_ms(start);
 
     println("  fib(25) = {} in {} ms", r1, t1);
+    assert_eq(r1, 75025, "fib(25) should be 75025");
     println("  fib(28) = {} in {} ms", r2, t2);
+    assert_eq(r2, 317811, "fib(28) should be 317811");
 
     println("");
     println("Done!");

@@ -2,6 +2,8 @@
 /// Tier 3 Test: Type Casting
 ///
 
+use std::testing::*;
+
 fn main() {
     println("=== Type Casting Tests ===");
 
@@ -10,28 +12,34 @@ fn main() {
     var s: string = n as string;
     print("int 42 as string: ");
     println(s);
+    assert_eq_string(s, "42", "int 42 should cast to string '42'");
 
     // float to string
     var f: float = 3.14;
     var fs: string = f as string;
     print("float 3.14 as string: ");
     println(fs);
+    assert_contains(fs, "3.14", "float should cast to string containing '3.14'");
 
     // string to int
     var str_num: string = "123";
     var parsed: int = str_num as int;
     print("string '123' as int: ");
     println(parsed);
+    assert_eq(parsed, 123, "string '123' should cast to int 123");
 
     // string to float
     var str_float: string = "2.718";
     var parsed_f: float = str_float as float;
     print("string '2.718' as float: ");
     println(parsed_f);
+    assert_approx(parsed_f, 2.718, 0.0001, "string '2.718' should cast to float 2.718");
 
     // Verify arithmetic works after conversion
+    var result: int = parsed + 7;
     print("Parsed int + 7 = ");
-    println(parsed + 7);
+    println(result);
+    assert_eq(result, 130, "parsed int (123) + 7 should equal 130");
 
     // int to float to string roundtrip
     var num: int = 100;
@@ -39,6 +47,7 @@ fn main() {
     var as_str: string = as_float as string;
     print("int 100 -> float -> string: ");
     println(as_str);
+    assert_contains(as_str, "100", "roundtrip should contain '100'");
 
     println("=== Casting Tests Complete ===");
 }

@@ -2,17 +2,22 @@
 extern fn abs(x: int) -> int;
 extern fn labs(x: int) -> int;
 
+use std::testing::*;
+
 fn main() {
     println("Testing FFI with libc functions:");
 
     var x: int = -42;
     print("abs(-42) = ");
     println(abs(x));
+    assert_eq(abs(x), 42, "abs(-42) should be 42");
 
     var y: int = -100;
     print("labs(-100) = ");
     println(labs(y));
+    assert_eq(labs(y), 100, "labs(-100) should be 100");
 
     print("abs(10) = ");
     println(abs(10));
+    assert_eq(abs(10), 10, "abs(10) should be 10");
 }

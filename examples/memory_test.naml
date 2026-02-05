@@ -6,24 +6,30 @@
 ///
 
 use std::collections::arrays::count;
+use std::testing::*;
 
 fn test_string_cleanup() {
     println("=== String Cleanup Test ===");
     var s: string = "hello world";
     println(s);
+    assert_eq_string(s, "hello world", "Initial string should be 'hello world'");
     var s2: string = "goodbye world";
     s = s2;
     println(s);
+    assert_eq_string(s, "goodbye world", "String after reassignment should be 'goodbye world'");
 }
 
 fn test_string_reassignment() {
     println("=== String Reassignment Test ===");
     var name: string = "Alice";
     println(name);
+    assert_eq_string(name, "Alice", "Name should be 'Alice' initially");
     name = "Bob";
     println(name);
+    assert_eq_string(name, "Bob", "Name should be 'Bob' after first reassignment");
     name = "Charlie";
     println(name);
+    assert_eq_string(name, "Charlie", "Name should be 'Charlie' after second reassignment");
 }
 
 fn test_array_cleanup() {
@@ -31,6 +37,7 @@ fn test_array_cleanup() {
     var arr: [int] = [1, 2, 3, 4, 5];
     print("Array length: ");
     println(count(arr));
+    assert_eq(count(arr), 5, "Array should have 5 elements");
 }
 
 fn test_map_cleanup() {
@@ -67,8 +74,10 @@ fn test_struct_cleanup() {
     var ts: TestStruct = TestStruct { value: 42, name: "test struct" };
     print("Struct value: ");
     println(ts.value);
+    assert_eq(ts.value, 42, "Struct value should be 42");
     print("Struct name: ");
     println(ts.name);
+    assert_eq_string(ts.name, "test struct", "Struct name should be 'test struct'");
 }
 
 fn main() {

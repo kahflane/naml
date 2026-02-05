@@ -2,6 +2,8 @@
 /// Test: Generic Methods on Types
 ///
 
+use std::testing::*;
+
 pub struct Box<T> {
     pub value: T
 }
@@ -30,18 +32,22 @@ fn main() {
     var int_box: Box<int> = Box { value: 42 };
     print("Box<int>.get_value(): ");
     println(int_box.get_value());
+    assert_eq(int_box.get_value(), 42, "Box<int>.get_value() should return 42");
 
     // Test Box<string>
     var str_box: Box<string> = Box { value: "hello" };
     print("Box<string>.get_value(): ");
     println(str_box.get_value());
+    assert_eq_string(str_box.get_value(), "hello", "Box<string>.get_value() should return 'hello'");
 
     // Test Pair<int, string>
     var pair: Pair<int, string> = Pair { first: 1, second: "one" };
     print("Pair.get_first(): ");
     println(pair.get_first());
+    assert_eq(pair.get_first(), 1, "Pair.get_first() should return 1");
     print("Pair.get_second(): ");
     println(pair.get_second());
+    assert_eq_string(pair.get_second(), "one", "Pair.get_second() should return 'one'");
 
     println("=== Generic Method Tests Complete ===");
 }

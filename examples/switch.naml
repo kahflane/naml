@@ -1,28 +1,38 @@
+use std::testing::*;
+
 fn main() {
     println("Testing switch statements:");
 
     var day: int = 3;
+    var matched_case: int = 0;
 
     switch (day) {
         case 1: {
             println("Monday");
+            matched_case = 1;
         }
         case 2: {
             println("Tuesday");
+            matched_case = 2;
         }
         case 3: {
             println("Wednesday");
+            matched_case = 3;
         }
         case 4: {
             println("Thursday");
+            matched_case = 4;
         }
         case 5: {
             println("Friday");
+            matched_case = 5;
         }
         default: {
             println("Weekend");
+            matched_case = 0;
         }
     }
+    assert_eq(matched_case, 3, "Should match case 3 (Wednesday)");
 
     println("Testing multiple values:");
     var x: int = 0;
@@ -30,19 +40,36 @@ fn main() {
         print("x = ");
         print(x);
         print(" -> ");
+        var loop_matched: int = 0;
         switch (x) {
             case 0: {
                 println("zero");
+                loop_matched = 0;
             }
             case 1: {
                 println("one");
+                loop_matched = 1;
             }
             case 2: {
                 println("two");
+                loop_matched = 2;
             }
             default: {
                 println("many");
+                loop_matched = -1;
             }
+        }
+        if (x == 0) {
+            assert_eq(loop_matched, 0, "Should match case 0");
+        }
+        if (x == 1) {
+            assert_eq(loop_matched, 1, "Should match case 1");
+        }
+        if (x == 2) {
+            assert_eq(loop_matched, 2, "Should match case 2");
+        }
+        if (x > 2) {
+            assert_eq(loop_matched, -1, "Should match default case");
         }
         x = x + 1;
     }

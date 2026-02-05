@@ -1,24 +1,29 @@
 // Ternary and Elvis Operator Examples
 // Demonstrates the conditional expression operators in naml
 
+use std::testing::*;
+
 fn main() {
     // Basic ternary operator: condition ? true_value : false_value
     var age: int = 25;
     var is_adult: int = age >= 18 ? 1 : 0;
     println("Is adult (1=yes, 0=no):");
     println(is_adult);
+    assert_eq(is_adult, 1, "Age 25 should be adult (1)");
 
     // Ternary with numeric comparison
     var score: int = 85;
     var grade: int = score >= 90 ? 4 : score >= 80 ? 3 : score >= 70 ? 2 : 1;
     println("Grade (4=A, 3=B, 2=C, 1=D):");
     println(grade);
+    assert_eq(grade, 3, "Score 85 should be grade 3 (B)");
 
     // Ternary returning different values
     var temperature: int = 72;
     var comfort: int = temperature > 80 ? -1 : temperature < 60 ? 1 : 0;
     println("Comfort level (-1=hot, 0=ok, 1=cold):");
     println(comfort);
+    assert_eq(comfort, 0, "Temperature 72 should be comfortable (0)");
 
     // Elvis operator: value ?: default
     // Returns value if truthy (non-zero), otherwise returns default
@@ -26,11 +31,13 @@ fn main() {
     var display_count: int = count ?: 10;
     println("Display count (0 defaults to 10):");
     println(display_count);
+    assert_eq(display_count, 10, "Count 0 should default to 10");
 
     var items: int = 5;
     var actual_items: int = items ?: 1;
     println("Actual items (5 is truthy):");
     println(actual_items);
+    assert_eq(actual_items, 5, "Items 5 should remain 5");
 
     // Combining ternary with expressions
     var x: int = 10;
@@ -39,20 +46,24 @@ fn main() {
     var min: int = x < y ? x : y;
     println("Max of 10 and 20:");
     println(max);
+    assert_eq(max, 20, "Max of 10 and 20 should be 20");
     println("Min of 10 and 20:");
     println(min);
+    assert_eq(min, 10, "Min of 10 and 20 should be 10");
 
     // Elvis for default values
     var user_limit: int = 0;
     var effective_limit: int = user_limit ?: 100;
     println("Effective limit (0 defaults to 100):");
     println(effective_limit);
+    assert_eq(effective_limit, 100, "User limit 0 should default to 100");
 
     // Ternary with boolean condition
     var flag: bool = true;
     var result: int = flag ? 42 : 0;
     println("Result when flag is true:");
     println(result);
+    assert_eq(result, 42, "Flag true should give result 42");
 
     // Chained elvis
     var a: int = 0;
@@ -61,4 +72,5 @@ fn main() {
     var first_truthy: int = a ?: b ?: c ?: 99;
     println("First truthy value (0, 0, 5, 99):");
     println(first_truthy);
+    assert_eq(first_truthy, 5, "First truthy should be 5");
 }

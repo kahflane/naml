@@ -3,6 +3,7 @@
 ///
 
 use std::strings::{len, char_at};
+use std::testing::*;
 
 fn main() {
     println("=== String Iteration Tests ===");
@@ -17,6 +18,7 @@ fn main() {
     var length: int = len(s);
     print("Length: ");
     println(length);
+    assert_eq(length, 2, "len('Hi') should be 2");
 
     // Test char_at function
     println("Testing char_at...");
@@ -24,13 +26,18 @@ fn main() {
     var second: int = char_at(s, 1);
     print("First char code: ");
     println(first);
+    assert_eq(first, 72, "char_at('Hi', 0) should be 72 (ASCII 'H')");
+
     print("Second char code: ");
     println(second);
+    assert_eq(second, 105, "char_at('Hi', 1) should be 105 (ASCII 'i')");
 
     // Test longer string
     var hello: string = "Hello";
+    var hello_len: int = len(hello);
     print("'Hello' length: ");
-    println(len(hello));
+    println(hello_len);
+    assert_eq(hello_len, 5, "len('Hello') should be 5");
 
     // Iterate via index
     println("Characters via index:");
