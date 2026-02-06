@@ -46,7 +46,8 @@ use crate::ast::{Expression, FunctionItem, Item, SourceFile, Statement};
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::errors::convert_cranelift_error;
 use crate::codegen::cranelift::expr::compile_expression;
-use crate::codegen::cranelift::heap::{HeapType, get_heap_type};
+use crate::codegen::cranelift::heap::{HeapType, get_heap_type, get_heap_type_resolved};
+use crate::codegen::cranelift::structs::struct_has_heap_fields;
 use crate::codegen::cranelift::map::call_map_set;
 use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_stack_pop, emit_stack_push};
 use crate::codegen::cranelift::stmt::compile_statement;
@@ -140,6 +141,7 @@ pub struct CompileContext<'a> {
     inline_depth: u32,
     inline_exit_block: Option<Block>,
     inline_result_var: Option<Variable>,
+    borrowed_vars: HashSet<String>,
 }
 
 unsafe impl Send for LambdaInfo {}
@@ -495,6 +497,12 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_array_sample_n as *const u8,
         );
 
+        // Arena allocation
+        builder.symbol(
+            "naml_arena_alloc",
+            crate::runtime::naml_arena_alloc as *const u8,
+        );
+
         // Struct operations
         builder.symbol(
             "naml_struct_new",
@@ -511,6 +519,14 @@ impl<'a> JitCompiler<'a> {
         builder.symbol(
             "naml_struct_free",
             crate::runtime::naml_struct_free as *const u8,
+        );
+        builder.symbol(
+            "naml_struct_incref_fast",
+            crate::runtime::naml_struct_incref_fast as *const u8,
+        );
+        builder.symbol(
+            "naml_struct_decref_fast",
+            crate::runtime::naml_struct_decref_fast as *const u8,
         );
         builder.symbol(
             "naml_struct_get_field",
@@ -3131,6 +3147,15 @@ impl<'a> JitCompiler<'a> {
             &[ptr],
         )?;
 
+        // Arena allocator
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_arena_alloc",
+            &[i64t],
+            &[ptr],
+        )?;
+
         // Struct functions
         declare(
             &mut self.module,
@@ -3171,6 +3196,20 @@ impl<'a> JitCompiler<'a> {
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_struct_free",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_struct_incref_fast",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_struct_decref_fast",
             &[ptr],
             &[],
         )?;
@@ -5096,7 +5135,7 @@ impl<'a> JitCompiler<'a> {
 
                 for f in &struct_item.fields {
                     fields.push(self.interner.resolve(&f.name.symbol).to_string());
-                    field_heap_types.push(get_heap_type(&f.ty));
+                    field_heap_types.push(get_heap_type_resolved(&f.ty, self.interner));
                 }
 
                 let type_id = self.next_type_id;
@@ -5125,7 +5164,7 @@ impl<'a> JitCompiler<'a> {
 
                 for f in &exception_item.fields {
                     fields.push(self.interner.resolve(&f.name.symbol).to_string());
-                    field_heap_types.push(get_heap_type(&f.ty));
+                    field_heap_types.push(get_heap_type_resolved(&f.ty, self.interner));
                 }
 
                 let type_id = self.next_type_id;
@@ -5385,13 +5424,27 @@ impl<'a> JitCompiler<'a> {
     }
 
     fn generate_struct_decref_functions(&mut self) -> Result<(), CodegenError> {
-        // Collect structs that need specialized decref functions
+        let ptr_type = self.module.target_config().pointer_type();
+
         let structs_with_heap_fields: Vec<(String, StructDef)> = self
             .struct_defs
             .iter()
             .filter(|(_, def)| def.field_heap_types.iter().any(|ht| ht.is_some()))
             .map(|(name, def)| (name.clone(), def.clone()))
             .collect();
+
+        for (struct_name, _) in &structs_with_heap_fields {
+            let func_name = format!("naml_struct_decref_{}", struct_name);
+            let mut sig = self.module.make_signature();
+            sig.params.push(AbiParam::new(ptr_type));
+            let func_id = self
+                .module
+                .declare_function(&func_name, Linkage::Local, &sig)
+                .map_err(|e| {
+                    CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e))
+                })?;
+            self.functions.insert(func_name, func_id);
+        }
 
         for (struct_name, struct_def) in structs_with_heap_fields {
             self.generate_struct_decref(&struct_name, &struct_def)?;
@@ -5408,20 +5461,12 @@ impl<'a> JitCompiler<'a> {
         let ptr_type = self.module.target_config().pointer_type();
         let func_name = format!("naml_struct_decref_{}", struct_name);
 
-        // Function signature: fn(struct_ptr: *mut NamlStruct)
+        let func_id = *self.functions.get(&func_name).ok_or_else(|| {
+            CodegenError::JitCompile(format!("Decref function not pre-declared: {}", func_name))
+        })?;
+
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(ptr_type));
-
-        let func_id = self
-            .module
-            .declare_function(&func_name, Linkage::Local, &sig)
-            .map_err(|e| {
-                CodegenError::JitCompile(format!("Failed to declare {}: {}", func_name, e))
-            })?;
-
-        // Store for later reference
-        self.functions.insert(func_name.clone(), func_id);
-
         self.ctx.func.signature = sig;
 
         let mut builder_ctx = FunctionBuilderContext::new();
@@ -5454,19 +5499,29 @@ impl<'a> JitCompiler<'a> {
         builder.switch_to_block(decref_block);
         builder.seal_block(decref_block);
 
-        // Call atomic decref on refcount (at offset 0 in HeapHeader)
-        // HeapHeader layout: refcount (8 bytes), tag (1 byte), pad (7 bytes)
-        // Use atomic_rmw to safely decrement refcount in multi-threaded scenarios
         let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
-        let old_refcount = builder.ins().atomic_rmw(
-            cranelift::prelude::types::I64,
-            MemFlags::new(),
-            AtomicRmwOp::Sub,
-            struct_ptr,
-            one,
-        );
+        let old_refcount = if self.unsafe_mode {
+            let current = builder.ins().load(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                struct_ptr,
+                0,
+            );
+            let decremented = builder.ins().iadd_imm(current, -1);
+            builder
+                .ins()
+                .store(MemFlags::new(), decremented, struct_ptr, 0);
+            current
+        } else {
+            builder.ins().atomic_rmw(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                AtomicRmwOp::Sub,
+                struct_ptr,
+                one,
+            )
+        };
 
-        // Check if old refcount was 1 (meaning it's now 0 and we should free)
         let should_free = builder.ins().icmp(IntCC::Equal, old_refcount, one);
 
         let free_block = builder.create_block();
@@ -5477,7 +5532,9 @@ impl<'a> JitCompiler<'a> {
             .brif(should_free, free_block, &[], done_block, &[]);
         builder.switch_to_block(free_block);
         builder.seal_block(free_block);
-        builder.ins().fence();
+        if !self.unsafe_mode {
+            builder.ins().fence();
+        }
 
         // Struct memory layout after header:
         // - type_id: u32 (offset 16)
@@ -5509,30 +5566,40 @@ impl<'a> JitCompiler<'a> {
                 builder.switch_to_block(decref_field_block);
                 builder.seal_block(decref_field_block);
 
-                let decref_func_name = match ht {
-                    HeapType::String => "naml_string_decref",
-                    HeapType::Array(None) => "naml_array_decref",
+                let decref_func_name: String = match ht {
+                    HeapType::String => "naml_string_decref".to_string(),
+                    HeapType::Array(None) => "naml_array_decref".to_string(),
                     HeapType::Array(Some(elem_type)) => match elem_type.as_ref() {
-                        HeapType::String => "naml_array_decref_strings",
-                        HeapType::Array(_) => "naml_array_decref_arrays",
-                        HeapType::Map(_) => "naml_array_decref_maps",
-                        HeapType::Struct(_) => "naml_array_decref_structs",
+                        HeapType::String => "naml_array_decref_strings".to_string(),
+                        HeapType::Array(_) => "naml_array_decref_arrays".to_string(),
+                        HeapType::Map(_) => "naml_array_decref_maps".to_string(),
+                        HeapType::Struct(_) => "naml_array_decref_structs".to_string(),
                     },
-                    HeapType::Map(None) => "naml_map_decref",
+                    HeapType::Map(None) => "naml_map_decref".to_string(),
                     HeapType::Map(Some(val_type)) => match val_type.as_ref() {
-                        HeapType::String => "naml_map_decref_strings",
-                        HeapType::Array(_) => "naml_map_decref_arrays",
-                        HeapType::Map(_) => "naml_map_decref_maps",
-                        HeapType::Struct(_) => "naml_map_decref_structs",
+                        HeapType::String => "naml_map_decref_strings".to_string(),
+                        HeapType::Array(_) => "naml_map_decref_arrays".to_string(),
+                        HeapType::Map(_) => "naml_map_decref_maps".to_string(),
+                        HeapType::Struct(_) => "naml_map_decref_structs".to_string(),
                     },
-                    HeapType::Struct(None) => "naml_struct_decref",
-                    HeapType::Struct(Some(_)) => "naml_struct_decref",
+                    HeapType::Struct(None) => "naml_struct_decref".to_string(),
+                    HeapType::Struct(Some(field_struct_name)) => {
+                        if struct_has_heap_fields(&self.struct_defs, field_struct_name) {
+                            format!("naml_struct_decref_{}", field_struct_name)
+                        } else {
+                            "naml_struct_decref".to_string()
+                        }
+                    }
                 };
 
-                let decref_func_id =
-                    *self.runtime_funcs.get(decref_func_name).ok_or_else(|| {
+                let decref_func_id = self
+                    .runtime_funcs
+                    .get(decref_func_name.as_str())
+                    .or_else(|| self.functions.get(decref_func_name.as_str()))
+                    .copied()
+                    .ok_or_else(|| {
                         CodegenError::JitCompile(format!(
-                            "Unknown runtime function: {}",
+                            "Unknown decref function: {}",
                             decref_func_name
                         ))
                     })?;
@@ -5741,6 +5808,7 @@ impl<'a> JitCompiler<'a> {
             inline_depth: 0,
             inline_exit_block: None,
             inline_result_var: None,
+            borrowed_vars: HashSet::new(),
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -6294,6 +6362,7 @@ impl<'a> JitCompiler<'a> {
             inline_depth: 0,
             inline_exit_block: None,
             inline_result_var: None,
+            borrowed_vars: HashSet::new(),
         };
 
         // Load captured variables from closure data
@@ -6443,6 +6512,7 @@ impl<'a> JitCompiler<'a> {
             inline_depth: 0,
             inline_exit_block: None,
             inline_result_var: None,
+            borrowed_vars: HashSet::new(),
         };
 
         // Load captured variables from closure data
@@ -6673,6 +6743,7 @@ impl<'a> JitCompiler<'a> {
             inline_depth: 0,
             inline_exit_block: None,
             inline_result_var: None,
+            borrowed_vars: HashSet::new(),
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -6910,6 +6981,7 @@ impl<'a> JitCompiler<'a> {
             inline_depth: 0,
             inline_exit_block: None,
             inline_result_var: None,
+            borrowed_vars: HashSet::new(),
         };
 
         // Set up receiver variable (self)

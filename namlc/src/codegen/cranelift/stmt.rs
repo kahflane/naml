@@ -5,9 +5,10 @@ use crate::codegen::cranelift::array::{
 };
 use crate::codegen::cranelift::pattern::compile_pattern_match;
 use crate::codegen::cranelift::{
-    call_map_set, compile_expression, get_heap_type, 
+    call_map_set, compile_expression,
     types, CompileContext, HeapType,
 };
+use crate::codegen::cranelift::heap::get_heap_type_resolved;
 use crate::codegen::CodegenError;
 use crate::source::Spanned;
 use crate::typechecker::Type;
@@ -48,7 +49,7 @@ pub fn compile_statement(
             });
             if !skip_heap_tracking {
                 if let Some(ref naml_ty) = var_stmt.ty
-                    && let Some(heap_type) = get_heap_type(naml_ty)
+                    && let Some(heap_type) = get_heap_type_resolved(naml_ty, ctx.interner)
                 {
                     ctx.var_heap_types.insert(var_name.clone(), heap_type);
                 }
@@ -117,10 +118,13 @@ pub fn compile_statement(
                 );
                 builder.def_var(var, val);
 
-                // Incref the value
-                let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
-                if let Some(ref heap_type) = heap_type_clone {
-                    emit_incref(ctx, builder, val, heap_type)?;
+                // Skip incref in inlined functions — the inlined function
+                // borrows the value and we skip decref at inline return too.
+                if ctx.inline_depth == 0 {
+                    let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
+                    if let Some(ref heap_type) = heap_type_clone {
+                        emit_incref(ctx, builder, val, heap_type)?;
+                    }
                 }
 
                 builder.ins().jump(merge_block, &[]);
@@ -145,10 +149,19 @@ pub fn compile_statement(
                 }
 
                 builder.def_var(var, val);
-                // Incref the value since we're storing a reference
-                let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
-                if let Some(ref heap_type) = heap_type_clone {
-                    emit_incref(ctx, builder, val, heap_type)?;
+                // Skip incref in inlined functions (borrow semantics).
+                // At top level, skip incref for fresh values (struct literal,
+                // function call) which already have refcount=1.
+                if ctx.inline_depth == 0 {
+                    let is_fresh_value = matches!(init,
+                        Expression::StructLiteral(_) | Expression::Call(_)
+                    );
+                    if !is_fresh_value {
+                        let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
+                        if let Some(ref heap_type) = heap_type_clone {
+                            emit_incref(ctx, builder, val, heap_type)?;
+                        }
+                    }
                 }
             } else {
                 // No initializer - create default values for collection types
@@ -561,13 +574,36 @@ pub fn compile_statement(
             builder.switch_to_block(body_block);
             builder.seal_block(body_block);
             ctx.block_terminated = false;
+
+            // Track heap variables before loop body to detect loop-local vars
+            let heap_vars_before: std::collections::HashSet<String> =
+                ctx.var_heap_types.keys().cloned().collect();
+
             for stmt in &while_stmt.body.statements {
                 compile_statement(ctx, builder, stmt)?;
                 if ctx.block_terminated {
                     break;
                 }
             }
+
+            // Before jumping back to header, decref any heap variables that
+            // were declared inside this loop body. On the next iteration these
+            // variables will be overwritten with new values, so we must release
+            // the current values to prevent memory leaks.
             if !ctx.block_terminated {
+                let loop_local_vars: Vec<(Variable, HeapType)> = ctx
+                    .var_heap_types
+                    .iter()
+                    .filter(|(name, _)| !heap_vars_before.contains(name.as_str()))
+                    .filter_map(|(name, ht)| {
+                        ctx.variables.get(name).map(|v| (*v, ht.clone()))
+                    })
+                    .collect();
+                for (var, ref heap_type) in loop_local_vars {
+                    let val = builder.use_var(var);
+                    emit_decref(ctx, builder, val, heap_type)?;
+                }
+
                 builder.ins().jump(header_block, &[]);
             }
 
@@ -575,6 +611,9 @@ pub fn compile_statement(
             builder.switch_to_block(exit_block);
             builder.seal_block(exit_block);
             ctx.block_terminated = false;
+
+            // Remove loop-local heap types so outer loops don't see them
+            ctx.var_heap_types.retain(|name, _| heap_vars_before.contains(name.as_str()));
 
             // Restore previous loop context
             ctx.loop_exit_block = prev_loop_exit;

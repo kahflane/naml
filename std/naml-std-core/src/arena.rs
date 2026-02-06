@@ -179,6 +179,11 @@ fn get_arena() -> *mut ArenaState {
     })
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_arena_alloc(size: usize) -> *mut u8 {
+    arena_alloc(size)
+}
+
 #[inline(always)]
 pub fn arena_alloc(size: usize) -> *mut u8 {
     if size > MAX_ARENA_ALLOC {

@@ -29,6 +29,36 @@ pub fn emit_incref(
     val: Value,
     heap_type: &HeapType,
 ) -> Result<(), CodegenError> {
+    if ctx.unsafe_mode && matches!(heap_type, HeapType::Struct(_)) {
+        let zero = builder
+            .ins()
+            .iconst(ctx.module.target_config().pointer_type(), 0);
+        let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
+
+        let incref_block = builder.create_block();
+        let merge_block = builder.create_block();
+
+        builder
+            .ins()
+            .brif(is_null, merge_block, &[], incref_block, &[]);
+
+        builder.switch_to_block(incref_block);
+        builder.seal_block(incref_block);
+        let rc = builder.ins().load(
+            cranelift::prelude::types::I64,
+            MemFlags::new(),
+            val,
+            0,
+        );
+        let new_rc = builder.ins().iadd_imm(rc, 1);
+        builder.ins().store(MemFlags::new(), new_rc, val, 0);
+        builder.ins().jump(merge_block, &[]);
+
+        builder.switch_to_block(merge_block);
+        builder.seal_block(merge_block);
+        return Ok(());
+    }
+
     let func_name = match heap_type {
         HeapType::String => "naml_string_incref",
         HeapType::Array(_) => "naml_array_incref",
@@ -66,7 +96,6 @@ pub fn emit_decref(
     val: Value,
     heap_type: &HeapType,
 ) -> Result<(), CodegenError> {
-    // Select the appropriate decref function based on element type for nested cleanup
     let func_name: String = match heap_type {
         HeapType::String => "naml_string_decref".to_string(),
         HeapType::Array(None) => "naml_array_decref".to_string(),
@@ -83,15 +112,79 @@ pub fn emit_decref(
             HeapType::Map(_) => "naml_map_decref_maps".to_string(),
             HeapType::Struct(_) => "naml_map_decref_structs".to_string(),
         },
-        HeapType::Struct(None) => "naml_struct_decref".to_string(),
+        HeapType::Struct(None) => {
+            if ctx.unsafe_mode {
+                "naml_struct_decref_fast".to_string()
+            } else {
+                "naml_struct_decref".to_string()
+            }
+        }
         HeapType::Struct(Some(struct_name)) => {
             if struct_has_heap_fields(ctx.struct_defs, struct_name) {
                 format!("naml_struct_decref_{}", struct_name)
+            } else if ctx.unsafe_mode {
+                "naml_struct_decref_fast".to_string()
             } else {
                 "naml_struct_decref".to_string()
             }
         }
     };
+
+    let has_heap_fields = match heap_type {
+        HeapType::Struct(Some(name)) => struct_has_heap_fields(ctx.struct_defs, name),
+        _ => false,
+    };
+    if ctx.unsafe_mode && matches!(heap_type, HeapType::Struct(_)) && !has_heap_fields {
+        let zero = builder
+            .ins()
+            .iconst(ctx.module.target_config().pointer_type(), 0);
+        let is_null = builder.ins().icmp(IntCC::Equal, val, zero);
+
+        let decref_block = builder.create_block();
+        let merge_block = builder.create_block();
+
+        builder
+            .ins()
+            .brif(is_null, merge_block, &[], decref_block, &[]);
+
+        builder.switch_to_block(decref_block);
+        builder.seal_block(decref_block);
+
+        let rc = builder.ins().load(
+            cranelift::prelude::types::I64,
+            MemFlags::new(),
+            val,
+            0,
+        );
+        let new_rc = builder.ins().iadd_imm(rc, -1);
+        builder.ins().store(MemFlags::new(), new_rc, val, 0);
+
+        let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+        let should_free = builder.ins().icmp(IntCC::Equal, rc, one);
+
+        let free_block = builder.create_block();
+        builder
+            .ins()
+            .brif(should_free, free_block, &[], merge_block, &[]);
+
+        builder.switch_to_block(free_block);
+        builder.seal_block(free_block);
+
+        let free_func_id = ctx
+            .runtime_funcs
+            .get("naml_struct_free")
+            .copied()
+            .ok_or_else(|| {
+                CodegenError::JitCompile("Unknown runtime function: naml_struct_free".to_string())
+            })?;
+        let free_func_ref = ctx.module.declare_func_in_func(free_func_id, builder.func);
+        builder.ins().call(free_func_ref, &[val]);
+        builder.ins().jump(merge_block, &[]);
+
+        builder.switch_to_block(merge_block);
+        builder.seal_block(merge_block);
+        return Ok(());
+    }
 
     let func_id = ctx
         .runtime_funcs
@@ -137,6 +230,9 @@ pub fn emit_cleanup_all_vars(
             if let Some(excl) = exclude_var
                 && name == excl
             {
+                return None;
+            }
+            if ctx.borrowed_vars.contains(name) {
                 return None;
             }
             ctx.variables

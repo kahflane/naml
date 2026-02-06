@@ -402,6 +402,34 @@ pub unsafe extern "C" fn naml_struct_decref(s: *mut NamlStruct) {
     }
 }
 
+/// Increment reference count of a struct (non-atomic, for single-threaded --unsafe mode)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_struct_incref_fast(s: *mut NamlStruct) {
+    if !s.is_null() {
+        unsafe {
+            let rc = (*s).header.refcount.as_ptr();
+            *rc += 1;
+        }
+    }
+}
+
+/// Decrement reference count and free if zero (non-atomic, for single-threaded --unsafe mode)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_struct_decref_fast(s: *mut NamlStruct) {
+    if !s.is_null() {
+        unsafe {
+            let rc = (*s).header.refcount.as_ptr();
+            let old = *rc;
+            *rc = old - 1;
+            if old == 1 {
+                let field_count = (*s).field_count;
+                let size = crate::arena::struct_alloc_size(field_count);
+                crate::arena::arena_free(s as *mut u8, size);
+            }
+        }
+    }
+}
+
 /// Free struct memory without refcount check (called by generated decref functions)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_struct_free(s: *mut NamlStruct) {

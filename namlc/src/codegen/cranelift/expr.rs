@@ -371,10 +371,17 @@ pub fn compile_expression(
 
                         // Create local variables for parameters
                         let saved_vars = ctx.variables.clone();
+                        let saved_heap_types = ctx.var_heap_types.clone();
+                        let saved_borrowed = ctx.borrowed_vars.clone();
                         let saved_depth = ctx.inline_depth;
                         let saved_exit_block = ctx.inline_exit_block.take();
                         let saved_result_var = ctx.inline_result_var.take();
                         ctx.inline_depth += 1;
+                        // Clear heap types so the inlined function starts fresh.
+                        // This prevents emit_cleanup_all_vars from accidentally
+                        // decrefing the caller's heap variables on return.
+                        ctx.var_heap_types.clear();
+                        ctx.borrowed_vars.clear();
 
                         for (i, param_name) in inline_info.param_names.iter().enumerate() {
                             let var = Variable::new(ctx.var_counter);
@@ -431,6 +438,8 @@ pub fn compile_expression(
 
                         // Restore context
                         ctx.variables = saved_vars;
+                        ctx.var_heap_types = saved_heap_types;
+                        ctx.borrowed_vars = saved_borrowed;
                         ctx.inline_depth = saved_depth;
                         ctx.inline_exit_block = saved_exit_block;
                         ctx.inline_result_var = saved_result_var;
@@ -792,21 +801,43 @@ pub fn compile_expression(
                 })?
                 .clone();
 
-            let type_id = builder
-                .ins()
-                .iconst(cranelift::prelude::types::I32, struct_def.type_id as i64);
-            let field_count = builder.ins().iconst(
-                cranelift::prelude::types::I32,
-                struct_def.fields.len() as i64,
-            );
+            let num_fields = struct_def.fields.len();
 
-            // Call naml_struct_new(type_id, field_count)
-            let struct_ptr = call_struct_new(ctx, builder, type_id, field_count)?;
+            let struct_ptr = if ctx.unsafe_mode {
+                let alloc_size = 24 + num_fields * 8;
+                let size_val = builder
+                    .ins()
+                    .iconst(cranelift::prelude::types::I64, alloc_size as i64);
+                let alloc_ref = rt_func_ref(ctx, builder, "naml_arena_alloc")?;
+                let call = builder.ins().call(alloc_ref, &[size_val]);
+                let ptr = builder.inst_results(call)[0];
 
-            // Set each field value
+                let one_i64 = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+                builder.ins().store(MemFlags::new(), one_i64, ptr, 0);
+                let tag_byte = builder.ins().iconst(cranelift::prelude::types::I8, 2);
+                builder.ins().store(MemFlags::new(), tag_byte, ptr, 8);
+                let type_id_val = builder
+                    .ins()
+                    .iconst(cranelift::prelude::types::I32, struct_def.type_id as i64);
+                builder.ins().store(MemFlags::new(), type_id_val, ptr, 16);
+                let field_count_val = builder
+                    .ins()
+                    .iconst(cranelift::prelude::types::I32, num_fields as i64);
+                builder.ins().store(MemFlags::new(), field_count_val, ptr, 20);
+
+                ptr
+            } else {
+                let type_id = builder
+                    .ins()
+                    .iconst(cranelift::prelude::types::I32, struct_def.type_id as i64);
+                let field_count = builder
+                    .ins()
+                    .iconst(cranelift::prelude::types::I32, num_fields as i64);
+                call_struct_new(ctx, builder, type_id, field_count)?
+            };
+
             for field in struct_lit.fields.iter() {
                 let field_name = ctx.interner.resolve(&field.name.symbol).to_string();
-                // Find field index in struct definition
                 let field_idx = struct_def
                     .fields
                     .iter()
@@ -816,7 +847,6 @@ pub fn compile_expression(
                     })?;
 
                 let mut value = compile_expression(ctx, builder, &field.value)?;
-                // Convert string literals to NamlString
                 if let Some(Type::String) = ctx.annotations.get_type(field.value.span())
                     && matches!(
                         &field.value,
@@ -829,7 +859,6 @@ pub fn compile_expression(
                     value = call_string_from_cstr(ctx, builder, value)?;
                 }
 
-                // Convert stack-allocated option to nullable pointer for struct storage
                 if matches!(ctx.annotations.get_type(field.value.span()), Some(Type::Option(_))) {
                     let tag = builder.ins().load(
                         cranelift::prelude::types::I32, MemFlags::new(), value, 0,
@@ -859,10 +888,18 @@ pub fn compile_expression(
                     value = builder.block_params(merge_block)[0];
                 }
 
-                let idx_val = builder
-                    .ins()
-                    .iconst(cranelift::prelude::types::I32, field_idx as i64);
-                call_struct_set_field(ctx, builder, struct_ptr, idx_val, value)?;
+                if ctx.unsafe_mode {
+                    let store_value = super::misc::ensure_i64(builder, value);
+                    let offset = (24 + field_idx * 8) as i32;
+                    builder
+                        .ins()
+                        .store(MemFlags::new(), store_value, struct_ptr, offset);
+                } else {
+                    let idx_val = builder
+                        .ins()
+                        .iconst(cranelift::prelude::types::I32, field_idx as i64);
+                    call_struct_set_field(ctx, builder, struct_ptr, idx_val, value)?;
+                }
             }
 
             Ok(struct_ptr)
