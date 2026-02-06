@@ -321,7 +321,22 @@ impl SymbolTable {
     }
 
     pub fn define_function(&mut self, sig: FunctionSig) {
+        self.ambiguous_functions.remove(&sig.name);
         self.functions.insert(sig.name, sig.clone());
+        self.get_current_module_mut().add_function(sig);
+    }
+
+    pub fn import_function(&mut self, sig: FunctionSig) {
+        if let Some(existing) = self.functions.get(&sig.name) {
+            if existing.module != sig.module {
+                self.ambiguous_functions.insert(sig.name);
+            }
+        }
+        self.functions.insert(sig.name, sig.clone());
+        self.get_current_module_mut().add_function(sig);
+    }
+
+    pub fn define_module_function(&mut self, sig: FunctionSig) {
         self.get_current_module_mut().add_function(sig);
     }
 

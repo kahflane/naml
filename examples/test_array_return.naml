@@ -4,6 +4,7 @@
 
 use std::strings::*;
 use std::testing::*;
+use std::collections::arrays::count;
 
 fn main() {
     var s: string = "Hello World";

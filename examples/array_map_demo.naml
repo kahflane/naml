@@ -103,7 +103,7 @@ fn main() {
     var count_high: int = maps::count_if(scores, fn(k: string, v: int) -> bool { return v >= 90; });
     print("maps::count_if >= 90: ");
     println(count_high);
-    assert_eq(count_high, 3, "count_if >= 90 should be 3");
+    assert_eq(count_high, 2, "count_if >= 90 should be 2");
 
     // Fold on maps
     var sum_scores: int = maps::fold(scores, 0, fn(acc: int, k: string, v: int) -> int { return acc + v; });

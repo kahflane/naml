@@ -246,6 +246,11 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "remove `try`".to_string(),
             Some("use either `try expr ?? default` or `expr catch e { handler }`".to_string()),
         ),
+        TypeError::AmbiguousFunction { name, .. } => (
+            format!("ambiguous function '{}': imported from multiple modules", name),
+            "ambiguous".to_string(),
+            Some(format!("use a qualified name like 'arrays::{}' or 'maps::{}'", name, name)),
+        ),
     }
 }
 

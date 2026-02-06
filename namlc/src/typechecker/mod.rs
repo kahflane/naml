@@ -360,7 +360,7 @@ impl<'a> TypeChecker<'a> {
 
                 for module_fn in fns {
                     if let Some(sig) = self.create_std_fn_sig(&module_fn, module) {
-                        self.symbols.define_function(sig);
+                        self.symbols.define_module_function(sig);
                     }
                 }
 
@@ -619,7 +619,7 @@ impl<'a> TypeChecker<'a> {
         if resolved_module_found {
             // Perform the actual imports
             for sig in functions_to_import {
-                self.symbols.define_function(sig);
+                self.symbols.import_function(sig);
             }
             for (name, def) in types_to_import {
                 self.symbols.define_type(name, def);
@@ -2325,12 +2325,7 @@ impl<'a> TypeChecker<'a> {
                     Type::Array(Box::new(Type::String)),
                 ),
             ]),
-            // Collections module and submodules
-            "collections" => {
-                let mut fns = Self::get_collections_array_functions();
-                fns.extend(Self::get_collections_map_functions());
-                Some(fns)
-            }
+            "collections" => Some(vec![]),
             "collections::arrays" => Some(Self::get_collections_array_functions()),
             "collections::maps" => Some(Self::get_collections_map_functions()),
             "env" => Some(vec![
@@ -2619,14 +2614,7 @@ impl<'a> TypeChecker<'a> {
                 ),
             ]),
             // Encoding module and submodules
-            "encoding" => {
-                let mut fns = Self::get_encoding_utf8_functions();
-                fns.extend(Self::get_encoding_hex_functions());
-                fns.extend(Self::get_encoding_base64_functions());
-                fns.extend(Self::get_encoding_url_functions());
-                fns.extend(Self::get_encoding_json_functions());
-                Some(fns)
-            }
+            "encoding" => Some(vec![]),
             "encoding::utf8" => Some(Self::get_encoding_utf8_functions()),
             "encoding::hex" => Some(Self::get_encoding_hex_functions()),
             "encoding::base64" => Some(Self::get_encoding_base64_functions()),
@@ -2759,13 +2747,7 @@ impl<'a> TypeChecker<'a> {
                         self.symbols
                             .register_module(module_spur)
                             .add_function(sig.clone());
-                        // For wildcard imports, just mark ambiguous (allows qualified use)
-                        if self.symbols.has_function(sig.name) {
-                            self.symbols.mark_ambiguous(sig.name);
-                        } else {
-                            let sig: FunctionSig = sig.clone();
-                            self.symbols.define_function(sig);
-                        }
+                        self.symbols.import_function(sig.clone());
                     }
                 }
             }
@@ -2807,8 +2789,7 @@ impl<'a> TypeChecker<'a> {
                                     span: entry.span,
                                 });
                             } else {
-                                let sig: FunctionSig = sig.clone();
-                                self.symbols.define_function(sig);
+                                self.symbols.import_function(sig.clone());
                             }
                         }
                         None => {

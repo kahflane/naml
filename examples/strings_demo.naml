@@ -4,6 +4,7 @@ use std::testing::*;
 fn main() {
     println("=== std::strings Demo ===\n");
 
+    print("String length of `a` {}\n",len("a"));
     // Case conversion
     println("Case Conversion:");
     var upper_result: string = upper("hello world");

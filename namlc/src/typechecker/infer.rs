@@ -326,12 +326,8 @@ impl<'a> TypeInferrer<'a> {
             binding.ty.clone()
         } else if self.symbols.is_ambiguous(ident.ident.symbol) {
             let name = self.interner.resolve(&ident.ident.symbol).to_string();
-            self.errors.push(TypeError::Custom {
-                message: format!(
-                    "ambiguous function '{}': multiple modules define this function. \
-                    Use a qualified name like 'arrays::{}' or 'maps::{}'.",
-                    name, name, name
-                ),
+            self.errors.push(TypeError::AmbiguousFunction {
+                name,
                 span: ident.span,
             });
             Type::Error
@@ -420,6 +416,14 @@ impl<'a> TypeInferrer<'a> {
         // 3. Fallback: single segment in local scope (functions/types)
         if path.segments.len() == 1 {
             let ident = &path.segments[0];
+            if self.symbols.is_ambiguous(ident.symbol) {
+                let name = self.interner.resolve(&ident.symbol).to_string();
+                self.errors.push(TypeError::AmbiguousFunction {
+                    name,
+                    span: path.span,
+                });
+                return Type::Error;
+            }
             if let Some(sig) = self.symbols.get_function(ident.symbol) {
                 return Type::Function(self.symbols.to_function_type(sig));
             }
@@ -701,6 +705,15 @@ impl<'a> TypeInferrer<'a> {
                     self.errors.push(e);
                 }
                 return Type::Exception(exc_def.name);
+            }
+
+            if self.symbols.is_ambiguous(ident.ident.symbol) {
+                let name = self.interner.resolve(&ident.ident.symbol).to_string();
+                self.errors.push(TypeError::AmbiguousFunction {
+                    name,
+                    span: call.span,
+                });
+                return Type::Error;
             }
 
             if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {

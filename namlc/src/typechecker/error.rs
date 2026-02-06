@@ -177,6 +177,9 @@ pub enum TypeError {
 
     #[error("`try` and `catch` cannot be used together")]
     TryWithCatch { span: Span },
+
+    #[error("ambiguous function '{name}': exists in multiple imported modules, use a qualified path")]
+    AmbiguousFunction { name: String, span: Span },
 }
 
 impl TypeError {
@@ -214,6 +217,7 @@ impl TypeError {
             TypeError::ModuleFileError { span, .. } => *span,
             TypeError::UncaughtException { span, .. } => *span,
             TypeError::TryWithCatch { span } => *span,
+            TypeError::AmbiguousFunction { span, .. } => *span,
         }
     }
 

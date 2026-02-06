@@ -25,7 +25,7 @@ use super::misc::{
     call_int_runtime, call_one_arg_int_runtime, call_one_arg_ptr_runtime,
     call_three_arg_int_runtime, call_three_arg_ptr_runtime, call_three_arg_void_runtime,
     call_two_arg_bool_runtime, call_two_arg_int_runtime, call_two_arg_ptr_runtime,
-    call_two_arg_runtime, call_void_runtime,
+    call_two_arg_runtime, call_void_runtime, ensure_i64,
 };
 use super::options::{
     compile_option_from_array_access, compile_option_from_array_get, compile_option_from_index_of,
@@ -2969,7 +2969,7 @@ pub fn compile_builtin_call(
         // ========================================
         BuiltinStrategy::TestingAssert => {
             let cond = compile_expression(ctx, builder, &args[0])?;
-            let cond = builder.ins().uextend(cranelift::prelude::types::I64, cond);
+            let cond = ensure_i64(builder, cond);
             let msg = compile_expression(ctx, builder, &args[1])?;
             let msg = ensure_naml_string(ctx, builder, msg, &args[1])?;
             call_two_arg_runtime(ctx, builder, "naml_testing_assert", cond, msg)
@@ -3005,9 +3005,9 @@ pub fn compile_builtin_call(
 
         BuiltinStrategy::TestingAssertEqBool => {
             let actual = compile_expression(ctx, builder, &args[0])?;
-            let actual = builder.ins().uextend(cranelift::prelude::types::I64, actual);
+            let actual = ensure_i64(builder, actual);
             let expected = compile_expression(ctx, builder, &args[1])?;
-            let expected = builder.ins().uextend(cranelift::prelude::types::I64, expected);
+            let expected = ensure_i64(builder, expected);
             let msg = compile_expression(ctx, builder, &args[2])?;
             let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
             call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_eq_bool", actual, expected, msg)
@@ -3033,7 +3033,7 @@ pub fn compile_builtin_call(
 
         BuiltinStrategy::TestingAssertTrue => {
             let cond = compile_expression(ctx, builder, &args[0])?;
-            let cond = builder.ins().uextend(cranelift::prelude::types::I64, cond);
+            let cond = ensure_i64(builder, cond);
             let msg = compile_expression(ctx, builder, &args[1])?;
             let msg = ensure_naml_string(ctx, builder, msg, &args[1])?;
             call_two_arg_runtime(ctx, builder, "naml_testing_assert_true", cond, msg)
@@ -3041,7 +3041,7 @@ pub fn compile_builtin_call(
 
         BuiltinStrategy::TestingAssertFalse => {
             let cond = compile_expression(ctx, builder, &args[0])?;
-            let cond = builder.ins().uextend(cranelift::prelude::types::I64, cond);
+            let cond = ensure_i64(builder, cond);
             let msg = compile_expression(ctx, builder, &args[1])?;
             let msg = ensure_naml_string(ctx, builder, msg, &args[1])?;
             call_two_arg_runtime(ctx, builder, "naml_testing_assert_false", cond, msg)

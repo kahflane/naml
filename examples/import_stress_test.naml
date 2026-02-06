@@ -1,0 +1,169 @@
+///
+/// Stress test for import resolution and namespace scoping.
+/// `use std::collections::*` imports submodules (arrays, maps) for qualified calls.
+/// Non-overlapping functions can be imported specifically for unqualified use.
+///
+
+use std::collections::*;
+use std::collections::arrays::sum;
+use std::collections::maps::keys;
+use std::collections::maps::values;
+use std::collections::maps::contains_key;
+use std::strings::*;
+use std::testing::*;
+
+fn sum_array(arr: [int]) -> int {
+    var total: int = 0;
+    for (i: int, v: int in arr) {
+        total = total + v;
+    }
+    return total;
+}
+
+fn main() {
+    // ==========================================
+    // Scenario 1: Specific import (sum only in arrays, no collision)
+    // ==========================================
+    var nums: [int] = [10, 20, 30, 40, 50];
+    assert_eq(sum(nums), 150, "array sum");
+
+    // ==========================================
+    // Scenario 2: Qualified calls for overlapping names
+    // ==========================================
+    assert_eq(arrays::count(nums), 5, "qualified array count");
+    var filtered: [int] = arrays::where(nums, fn(x: int) -> bool { return x >= 30; });
+    assert_eq(arrays::count(filtered), 3, "filtered count");
+
+    // ==========================================
+    // Scenario 3: Map operations (specific imports + qualified)
+    // ==========================================
+    var scores: map<string, int> = {
+        "alice": 95,
+        "bob": 80,
+        "charlie": 70
+    };
+    var key_list: [string] = keys(scores);
+    assert_eq(arrays::count(key_list), 3, "keys count");
+    assert_true(contains_key(scores, "alice"), "contains alice");
+    assert_false(contains_key(scores, "dave"), "no dave");
+    assert_eq(maps::count(scores), 3, "maps count");
+
+    // ==========================================
+    // Scenario 4: String functions
+    // ==========================================
+    var greeting: string = "Hello, World!";
+    var parts: [string] = split(greeting, ", ");
+    assert_eq(arrays::count(parts), 2, "split count");
+    assert_true(starts_with(greeting, "Hello"), "starts_with");
+    assert_true(ends_with(greeting, "World!"), "ends_with");
+    assert_eq_string(upper("hello"), "HELLO", "upper");
+    assert_eq_string(lower("HELLO"), "hello", "lower");
+
+    // ==========================================
+    // Scenario 5: Qualified count on different types
+    // ==========================================
+    var words: [string] = ["one", "two", "three"];
+    assert_eq(arrays::count(words), 3, "string array count");
+    var big: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    assert_eq(arrays::count(big), 10, "int array count");
+
+    // ==========================================
+    // Scenario 6: Higher-order array functions (qualified)
+    // ==========================================
+    assert_true(arrays::any(nums, fn(x: int) -> bool { return x > 40; }), "any > 40");
+    assert_true(arrays::all(nums, fn(x: int) -> bool { return x > 0; }), "all positive");
+    assert_false(arrays::any(nums, fn(x: int) -> bool { return x > 100; }), "none > 100");
+
+    // ==========================================
+    // Scenario 7: Chained qualified array ops
+    // ==========================================
+    var data: [int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    var big_ones: [int] = arrays::where(data, fn(x: int) -> bool { return x > 5; });
+    assert_eq(sum(big_ones), 40, "sum of >5");
+    assert_eq(arrays::count(big_ones), 5, "count of >5");
+
+    // ==========================================
+    // Scenario 8: Qualified fold
+    // ==========================================
+    var product: int = arrays::fold(nums, 1, fn(acc: int, x: int) -> int { return acc * x; });
+    assert_eq(product, 12000000, "product fold");
+
+    // ==========================================
+    // Scenario 9: String split -> array count
+    // ==========================================
+    var csv: string = "apple,banana,cherry,date";
+    var fruits: [string] = split(csv, ",");
+    assert_eq(arrays::count(fruits), 4, "csv split count");
+
+    // ==========================================
+    // Scenario 10: Qualified map higher-order functions
+    // ==========================================
+    var data_map: map<string, int> = {"a": 10, "b": 20, "c": 30, "d": 40};
+    var big_map: map<string, int> = maps::where(data_map, fn(k: string, v: int) -> bool { return v > 20; });
+    assert_eq(maps::count(big_map), 2, "map where keeps 2");
+    assert_true(maps::any(scores, fn(k: string, v: int) -> bool { return v > 90; }), "any > 90");
+    assert_false(maps::all(scores, fn(k: string, v: int) -> bool { return v > 90; }), "not all > 90");
+
+    // ==========================================
+    // Scenario 11: values -> array ops
+    // ==========================================
+    var val_list: [int] = values(data_map);
+    assert_eq(arrays::count(val_list), 4, "values count");
+    assert_eq(sum_array(val_list), 100, "values sum");
+
+    // ==========================================
+    // Scenario 12: Empty collection edge cases
+    // ==========================================
+    var empty: [int] = [];
+    assert_eq(arrays::count(empty), 0, "empty count");
+    assert_eq(sum(empty), 0, "empty sum");
+    assert_false(arrays::any(empty, fn(x: int) -> bool { return true; }), "any empty false");
+    assert_true(arrays::all(empty, fn(x: int) -> bool { return false; }), "all empty true");
+
+    // ==========================================
+    // Scenario 13: User-defined fn + qualified imports
+    // ==========================================
+    var items: [int] = [5, 10, 15, 20, 25];
+    var selected: [int] = arrays::where(items, fn(x: int) -> bool { return x > 10; });
+    assert_eq(sum_array(selected), 60, "user fn + where");
+    assert_eq(arrays::count(selected), 3, "selected count");
+
+    // ==========================================
+    // Scenario 14: maps::fold
+    // ==========================================
+    var total: int = maps::fold(scores, 0, fn(acc: int, k: string, v: int) -> int { return acc + v; });
+    assert_eq(total, 245, "map fold sum");
+
+    // ==========================================
+    // Scenario 15: Interleaved map + array ops
+    // ==========================================
+    var m: map<string, int> = {"x": 1, "y": 2, "z": 3};
+    var k: [string] = keys(m);
+    var v: [int] = values(m);
+    assert_eq(arrays::count(k), 3, "keys count");
+    assert_eq(arrays::count(v), 3, "values count");
+    assert_eq(sum(v), 6, "values sum");
+    assert_true(maps::any(m, fn(key: string, val: int) -> bool { return val == 2; }), "any val=2");
+    assert_eq(maps::count(m), 3, "map count");
+
+    // ==========================================
+    // Scenario 16: arrays::reject and maps::reject
+    // ==========================================
+    var small: [int] = arrays::reject(nums, fn(x: int) -> bool { return x >= 30; });
+    assert_eq(arrays::count(small), 2, "reject keeps 2");
+    assert_eq(sum(small), 30, "rejected sum");
+    var low_map: map<string, int> = maps::reject(scores, fn(k: string, v: int) -> bool { return v >= 80; });
+    assert_eq(maps::count(low_map), 1, "map reject keeps 1");
+
+    // ==========================================
+    // Scenario 17: arrays::diff and intersect
+    // ==========================================
+    var set1: [int] = [1, 2, 3, 4, 5];
+    var set2: [int] = [3, 4, 5, 6, 7];
+    var d: [int] = arrays::diff(set1, set2);
+    assert_eq(arrays::count(d), 2, "diff [1,2]");
+    var inter: [int] = arrays::intersect(set1, set2);
+    assert_eq(arrays::count(inter), 3, "intersect [3,4,5]");
+
+    println("All import stress tests passed!");
+}
