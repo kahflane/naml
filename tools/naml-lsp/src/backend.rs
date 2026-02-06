@@ -109,7 +109,6 @@ impl LanguageServer for NamlBackend {
                     doc.content = change.text;
                 }
                 doc.version = version;
-                doc.analysis = None;
             }
         }
 

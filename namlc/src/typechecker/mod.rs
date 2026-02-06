@@ -67,7 +67,7 @@ pub struct TypeChecker<'a> {
     imported_modules: Vec<ImportedModule>,
 }
 
-pub(crate) struct StdModuleFn {
+pub struct StdModuleFn {
     pub name: &'static str,
     pub type_params: Vec<&'static str>,
     pub params: Vec<(&'static str, Type)>,
@@ -121,7 +121,7 @@ impl StdModuleFn {
     }
 }
 
-pub(crate) fn get_std_module_functions(module: &str) -> Option<Vec<StdModuleFn>> {
+pub fn get_std_module_functions(module: &str) -> Option<Vec<StdModuleFn>> {
     TypeChecker::get_std_module_functions_impl(module)
 }
 

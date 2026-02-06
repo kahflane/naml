@@ -34,7 +34,8 @@ pub use diagnostic::DiagnosticReporter;
 pub use lexer::tokenize;
 pub use parser::parse;
 pub use source::SourceFile;
-pub use typechecker::{check, check_with_types};
+pub use typechecker::{check, check_with_types, TypeCheckResult, ImportedModule, StdModuleFn, get_std_module_functions};
+pub use typechecker::symbols::{SymbolTable, FunctionSig, MethodSig, TypeDef, StructDef, EnumDef, ModuleNamespace};
 
 #[test]
 fn test_parse_shape_example() {

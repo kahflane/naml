@@ -9,6 +9,10 @@
 mod backend;
 mod analysis;
 mod capabilities;
+mod completions;
+mod hover;
+mod lsp_symbols;
+mod symbols;
 
 use tower_lsp::{LspService, Server};
 use backend::NamlBackend;
