@@ -29,6 +29,31 @@ pub fn get_heap_type(naml_ty: &crate::ast::NamlType) -> Option<HeapType> {
     }
 }
 
+pub fn heap_type_from_tc_type(ty: &crate::typechecker::Type, interner: &lasso::Rodeo) -> Option<HeapType> {
+    use crate::typechecker::Type;
+    match ty {
+        Type::String => Some(HeapType::String),
+        Type::Array(elem_ty) | Type::FixedArray(elem_ty, _) => {
+            let elem_heap = heap_type_from_tc_type(elem_ty, interner).map(Box::new);
+            Some(HeapType::Array(elem_heap))
+        }
+        Type::Map(_, val_ty) => {
+            let val_heap = heap_type_from_tc_type(val_ty, interner).map(Box::new);
+            Some(HeapType::Map(val_heap))
+        }
+        Type::Struct(st) => {
+            let name = interner.resolve(&st.name).to_string();
+            Some(HeapType::Struct(Some(name)))
+        }
+        Type::Option(inner) => heap_type_from_tc_type(inner, interner),
+        Type::Generic(name, _) => {
+            let name = interner.resolve(name).to_string();
+            Some(HeapType::Struct(Some(name)))
+        }
+        _ => None,
+    }
+}
+
 pub fn get_heap_type_resolved(naml_ty: &crate::ast::NamlType, interner: &lasso::Rodeo) -> Option<HeapType> {
     use crate::ast::NamlType;
     match naml_ty {
