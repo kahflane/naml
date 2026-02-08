@@ -271,3 +271,6 @@ println(fmt("Total: {}, Expected: {}", actual, expected));
 3. The example MUST call user-defined functions with the new types
 4. The example MUST verify correctness (not just "it runs")
 5. If the complex test fails, DO NOT simplify - fix the root cause
+
+**NAML SYNTAX REFERENCE**
+Refer to this file - ./docs/language-reference.md

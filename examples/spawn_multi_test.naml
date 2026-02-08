@@ -1,0 +1,28 @@
+use std::threads::*;
+
+fn main() {
+    test1();
+    test2();
+    println("DONE");
+}
+
+fn test1() {
+    spawn { do_work(); };
+    join();
+    println("test1 done");
+}
+
+fn do_work() {
+    println("  working");
+}
+
+fn test2() {
+    var flag: atomic<bool> = with_atomic(false);
+    spawn { set_flag(flag); };
+    join();
+    println(fmt("test2: flag = {}", atomic_load(flag)));
+}
+
+fn set_flag(f: atomic<bool>) {
+    atomic_store(f, true);
+}

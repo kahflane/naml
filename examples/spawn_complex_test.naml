@@ -1,0 +1,53 @@
+use std::threads::*;
+
+fn main() {
+    test_sequential_spawns();
+    test_spawn_with_captures();
+    test_three_different_spawns();
+    println("ALL TESTS PASSED");
+}
+
+fn test_sequential_spawns() {
+    var counter: atomic<int> = with_atomic(0);
+    spawn { increment(counter); };
+    spawn { increment(counter); };
+    spawn { increment(counter); };
+    join();
+    var result: int = atomic_load(counter);
+    println(fmt("sequential: counter = {}, expected = 3", result));
+}
+
+fn increment(c: atomic<int>) {
+    atomic_add(c, 1);
+}
+
+fn test_spawn_with_captures() {
+    var x: atomic<int> = with_atomic(10);
+    var y: atomic<int> = with_atomic(20);
+    spawn { add_values(x, y); };
+    join();
+    println(fmt("captures: x = {}, y = {}", atomic_load(x), atomic_load(y)));
+}
+
+fn add_values(a: atomic<int>, b: atomic<int>) {
+    atomic_add(a, 5);
+    atomic_add(b, 10);
+}
+
+fn test_three_different_spawns() {
+    var a: atomic<int> = with_atomic(0);
+    var b: atomic<int> = with_atomic(0);
+    var c: atomic<int> = with_atomic(0);
+    spawn { set_a(a); };
+    spawn { set_b(b); };
+    spawn { set_c(c); };
+    join();
+    var ra: int = atomic_load(a);
+    var rb: int = atomic_load(b);
+    var rc: int = atomic_load(c);
+    println(fmt("three: a={}, b={}, c={}, expected 1,2,3", ra, rb, rc));
+}
+
+fn set_a(v: atomic<int>) { atomic_store(v, 1); }
+fn set_b(v: atomic<int>) { atomic_store(v, 2); }
+fn set_c(v: atomic<int>) { atomic_store(v, 3); }

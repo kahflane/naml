@@ -1073,10 +1073,13 @@ pub fn compile_expression(
             )))
         }
 
-        Expression::Spawn(_spawn_expr) => {
-            // True M:N spawn: schedule the spawn block on the thread pool
-            let spawn_id = ctx.current_spawn_id;
-            ctx.current_spawn_id += 1;
+        Expression::Spawn(spawn_expr) => {
+            // Look up spawn ID from body pointer (globally unique across functions)
+            #[allow(clippy::unnecessary_cast)]
+            let body_key = spawn_expr.body as *const crate::ast::BlockExpr<'_> as usize;
+            let spawn_id = *ctx.spawn_body_to_id.get(&body_key).ok_or_else(|| {
+                CodegenError::JitCompile("Spawn block not found for body pointer".to_string())
+            })?;
 
             let info = ctx
                 .spawn_blocks
@@ -1150,10 +1153,14 @@ pub fn compile_expression(
             Ok(slot_addr)
         }
 
-        Expression::Lambda(_lambda_expr) => {
-            // Get lambda info from the tracked lambdas
-            let lambda_id = ctx.current_lambda_id;
-            ctx.current_lambda_id += 1;
+        Expression::Lambda(lambda_expr) => {
+            // Look up lambda ID from body pointer (globally unique across functions)
+            #[allow(clippy::unnecessary_cast)]
+            let body_key =
+                lambda_expr.body as *const crate::ast::Expression<'_> as usize;
+            let lambda_id = *ctx.lambda_body_to_id.get(&body_key).ok_or_else(|| {
+                CodegenError::JitCompile("Lambda not found for body pointer".to_string())
+            })?;
 
             let info = ctx
                 .lambda_blocks

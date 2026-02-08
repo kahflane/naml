@@ -129,9 +129,9 @@ pub struct CompileContext<'a> {
     loop_exit_block: Option<Block>,
     loop_header_block: Option<Block>,
     spawn_blocks: &'a HashMap<u32, SpawnBlockInfo>,
-    current_spawn_id: u32,
+    spawn_body_to_id: &'a HashMap<usize, u32>,
     lambda_blocks: &'a HashMap<u32, LambdaInfo>,
-    current_lambda_id: u32,
+    lambda_body_to_id: &'a HashMap<usize, u32>,
     annotations: &'a TypeAnnotations,
     type_substitutions: HashMap<String, String>,
     func_return_type: Option<cranelift::prelude::Type>,
@@ -178,8 +178,10 @@ pub struct JitCompiler<'a> {
     next_type_id: u32,
     spawn_counter: u32,
     spawn_blocks: HashMap<u32, SpawnBlockInfo>,
+    spawn_body_to_id: HashMap<usize, u32>,
     lambda_counter: u32,
     lambda_blocks: HashMap<u32, LambdaInfo>,
+    lambda_body_to_id: HashMap<usize, u32>,
     generic_functions: HashMap<String, *const FunctionItem<'a>>,
     inline_functions: HashMap<String, InlineFuncInfo>,
     release_mode: bool,
@@ -2047,8 +2049,10 @@ impl<'a> JitCompiler<'a> {
             next_type_id: 0,
             spawn_counter: 0,
             spawn_blocks: HashMap::new(),
+            spawn_body_to_id: HashMap::new(),
             lambda_counter: 0,
             lambda_blocks: HashMap::new(),
+            lambda_body_to_id: HashMap::new(),
             generic_functions: HashMap::new(),
             inline_functions: HashMap::new(),
             release_mode: release,
@@ -6044,9 +6048,9 @@ impl<'a> JitCompiler<'a> {
             loop_exit_block: None,
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
-            current_spawn_id: 0,
+            spawn_body_to_id: &self.spawn_body_to_id,
             lambda_blocks: &self.lambda_blocks,
-            current_lambda_id: 0,
+            lambda_body_to_id: &self.lambda_body_to_id,
             annotations: self.annotations,
             type_substitutions,
             func_return_type,
@@ -6215,6 +6219,7 @@ impl<'a> JitCompiler<'a> {
                         body_ptr,
                     },
                 );
+                self.spawn_body_to_id.insert(body_ptr as usize, id);
 
                 // Also scan inside spawn block for nested spawns
                 self.scan_for_spawn_blocks_expr(spawn_expr.body)?;
@@ -6248,6 +6253,7 @@ impl<'a> JitCompiler<'a> {
                         body_ptr,
                     },
                 );
+                self.lambda_body_to_id.insert(body_ptr as usize, id);
 
                 // Scan lambda body for nested spawns/lambdas
                 self.scan_expression_for_spawns(lambda_expr.body)?;
@@ -6598,9 +6604,9 @@ impl<'a> JitCompiler<'a> {
             loop_exit_block: None,
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
-            current_spawn_id: 0, // Not used in trampolines
+            spawn_body_to_id: &self.spawn_body_to_id,
             lambda_blocks: &self.lambda_blocks,
-            current_lambda_id: 0,
+            lambda_body_to_id: &self.lambda_body_to_id,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type: None,
@@ -6748,9 +6754,9 @@ impl<'a> JitCompiler<'a> {
             loop_exit_block: None,
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
-            current_spawn_id: 0,
+            spawn_body_to_id: &self.spawn_body_to_id,
             lambda_blocks: &self.lambda_blocks,
-            current_lambda_id: 0,
+            lambda_body_to_id: &self.lambda_body_to_id,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type: Some(cranelift::prelude::types::I64), // Lambdas always return i64
@@ -6979,9 +6985,9 @@ impl<'a> JitCompiler<'a> {
             loop_exit_block: None,
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
-            current_spawn_id: 0,
+            spawn_body_to_id: &self.spawn_body_to_id,
             lambda_blocks: &self.lambda_blocks,
-            current_lambda_id: 0,
+            lambda_body_to_id: &self.lambda_body_to_id,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type,
@@ -7217,9 +7223,9 @@ impl<'a> JitCompiler<'a> {
             loop_exit_block: None,
             loop_header_block: None,
             spawn_blocks: &self.spawn_blocks,
-            current_spawn_id: 0,
+            spawn_body_to_id: &self.spawn_body_to_id,
             lambda_blocks: &self.lambda_blocks,
-            current_lambda_id: 0,
+            lambda_body_to_id: &self.lambda_body_to_id,
             annotations: self.annotations,
             type_substitutions: HashMap::new(),
             func_return_type,

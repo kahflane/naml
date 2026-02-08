@@ -145,6 +145,30 @@ use std::threads::*;
 var ch: channel<int> = open_channel(10);  // buffered channel with capacity 10
 ```
 
+### Mutex
+
+Mutual exclusion locks for shared state between threads (native only). Requires `use std::threads::*;`:
+
+```naml
+use std::threads::*;
+
+var counter: mutex<int> = with_mutex(0);    // mutex-protected integer
+```
+
+Supported inner types: `int`, `uint`, `float`, `bool`, `string`.
+
+### RwLock
+
+Read-write locks allowing multiple concurrent readers or one exclusive writer (native only). Requires `use std::threads::*;`:
+
+```naml
+use std::threads::*;
+
+var stats: rwlock<int> = with_rwlock(0);    // rwlock-protected integer
+```
+
+Supported inner types: `int`, `uint`, `float`, `bool`, `string`.
+
 ### Atomics
 
 Lock-free atomic types for concurrent programming (native only). Requires `use std::threads::*;`:
@@ -1001,13 +1025,28 @@ Concurrency primitives (see [Concurrency](#concurrency)):
 ```naml
 use std::threads::*;
 
+// Channels
 var ch: channel<int> = open_channel(10);
-join();
+send(ch, 42);
+var val: int = receive(ch) ?? 0;
+close(ch);
 
-// Atomic operations
+// Mutex (exclusive access)
+var m: mutex<int> = with_mutex(0);
+locked (v: int in m) { v = v + 1; }
+
+// RwLock (shared readers / exclusive writer)
+var rw: rwlock<int> = with_rwlock(0);
+rlocked (v: int in rw) { println(v); }
+wlocked (v: int in rw) { v = v + 1; }
+
+// Atomics (lock-free)
 var counter: atomic<int> = with_atomic(0);
 atomic_add(counter, 1);
-var val: int = atomic_load(counter);
+var c: int = atomic_load(counter);
+
+// Thread management
+join();
 ```
 
 ---
@@ -1055,6 +1094,77 @@ Channel functions:
 - `send(ch, value)` - Send a value (blocks if full)
 - `receive(ch) -> option<T>` - Receive a value (blocks if empty, returns `none` if closed)
 - `close(ch)` - Close the channel
+
+### Mutex
+
+Mutual exclusion locks for protecting shared state. Use the `locked` keyword to acquire exclusive access. Requires `use std::threads::*;`:
+
+```naml
+use std::threads::*;
+
+fn main() {
+    var counter: mutex<int> = with_mutex(0);
+
+    spawn { increment(counter); };
+    spawn { increment(counter); };
+    spawn { increment(counter); };
+
+    join();
+
+    locked (val: int in counter) {
+        println(fmt("counter = {}", val));  // 3
+    }
+}
+
+fn increment(m: mutex<int>) {
+    locked (val: int in m) {
+        val = val + 1;
+    }
+}
+```
+
+Mutex functions and syntax:
+- `with_mutex(value)` - Create a mutex with initial value
+- `locked (name: Type in mutex_var) { ... }` - Acquire exclusive lock, bind inner value to `name`, release on block exit
+
+### RwLock
+
+Read-write locks allowing multiple concurrent readers or one exclusive writer. Requires `use std::threads::*;`:
+
+```naml
+use std::threads::*;
+
+fn main() {
+    var stats: rwlock<int> = with_rwlock(0);
+
+    spawn { write_stats(stats); };
+    spawn { write_stats(stats); };
+    spawn { read_stats(stats); };
+
+    join();
+
+    rlocked (val: int in stats) {
+        println(fmt("stats = {}", val));
+    }
+}
+
+fn write_stats(rw: rwlock<int>) {
+    wlocked (val: int in rw) {
+        val = val + 10;
+    }
+}
+
+fn read_stats(rw: rwlock<int>) {
+    rlocked (val: int in rw) {
+        println(fmt("current stats = {}", val));
+    }
+}
+```
+
+RwLock functions and syntax:
+- `with_rwlock(value)` - Create a rwlock with initial value
+- `rlocked (name: Type in rwlock_var) { ... }` - Acquire shared read lock, bind inner value to `name`
+- `wlocked (name: Type in rwlock_var) { ... }` - Acquire exclusive write lock, bind inner value to `name`
 
 ### Atomics
 
@@ -1283,8 +1393,11 @@ fn add(a: int, b: int) -> int {
 ### Logical Keywords
 `and`, `or`, `not`
 
+### Concurrency Keywords
+`spawn`, `locked`, `rlocked`, `wlocked`, `join`
+
 ### Other Keywords
-`spawn`, `as`, `is`, `implements`, `use`, `platforms`, `native`, `server`, `browser`
+`as`, `is`, `implements`, `use`, `platforms`, `native`, `server`, `browser`
 
 ---
 

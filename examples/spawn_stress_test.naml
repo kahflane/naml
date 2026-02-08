@@ -1,0 +1,403 @@
+use std::threads::*;
+
+fn main() {
+    println("=== Spawn Stress Test ===");
+    println("Testing all std::threads features across multiple spawn blocks");
+    println("");
+
+    test1_multi_spawn_different_fns();
+    test2_channel_producer_consumer();
+    test3_mutex_rwlock_from_different_spawns();
+    test4_atomic_all_operations_concurrent();
+    test5_nested_function_calls_in_spawn();
+    test6_spawn_in_loop();
+    test7_mixed_everything();
+
+    println("");
+    println("=== ALL STRESS TESTS PASSED ===");
+}
+
+fn test1_multi_spawn_different_fns() {
+    println("--- Test 1: Multiple spawn blocks calling different functions ---");
+    var a: atomic<int> = with_atomic(0);
+    var b: atomic<int> = with_atomic(0);
+    var c: atomic<int> = with_atomic(0);
+    var d: atomic<int> = with_atomic(0);
+    var e: atomic<int> = with_atomic(0);
+
+    spawn { set_to_111(a); };
+    spawn { set_to_222(b); };
+    spawn { set_to_333(c); };
+    spawn { multiply_by_7(d, 6); };
+    spawn { add_three_nums(e, 10, 20, 30); };
+    join();
+
+    var ra: int = atomic_load(a);
+    var rb: int = atomic_load(b);
+    var rc: int = atomic_load(c);
+    var rd: int = atomic_load(d);
+    var re: int = atomic_load(e);
+
+    if (ra != 111 or rb != 222 or rc != 333 or rd != 42 or re != 60) {
+        println(fmt("  FAIL: a={} b={} c={} d={} e={}", ra, rb, rc, rd, re));
+        println(fmt("  Expected: a=111 b=222 c=333 d=42 e=60"));
+        panic("Test 1 failed");
+    }
+    println("  PASS");
+}
+
+fn set_to_111(v: atomic<int>) { atomic_store(v, 111); }
+fn set_to_222(v: atomic<int>) { atomic_store(v, 222); }
+fn set_to_333(v: atomic<int>) { atomic_store(v, 333); }
+fn multiply_by_7(v: atomic<int>, x: int) { atomic_store(v, x * 7); }
+fn add_three_nums(v: atomic<int>, x: int, y: int, z: int) { atomic_store(v, x + y + z); }
+
+fn test2_channel_producer_consumer() {
+    println("--- Test 2: Channel producer/consumer from different spawn blocks ---");
+    var ch1: channel<int> = open_channel(20);
+    var ch2: channel<int> = open_channel(20);
+    var result: atomic<int> = with_atomic(0);
+
+    spawn { producer_a(ch1); };
+    spawn { producer_b(ch2); };
+    spawn { consumer_sum(ch1, ch2, result); };
+    join();
+
+    var total: int = atomic_load(result);
+    if (total != 165) {
+        println(fmt("  FAIL: total={}, expected=165", total));
+        panic("Test 2 failed");
+    }
+    println("  PASS");
+}
+
+fn producer_a(ch: channel<int>) {
+    var i: int = 1;
+    while (i <= 5) {
+        send(ch, i);
+        i = i + 1;
+    }
+    close(ch);
+}
+
+fn producer_b(ch: channel<int>) {
+    var i: int = 10;
+    while (i <= 50) {
+        send(ch, i);
+        i = i + 10;
+    }
+    close(ch);
+}
+
+fn consumer_sum(ch1: channel<int>, ch2: channel<int>, result: atomic<int>) {
+    var sum: int = 0;
+    var done1: bool = false;
+    var done2: bool = false;
+
+    while (not done1) {
+        var v: int = receive(ch1) ?? -9999;
+        if (v == -9999) {
+            done1 = true;
+        } else {
+            sum = sum + v;
+        }
+    }
+    while (not done2) {
+        var v: int = receive(ch2) ?? -9999;
+        if (v == -9999) {
+            done2 = true;
+        } else {
+            sum = sum + v;
+        }
+    }
+    atomic_store(result, sum);
+}
+
+fn test3_mutex_rwlock_from_different_spawns() {
+    println("--- Test 3: Mutex and RwLock from different spawn blocks ---");
+    var m: mutex<int> = with_mutex(0);
+    var rw: rwlock<int> = with_rwlock(0);
+    var done_count: atomic<int> = with_atomic(0);
+
+    spawn { mutex_incrementer(m, 100, done_count); };
+    spawn { mutex_incrementer(m, 100, done_count); };
+    spawn { mutex_incrementer(m, 100, done_count); };
+    spawn { rwlock_writer(rw, 50, done_count); };
+    spawn { rwlock_writer(rw, 50, done_count); };
+    join();
+
+    var mutex_val: int = 0;
+    locked (v: int in m) {
+        mutex_val = v;
+    }
+
+    var rw_val: int = 0;
+    rlocked (v: int in rw) {
+        rw_val = v;
+    }
+
+    var workers_done: int = atomic_load(done_count);
+
+    if (mutex_val != 300) {
+        println(fmt("  FAIL: mutex={}, expected=300", mutex_val));
+        panic("Test 3 mutex failed");
+    }
+    if (rw_val != 100) {
+        println(fmt("  FAIL: rwlock={}, expected=100", rw_val));
+        panic("Test 3 rwlock failed");
+    }
+    if (workers_done != 5) {
+        println(fmt("  FAIL: workers_done={}, expected=5", workers_done));
+        panic("Test 3 worker count failed");
+    }
+    println("  PASS");
+}
+
+fn mutex_incrementer(m: mutex<int>, count: int, done: atomic<int>) {
+    var i: int = 0;
+    while (i < count) {
+        locked (v: int in m) {
+            v = v + 1;
+        }
+        i = i + 1;
+    }
+    atomic_inc(done);
+}
+
+fn rwlock_writer(rw: rwlock<int>, count: int, done: atomic<int>) {
+    var i: int = 0;
+    while (i < count) {
+        wlocked (v: int in rw) {
+            v = v + 1;
+        }
+        i = i + 1;
+    }
+    atomic_inc(done);
+}
+
+fn test4_atomic_all_operations_concurrent() {
+    println("--- Test 4: All atomic operations from concurrent spawn blocks ---");
+    var counter: atomic<int> = with_atomic(1000);
+    var flags: atomic<int> = with_atomic(0);
+    var flag: atomic<bool> = with_atomic(false);
+
+    spawn { atomic_adder(counter, 50); };
+    spawn { atomic_subber(counter, 30); };
+    spawn { atomic_inc_dec_worker(counter); };
+    spawn { atomic_bitwise_worker(flags); };
+    spawn { atomic_bool_worker(flag); };
+    spawn { atomic_cas_worker(counter); };
+    join();
+
+    var final_flag: bool = atomic_load(flag);
+    if (not final_flag) {
+        println("  FAIL: bool flag should be true");
+        panic("Test 4 bool flag failed");
+    }
+
+    var final_flags: int = atomic_load(flags);
+    if (final_flags == 0) {
+        println("  FAIL: flags should be non-zero after bitwise ops");
+        panic("Test 4 flags failed");
+    }
+    println("  PASS");
+}
+
+fn atomic_adder(c: atomic<int>, n: int) {
+    var i: int = 0;
+    while (i < n) {
+        atomic_add(c, 1);
+        i = i + 1;
+    }
+}
+
+fn atomic_subber(c: atomic<int>, n: int) {
+    var i: int = 0;
+    while (i < n) {
+        atomic_sub(c, 1);
+        i = i + 1;
+    }
+}
+
+fn atomic_inc_dec_worker(c: atomic<int>) {
+    var i: int = 0;
+    while (i < 20) {
+        atomic_inc(c);
+        atomic_dec(c);
+        i = i + 1;
+    }
+}
+
+fn atomic_bitwise_worker(f: atomic<int>) {
+    atomic_or(f, 255);
+    atomic_and(f, 15);
+    atomic_xor(f, 5);
+}
+
+fn atomic_bool_worker(f: atomic<bool>) {
+    atomic_store(f, true);
+    var v: bool = atomic_load(f);
+    atomic_cas(f, true, false);
+    atomic_swap(f, true);
+}
+
+fn atomic_cas_worker(c: atomic<int>) {
+    var i: int = 0;
+    while (i < 10) {
+        var old: int = atomic_load(c);
+        var success: bool = atomic_cas(c, old, old + 100);
+        if (success) {
+            atomic_sub(c, 100);
+        }
+        i = i + 1;
+    }
+}
+
+fn test5_nested_function_calls_in_spawn() {
+    println("--- Test 5: Nested function calls from spawn blocks ---");
+    var result: atomic<int> = with_atomic(0);
+
+    spawn { outer_func(result, 5); };
+    spawn { chain_func(result, 3); };
+    join();
+
+    var val: int = atomic_load(result);
+    if (val != 96) {
+        println(fmt("  FAIL: result={}, expected=96", val));
+        panic("Test 5 failed");
+    }
+    println("  PASS");
+}
+
+fn outer_func(r: atomic<int>, x: int) {
+    var v: int = middle_func(x);
+    atomic_add(r, v);
+}
+
+fn middle_func(x: int) -> int {
+    return inner_func(x) + 10;
+}
+
+fn inner_func(x: int) -> int {
+    return x * x;
+}
+
+fn chain_func(r: atomic<int>, depth: int) {
+    var v: int = recursive_compute(depth);
+    atomic_add(r, v);
+}
+
+fn recursive_compute(n: int) -> int {
+    if (n <= 0) {
+        return 1;
+    }
+    return n * 10 + recursive_compute(n - 1);
+}
+
+fn test6_spawn_in_loop() {
+    println("--- Test 6: Spawn blocks inside loops ---");
+    var counter: atomic<int> = with_atomic(0);
+
+    var i: int = 0;
+    while (i < 8) {
+        spawn { loop_worker(counter); };
+        i = i + 1;
+    }
+    join();
+
+    var val: int = atomic_load(counter);
+    if (val != 80) {
+        println(fmt("  FAIL: counter={}, expected=80", val));
+        panic("Test 6 failed");
+    }
+    println("  PASS");
+}
+
+fn loop_worker(c: atomic<int>) {
+    var i: int = 0;
+    while (i < 10) {
+        atomic_inc(c);
+        i = i + 1;
+    }
+}
+
+fn test7_mixed_everything() {
+    println("--- Test 7: Mixed mutex+rwlock+channel+atomic across spawn blocks ---");
+    var m: mutex<int> = with_mutex(0);
+    var rw: rwlock<int> = with_rwlock(0);
+    var ch: channel<int> = open_channel(50);
+    var total: atomic<int> = with_atomic(0);
+
+    spawn { mixed_worker_1(m, ch, 1); };
+    spawn { mixed_worker_2(rw, ch, 2); };
+    spawn { mixed_worker_3(m, rw, ch, 3); };
+    spawn { mixed_collector(ch, total); };
+
+    join();
+
+    var final_total: int = atomic_load(total);
+    if (final_total == 0) {
+        println("  FAIL: total should be non-zero");
+        panic("Test 7 failed");
+    }
+
+    var mutex_val: int = 0;
+    locked (v: int in m) {
+        mutex_val = v;
+    }
+
+    var rwlock_val: int = 0;
+    rlocked (v: int in rw) {
+        rwlock_val = v;
+    }
+
+    println(fmt("  total={}, mutex={}, rwlock={}", final_total, mutex_val, rwlock_val));
+    println("  PASS");
+}
+
+fn mixed_worker_1(m: mutex<int>, ch: channel<int>, id: int) {
+    var i: int = 0;
+    while (i < 5) {
+        locked (v: int in m) {
+            v = v + id;
+        }
+        send(ch, id * 10 + i);
+        i = i + 1;
+    }
+}
+
+fn mixed_worker_2(rw: rwlock<int>, ch: channel<int>, id: int) {
+    var i: int = 0;
+    while (i < 5) {
+        wlocked (v: int in rw) {
+            v = v + id;
+        }
+        send(ch, id * 10 + i);
+        i = i + 1;
+    }
+}
+
+fn mixed_worker_3(m: mutex<int>, rw: rwlock<int>, ch: channel<int>, id: int) {
+    var i: int = 0;
+    while (i < 5) {
+        locked (v: int in m) {
+            v = v + id;
+        }
+        wlocked (v: int in rw) {
+            v = v + id;
+        }
+        send(ch, id * 10 + i);
+        i = i + 1;
+    }
+    close(ch);
+}
+
+fn mixed_collector(ch: channel<int>, total: atomic<int>) {
+    while (true) {
+        var v: int = receive(ch) ?? -9999;
+        if (v == -9999) {
+            return;
+        }
+        atomic_add(total, v);
+    }
+}
