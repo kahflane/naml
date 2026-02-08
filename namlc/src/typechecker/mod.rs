@@ -144,7 +144,7 @@ impl<'a> TypeChecker<'a> {
     fn register_builtins(&mut self) {
         use crate::source::Span;
 
-        // Common functions in root
+        // Common functions in root (global builtins, no module required)
         let builtins: Vec<(&str, bool, Type)> = vec![
             ("print", true, Type::Unit),
             ("println", true, Type::Unit),
@@ -152,7 +152,6 @@ impl<'a> TypeChecker<'a> {
             ("error", true, Type::Unit),
             ("panic", true, Type::Unit),
             ("fmt", true, Type::String),
-            ("read_line", false, Type::String),
         ];
 
         for (name, is_variadic, return_ty) in builtins {
@@ -169,21 +168,6 @@ impl<'a> TypeChecker<'a> {
                     module: None,
                 });
             }
-        }
-
-        // Register sleep(ms: int) -> Unit in root
-        if let Some(spur) = self.interner.get("sleep") {
-            self.symbols.define_function(FunctionSig {
-                name: spur,
-                type_params: vec![],
-                params: vec![(spur, Type::Int)], // ms parameter
-                return_ty: Type::Unit,
-                throws: vec![],
-                is_public: true,
-                is_variadic: false,
-                span: Span::dummy(),
-                module: None,
-            });
         }
 
         // Register standard exceptions
@@ -2259,6 +2243,7 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("random_float", vec![], Type::Float),
             ]),
             "io" => Some(vec![
+                StdModuleFn::new("read_line", vec![], Type::String),
                 StdModuleFn::new("read_key", vec![], Type::Int),
                 StdModuleFn::new("clear_screen", vec![], Type::Unit),
                 StdModuleFn::new(
@@ -2272,6 +2257,7 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("terminal_height", vec![], Type::Int),
             ]),
             "threads" => Some(vec![
+                StdModuleFn::new("sleep", vec![("ms", Type::Int)], Type::Unit),
                 StdModuleFn::new("join", vec![], Type::Unit),
                 StdModuleFn::generic(
                     "open_channel",

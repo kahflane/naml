@@ -944,7 +944,7 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
             strategy: BuiltinStrategy::Print(true),
         },
         BuiltinFunction {
-            name: "read_line",
+            name: "io::read_line",
             strategy: BuiltinStrategy::ReadLine,
         },
         BuiltinFunction {
@@ -967,494 +967,493 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         // IO module - terminal operations
         // ========================================
         BuiltinFunction {
-            name: "read_key",
+            name: "io::read_key",
             strategy: BuiltinStrategy::NoArgInt("naml_read_key"),
         },
         BuiltinFunction {
-            name: "clear_screen",
+            name: "io::clear_screen",
             strategy: BuiltinStrategy::NoArgVoid("naml_clear_screen"),
         },
         BuiltinFunction {
-            name: "set_cursor",
+            name: "io::set_cursor",
             strategy: BuiltinStrategy::TwoArgVoid("naml_set_cursor"),
         },
         BuiltinFunction {
-            name: "hide_cursor",
+            name: "io::hide_cursor",
             strategy: BuiltinStrategy::NoArgVoid("naml_hide_cursor"),
         },
         BuiltinFunction {
-            name: "show_cursor",
+            name: "io::show_cursor",
             strategy: BuiltinStrategy::NoArgVoid("naml_show_cursor"),
         },
         BuiltinFunction {
-            name: "terminal_width",
+            name: "io::terminal_width",
             strategy: BuiltinStrategy::NoArgInt("naml_terminal_width"),
         },
         BuiltinFunction {
-            name: "terminal_height",
+            name: "io::terminal_height",
             strategy: BuiltinStrategy::NoArgInt("naml_terminal_height"),
         },
         // ========================================
         // Random module
         // ========================================
         BuiltinFunction {
-            name: "random",
+            name: "random::random",
             strategy: BuiltinStrategy::RandomInt,
         },
         BuiltinFunction {
-            name: "random_float",
+            name: "random::random_float",
             strategy: BuiltinStrategy::RandomFloat,
         },
         // ========================================
         // Datetime module
         // ========================================
         BuiltinFunction {
-            name: "now_ms",
+            name: "datetime::now_ms",
             strategy: BuiltinStrategy::NoArgInt("naml_datetime_now_ms"),
         },
         BuiltinFunction {
-            name: "now_s",
+            name: "datetime::now_s",
             strategy: BuiltinStrategy::NoArgInt("naml_datetime_now_s"),
         },
         BuiltinFunction {
-            name: "year",
+            name: "datetime::year",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_year"),
         },
         BuiltinFunction {
-            name: "month",
+            name: "datetime::month",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_month"),
         },
         BuiltinFunction {
-            name: "day",
+            name: "datetime::day",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_day"),
         },
         BuiltinFunction {
-            name: "hour",
+            name: "datetime::hour",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_hour"),
         },
         BuiltinFunction {
-            name: "minute",
+            name: "datetime::minute",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_minute"),
         },
         BuiltinFunction {
-            name: "second",
+            name: "datetime::second",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_second"),
         },
         BuiltinFunction {
-            name: "day_of_week",
+            name: "datetime::day_of_week",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_day_of_week"),
         },
         BuiltinFunction {
-            name: "format_date",
+            name: "datetime::format_date",
             strategy: BuiltinStrategy::DatetimeFormat,
         },
         // ========================================
         // Metrics module
         // ========================================
         BuiltinFunction {
-            name: "perf_now",
+            name: "metrics::perf_now",
             strategy: BuiltinStrategy::NoArgInt("naml_metrics_perf_now"),
         },
         BuiltinFunction {
-            name: "elapsed_ms",
+            name: "metrics::elapsed_ms",
             strategy: BuiltinStrategy::OneArgInt("naml_metrics_elapsed_ms"),
         },
         BuiltinFunction {
-            name: "elapsed_us",
+            name: "metrics::elapsed_us",
             strategy: BuiltinStrategy::OneArgInt("naml_metrics_elapsed_us"),
         },
         BuiltinFunction {
-            name: "elapsed_ns",
+            name: "metrics::elapsed_ns",
             strategy: BuiltinStrategy::OneArgInt("naml_metrics_elapsed_ns"),
         },
         // ========================================
         // Strings module
         // ========================================
         BuiltinFunction {
-            name: "len",
+            name: "strings::len",
             strategy: BuiltinStrategy::StringOneArgInt("naml_string_char_len"),
         },
         BuiltinFunction {
-            name: "char_at",
+            name: "strings::char_at",
             strategy: BuiltinStrategy::StringArgIntInt("naml_string_char_at"),
         },
         BuiltinFunction {
-            name: "upper",
+            name: "strings::upper",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_upper"),
         },
         BuiltinFunction {
-            name: "lower",
+            name: "strings::lower",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_lower"),
         },
         BuiltinFunction {
-            name: "split",
+            name: "strings::split",
             strategy: BuiltinStrategy::StringTwoArgPtr("naml_string_split"),
         },
         BuiltinFunction {
-            name: "concat",
+            name: "strings::concat",
             strategy: BuiltinStrategy::StringJoin,
         },
         BuiltinFunction {
-            name: "has",
+            name: "strings::has",
             strategy: BuiltinStrategy::StringTwoArgBool("naml_string_contains"),
         },
         BuiltinFunction {
-            name: "starts_with",
+            name: "strings::starts_with",
             strategy: BuiltinStrategy::StringTwoArgBool("naml_string_starts_with"),
         },
         BuiltinFunction {
-            name: "ends_with",
+            name: "strings::ends_with",
             strategy: BuiltinStrategy::StringTwoArgBool("naml_string_ends_with"),
         },
         BuiltinFunction {
-            name: "replace",
+            name: "strings::replace",
             strategy: BuiltinStrategy::StringThreeArgPtr("naml_string_replace"),
         },
         BuiltinFunction {
-            name: "replace_all",
+            name: "strings::replace_all",
             strategy: BuiltinStrategy::StringThreeArgPtr("naml_string_replace_all"),
         },
         BuiltinFunction {
-            name: "ltrim",
+            name: "strings::ltrim",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_ltrim"),
         },
         BuiltinFunction {
-            name: "rtrim",
+            name: "strings::rtrim",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_rtrim"),
         },
         BuiltinFunction {
-            name: "substr",
+            name: "strings::substr",
             strategy: BuiltinStrategy::StringArgIntIntPtr("naml_string_substr"),
         },
         BuiltinFunction {
-            name: "lpad",
+            name: "strings::lpad",
             strategy: BuiltinStrategy::StringArgIntStrPtr("naml_string_lpad"),
         },
         BuiltinFunction {
-            name: "rpad",
+            name: "strings::rpad",
             strategy: BuiltinStrategy::StringArgIntStrPtr("naml_string_rpad"),
         },
         BuiltinFunction {
-            name: "repeat",
+            name: "strings::repeat",
             strategy: BuiltinStrategy::StringArgIntPtr("naml_string_repeat"),
         },
         BuiltinFunction {
-            name: "lines",
+            name: "strings::lines",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_lines"),
         },
         BuiltinFunction {
-            name: "chars",
+            name: "strings::chars",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_chars"),
         },
         // ========================================
         // Threads/Channel module
         // ========================================
         BuiltinFunction {
-            name: "sleep",
+            name: "threads::sleep",
             strategy: BuiltinStrategy::Sleep,
         },
         BuiltinFunction {
-            name: "join",
+            name: "threads::join",
             strategy: BuiltinStrategy::ThreadsJoin,
         },
         BuiltinFunction {
-            name: "open_channel",
+            name: "threads::open_channel",
             strategy: BuiltinStrategy::ChannelOpen,
         },
         BuiltinFunction {
-            name: "send",
+            name: "threads::send",
             strategy: BuiltinStrategy::ChannelSend,
         },
         BuiltinFunction {
-            name: "receive",
+            name: "threads::receive",
             strategy: BuiltinStrategy::ChannelReceive,
         },
         BuiltinFunction {
-            name: "close",
+            name: "threads::close",
             strategy: BuiltinStrategy::ChannelClose,
         },
         BuiltinFunction {
-            name: "with_mutex",
+            name: "threads::with_mutex",
             strategy: BuiltinStrategy::MutexNew,
         },
         BuiltinFunction {
-            name: "with_rwlock",
+            name: "threads::with_rwlock",
             strategy: BuiltinStrategy::RwlockNew,
         },
         // ========================================
         // File system module
         // ========================================
         BuiltinFunction {
-            name: "read",
+            name: "fs::read",
             strategy: BuiltinStrategy::FsRead,
         },
         BuiltinFunction {
-            name: "read_bytes",
+            name: "fs::read_bytes",
             strategy: BuiltinStrategy::FsReadBytes,
         },
         BuiltinFunction {
-            name: "write",
+            name: "fs::write",
             strategy: BuiltinStrategy::FsWrite,
         },
         BuiltinFunction {
-            name: "append",
+            name: "fs::append",
             strategy: BuiltinStrategy::FsAppend,
         },
         BuiltinFunction {
-            name: "write_bytes",
+            name: "fs::write_bytes",
             strategy: BuiltinStrategy::FsWriteBytes,
         },
         BuiltinFunction {
-            name: "append_bytes",
+            name: "fs::append_bytes",
             strategy: BuiltinStrategy::FsAppendBytes,
         },
         BuiltinFunction {
-            name: "exists",
+            name: "fs::exists",
             strategy: BuiltinStrategy::FsExists,
         },
         BuiltinFunction {
-            name: "is_file",
+            name: "fs::is_file",
             strategy: BuiltinStrategy::FsIsFile,
         },
         BuiltinFunction {
-            name: "is_dir",
+            name: "fs::is_dir",
             strategy: BuiltinStrategy::FsIsDir,
         },
         BuiltinFunction {
-            name: "list_dir",
+            name: "fs::list_dir",
             strategy: BuiltinStrategy::FsListDir,
         },
         BuiltinFunction {
-            name: "mkdir",
+            name: "fs::mkdir",
             strategy: BuiltinStrategy::FsMkdir,
         },
         BuiltinFunction {
-            name: "mkdir_all",
+            name: "fs::mkdir_all",
             strategy: BuiltinStrategy::FsMkdirAll,
         },
         BuiltinFunction {
-            name: "remove",
+            name: "fs::remove",
             strategy: BuiltinStrategy::FsRemove,
         },
         BuiltinFunction {
-            name: "remove_all",
+            name: "fs::remove_all",
             strategy: BuiltinStrategy::FsRemoveAll,
         },
-        // Note: join conflicts with threads::join, so fs::join needs qualified call
         BuiltinFunction {
             name: "fs::join",
             strategy: BuiltinStrategy::FsJoin,
         },
         BuiltinFunction {
-            name: "dirname",
+            name: "fs::dirname",
             strategy: BuiltinStrategy::FsDirname,
         },
         BuiltinFunction {
-            name: "basename",
+            name: "fs::basename",
             strategy: BuiltinStrategy::FsBasename,
         },
         BuiltinFunction {
-            name: "extension",
+            name: "fs::extension",
             strategy: BuiltinStrategy::FsExtension,
         },
         BuiltinFunction {
-            name: "absolute",
+            name: "fs::absolute",
             strategy: BuiltinStrategy::FsAbsolute,
         },
         BuiltinFunction {
-            name: "size",
+            name: "fs::size",
             strategy: BuiltinStrategy::FsSize,
         },
         BuiltinFunction {
-            name: "modified",
+            name: "fs::modified",
             strategy: BuiltinStrategy::FsModified,
         },
         BuiltinFunction {
-            name: "copy",
+            name: "fs::copy",
             strategy: BuiltinStrategy::FsCopy,
         },
         BuiltinFunction {
-            name: "rename",
+            name: "fs::rename",
             strategy: BuiltinStrategy::FsRename,
         },
         BuiltinFunction {
-            name: "getwd",
+            name: "fs::getwd",
             strategy: BuiltinStrategy::FsGetwd,
         },
         BuiltinFunction {
-            name: "chdir",
+            name: "fs::chdir",
             strategy: BuiltinStrategy::FsChdir,
         },
         BuiltinFunction {
-            name: "create_temp",
+            name: "fs::create_temp",
             strategy: BuiltinStrategy::FsCreateTemp,
         },
         BuiltinFunction {
-            name: "mkdir_temp",
+            name: "fs::mkdir_temp",
             strategy: BuiltinStrategy::FsMkdirTemp,
         },
         BuiltinFunction {
-            name: "chmod",
+            name: "fs::chmod",
             strategy: BuiltinStrategy::FsChmod,
         },
         BuiltinFunction {
-            name: "truncate",
+            name: "fs::truncate",
             strategy: BuiltinStrategy::FsTruncate,
         },
         BuiltinFunction {
-            name: "stat",
+            name: "fs::stat",
             strategy: BuiltinStrategy::FsStat,
         },
         // ========================================
         // Memory-mapped file operations
         // ========================================
         BuiltinFunction {
-            name: "mmap_open",
+            name: "fs::mmap_open",
             strategy: BuiltinStrategy::FsMmapOpen,
         },
         BuiltinFunction {
-            name: "mmap_len",
+            name: "fs::mmap_len",
             strategy: BuiltinStrategy::FsMmapLen,
         },
         BuiltinFunction {
-            name: "mmap_read_byte",
+            name: "fs::mmap_read_byte",
             strategy: BuiltinStrategy::FsMmapReadByte,
         },
         BuiltinFunction {
-            name: "mmap_write_byte",
+            name: "fs::mmap_write_byte",
             strategy: BuiltinStrategy::FsMmapWriteByte,
         },
         BuiltinFunction {
-            name: "mmap_read",
+            name: "fs::mmap_read",
             strategy: BuiltinStrategy::FsMmapRead,
         },
         BuiltinFunction {
-            name: "mmap_write",
+            name: "fs::mmap_write",
             strategy: BuiltinStrategy::FsMmapWrite,
         },
         BuiltinFunction {
-            name: "mmap_flush",
+            name: "fs::mmap_flush",
             strategy: BuiltinStrategy::FsMmapFlush,
         },
         BuiltinFunction {
-            name: "mmap_close",
+            name: "fs::mmap_close",
             strategy: BuiltinStrategy::FsMmapClose,
         },
         // ========================================
         // File handle operations
         // ========================================
         BuiltinFunction {
-            name: "file_open",
+            name: "fs::file_open",
             strategy: BuiltinStrategy::FsFileOpen,
         },
         BuiltinFunction {
-            name: "file_close",
+            name: "fs::file_close",
             strategy: BuiltinStrategy::FsFileClose,
         },
         BuiltinFunction {
-            name: "file_read",
+            name: "fs::file_read",
             strategy: BuiltinStrategy::FsFileRead,
         },
         BuiltinFunction {
-            name: "file_read_line",
+            name: "fs::file_read_line",
             strategy: BuiltinStrategy::FsFileReadLine,
         },
         BuiltinFunction {
-            name: "file_read_all",
+            name: "fs::file_read_all",
             strategy: BuiltinStrategy::FsFileReadAll,
         },
         BuiltinFunction {
-            name: "file_write",
+            name: "fs::file_write",
             strategy: BuiltinStrategy::FsFileWrite,
         },
         BuiltinFunction {
-            name: "file_write_line",
+            name: "fs::file_write_line",
             strategy: BuiltinStrategy::FsFileWriteLine,
         },
         BuiltinFunction {
-            name: "file_flush",
+            name: "fs::file_flush",
             strategy: BuiltinStrategy::FsFileFlush,
         },
         BuiltinFunction {
-            name: "file_seek",
+            name: "fs::file_seek",
             strategy: BuiltinStrategy::FsFileSeek,
         },
         BuiltinFunction {
-            name: "file_tell",
+            name: "fs::file_tell",
             strategy: BuiltinStrategy::FsFileTell,
         },
         BuiltinFunction {
-            name: "file_eof",
+            name: "fs::file_eof",
             strategy: BuiltinStrategy::FsFileEof,
         },
         BuiltinFunction {
-            name: "file_size",
+            name: "fs::file_size",
             strategy: BuiltinStrategy::FsFileSize,
         },
         // ========================================
         // Link/symlink operations
         // ========================================
         BuiltinFunction {
-            name: "symlink",
+            name: "fs::symlink",
             strategy: BuiltinStrategy::FsSymlink,
         },
         BuiltinFunction {
-            name: "readlink",
+            name: "fs::readlink",
             strategy: BuiltinStrategy::FsReadlink,
         },
         BuiltinFunction {
-            name: "lstat",
+            name: "fs::lstat",
             strategy: BuiltinStrategy::FsLstat,
         },
         BuiltinFunction {
-            name: "link",
+            name: "fs::link",
             strategy: BuiltinStrategy::FsLink,
         },
         BuiltinFunction {
-            name: "chtimes",
+            name: "fs::chtimes",
             strategy: BuiltinStrategy::FsChtimes,
         },
         BuiltinFunction {
-            name: "chown",
+            name: "fs::chown",
             strategy: BuiltinStrategy::FsChown,
         },
         BuiltinFunction {
-            name: "lchown",
+            name: "fs::lchown",
             strategy: BuiltinStrategy::FsLchown,
         },
         BuiltinFunction {
-            name: "same_file",
+            name: "fs::same_file",
             strategy: BuiltinStrategy::FsSameFile,
         },
         // ========================================
         // Additional file handle operations
         // ========================================
         BuiltinFunction {
-            name: "file_read_at",
+            name: "fs::file_read_at",
             strategy: BuiltinStrategy::FsFileReadAt,
         },
         BuiltinFunction {
-            name: "file_write_at",
+            name: "fs::file_write_at",
             strategy: BuiltinStrategy::FsFileWriteAt,
         },
         BuiltinFunction {
-            name: "file_name",
+            name: "fs::file_name",
             strategy: BuiltinStrategy::FsFileName,
         },
         BuiltinFunction {
-            name: "file_stat",
+            name: "fs::file_stat",
             strategy: BuiltinStrategy::FsFileStat,
         },
         BuiltinFunction {
-            name: "file_truncate",
+            name: "fs::file_truncate",
             strategy: BuiltinStrategy::FsFileTruncate,
         },
         BuiltinFunction {
-            name: "file_chmod",
+            name: "fs::file_chmod",
             strategy: BuiltinStrategy::FsFileChmod,
         },
         BuiltinFunction {
-            name: "file_chown",
+            name: "fs::file_chown",
             strategy: BuiltinStrategy::FsFileChown,
         },
         // ========================================
@@ -1494,23 +1493,23 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_from_slash"),
         },
         BuiltinFunction {
-            name: "is_absolute",
+            name: "path::is_absolute",
             strategy: BuiltinStrategy::PathOneArgBool("naml_path_is_absolute"),
         },
         BuiltinFunction {
-            name: "is_relative",
+            name: "path::is_relative",
             strategy: BuiltinStrategy::PathOneArgBool("naml_path_is_relative"),
         },
         BuiltinFunction {
-            name: "has_root",
+            name: "path::has_root",
             strategy: BuiltinStrategy::PathOneArgBool("naml_path_has_root"),
         },
         BuiltinFunction {
-            name: "with_extension",
+            name: "path::with_extension",
             strategy: BuiltinStrategy::PathTwoArgStr("naml_path_with_extension"),
         },
         BuiltinFunction {
-            name: "strip_prefix",
+            name: "path::strip_prefix",
             strategy: BuiltinStrategy::PathTwoArgStr("naml_path_strip_prefix"),
         },
         BuiltinFunction {
@@ -1522,243 +1521,243 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
             strategy: BuiltinStrategy::PathTwoArgBool("naml_path_ends_with"),
         },
         BuiltinFunction {
-            name: "components",
+            name: "path::components",
             strategy: BuiltinStrategy::PathComponents,
         },
         BuiltinFunction {
-            name: "separator",
+            name: "path::separator",
             strategy: BuiltinStrategy::PathSeparator,
         },
         // ========================================
         // Env module
         // ========================================
         BuiltinFunction {
-            name: "getenv",
+            name: "env::getenv",
             strategy: BuiltinStrategy::EnvGetenv,
         },
         BuiltinFunction {
-            name: "lookup_env",
+            name: "env::lookup_env",
             strategy: BuiltinStrategy::EnvLookupEnv,
         },
         BuiltinFunction {
-            name: "setenv",
+            name: "env::setenv",
             strategy: BuiltinStrategy::EnvSetenv,
         },
         BuiltinFunction {
-            name: "unsetenv",
+            name: "env::unsetenv",
             strategy: BuiltinStrategy::EnvUnsetenv,
         },
         BuiltinFunction {
-            name: "clearenv",
+            name: "env::clearenv",
             strategy: BuiltinStrategy::EnvClearenv,
         },
         BuiltinFunction {
-            name: "environ",
+            name: "env::environ",
             strategy: BuiltinStrategy::EnvEnviron,
         },
         BuiltinFunction {
-            name: "expand_env",
+            name: "env::expand_env",
             strategy: BuiltinStrategy::EnvExpandEnv,
         },
         // ========================================
         // OS module
         // ========================================
         BuiltinFunction {
-            name: "hostname",
+            name: "os::hostname",
             strategy: BuiltinStrategy::OsHostname,
         },
         BuiltinFunction {
-            name: "temp_dir",
+            name: "os::temp_dir",
             strategy: BuiltinStrategy::OsTempDir,
         },
         BuiltinFunction {
-            name: "home_dir",
+            name: "os::home_dir",
             strategy: BuiltinStrategy::OsHomeDir,
         },
         BuiltinFunction {
-            name: "cache_dir",
+            name: "os::cache_dir",
             strategy: BuiltinStrategy::OsCacheDir,
         },
         BuiltinFunction {
-            name: "config_dir",
+            name: "os::config_dir",
             strategy: BuiltinStrategy::OsConfigDir,
         },
         BuiltinFunction {
-            name: "executable",
+            name: "os::executable",
             strategy: BuiltinStrategy::OsExecutable,
         },
         BuiltinFunction {
-            name: "pagesize",
+            name: "os::pagesize",
             strategy: BuiltinStrategy::OsPagesize,
         },
         BuiltinFunction {
-            name: "getuid",
+            name: "os::getuid",
             strategy: BuiltinStrategy::OsGetuid,
         },
         BuiltinFunction {
-            name: "geteuid",
+            name: "os::geteuid",
             strategy: BuiltinStrategy::OsGeteuid,
         },
         BuiltinFunction {
-            name: "getgid",
+            name: "os::getgid",
             strategy: BuiltinStrategy::OsGetgid,
         },
         BuiltinFunction {
-            name: "getegid",
+            name: "os::getegid",
             strategy: BuiltinStrategy::OsGetegid,
         },
         BuiltinFunction {
-            name: "getgroups",
+            name: "os::getgroups",
             strategy: BuiltinStrategy::OsGetgroups,
         },
         // ========================================
         // Process module
         // ========================================
         BuiltinFunction {
-            name: "getpid",
+            name: "process::getpid",
             strategy: BuiltinStrategy::ProcessGetpid,
         },
         BuiltinFunction {
-            name: "getppid",
+            name: "process::getppid",
             strategy: BuiltinStrategy::ProcessGetppid,
         },
         BuiltinFunction {
-            name: "exit",
+            name: "process::exit",
             strategy: BuiltinStrategy::ProcessExit,
         },
         BuiltinFunction {
-            name: "pipe_read",
+            name: "process::pipe_read",
             strategy: BuiltinStrategy::ProcessPipeRead,
         },
         BuiltinFunction {
-            name: "pipe_write",
+            name: "process::pipe_write",
             strategy: BuiltinStrategy::ProcessPipeWrite,
         },
         BuiltinFunction {
-            name: "start_process",
+            name: "process::start_process",
             strategy: BuiltinStrategy::ProcessStart,
         },
         BuiltinFunction {
-            name: "find_process",
+            name: "process::find_process",
             strategy: BuiltinStrategy::ProcessFind,
         },
         BuiltinFunction {
-            name: "wait",
+            name: "process::wait",
             strategy: BuiltinStrategy::ProcessWait,
         },
         BuiltinFunction {
-            name: "signal",
+            name: "process::signal",
             strategy: BuiltinStrategy::ProcessSignal,
         },
         BuiltinFunction {
-            name: "kill",
+            name: "process::kill",
             strategy: BuiltinStrategy::ProcessKill,
         },
         BuiltinFunction {
-            name: "release",
+            name: "process::release",
             strategy: BuiltinStrategy::ProcessRelease,
         },
         BuiltinFunction {
-            name: "SIGHUP",
+            name: "process::SIGHUP",
             strategy: BuiltinStrategy::ProcessSighup,
         },
         BuiltinFunction {
-            name: "SIGINT",
+            name: "process::SIGINT",
             strategy: BuiltinStrategy::ProcessSigint,
         },
         BuiltinFunction {
-            name: "SIGQUIT",
+            name: "process::SIGQUIT",
             strategy: BuiltinStrategy::ProcessSigquit,
         },
         BuiltinFunction {
-            name: "SIGKILL",
+            name: "process::SIGKILL",
             strategy: BuiltinStrategy::ProcessSigkill,
         },
         BuiltinFunction {
-            name: "SIGTERM",
+            name: "process::SIGTERM",
             strategy: BuiltinStrategy::ProcessSigterm,
         },
         BuiltinFunction {
-            name: "SIGSTOP",
+            name: "process::SIGSTOP",
             strategy: BuiltinStrategy::ProcessSigstop,
         },
         BuiltinFunction {
-            name: "SIGCONT",
+            name: "process::SIGCONT",
             strategy: BuiltinStrategy::ProcessSigcont,
         },
         // ========================================
         // Testing module
         // ========================================
         BuiltinFunction {
-            name: "assert",
+            name: "testing::assert",
             strategy: BuiltinStrategy::TestingAssert,
         },
         BuiltinFunction {
-            name: "assert_eq",
+            name: "testing::assert_eq",
             strategy: BuiltinStrategy::TestingAssertEq,
         },
         BuiltinFunction {
-            name: "assert_eq_float",
+            name: "testing::assert_eq_float",
             strategy: BuiltinStrategy::TestingAssertEqFloat,
         },
         BuiltinFunction {
-            name: "assert_eq_string",
+            name: "testing::assert_eq_string",
             strategy: BuiltinStrategy::TestingAssertEqString,
         },
         BuiltinFunction {
-            name: "assert_eq_bool",
+            name: "testing::assert_eq_bool",
             strategy: BuiltinStrategy::TestingAssertEqBool,
         },
         BuiltinFunction {
-            name: "assert_neq",
+            name: "testing::assert_neq",
             strategy: BuiltinStrategy::TestingAssertNeq,
         },
         BuiltinFunction {
-            name: "assert_neq_string",
+            name: "testing::assert_neq_string",
             strategy: BuiltinStrategy::TestingAssertNeqString,
         },
         BuiltinFunction {
-            name: "assert_true",
+            name: "testing::assert_true",
             strategy: BuiltinStrategy::TestingAssertTrue,
         },
         BuiltinFunction {
-            name: "assert_false",
+            name: "testing::assert_false",
             strategy: BuiltinStrategy::TestingAssertFalse,
         },
         BuiltinFunction {
-            name: "assert_gt",
+            name: "testing::assert_gt",
             strategy: BuiltinStrategy::TestingAssertGt,
         },
         BuiltinFunction {
-            name: "assert_gte",
+            name: "testing::assert_gte",
             strategy: BuiltinStrategy::TestingAssertGte,
         },
         BuiltinFunction {
-            name: "assert_lt",
+            name: "testing::assert_lt",
             strategy: BuiltinStrategy::TestingAssertLt,
         },
         BuiltinFunction {
-            name: "assert_lte",
+            name: "testing::assert_lte",
             strategy: BuiltinStrategy::TestingAssertLte,
         },
         BuiltinFunction {
-            name: "fail",
+            name: "testing::fail",
             strategy: BuiltinStrategy::TestingFail,
         },
         BuiltinFunction {
-            name: "assert_approx",
+            name: "testing::assert_approx",
             strategy: BuiltinStrategy::TestingAssertApprox,
         },
         BuiltinFunction {
-            name: "assert_contains",
+            name: "testing::assert_contains",
             strategy: BuiltinStrategy::TestingAssertContains,
         },
         BuiltinFunction {
-            name: "assert_starts_with",
+            name: "testing::assert_starts_with",
             strategy: BuiltinStrategy::TestingAssertStartsWith,
         },
         BuiltinFunction {
-            name: "assert_ends_with",
+            name: "testing::assert_ends_with",
             strategy: BuiltinStrategy::TestingAssertEndsWith,
         },
         // ========================================

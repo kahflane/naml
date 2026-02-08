@@ -4,6 +4,7 @@ mod grid;
 
 use std::io::*;
 use std::random::*;
+use std::threads::sleep;
 use std::collections::arrays::{count, push};
 use snake::*;
 use food::*;

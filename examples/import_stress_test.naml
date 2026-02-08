@@ -1,7 +1,7 @@
 ///
 /// Stress test for import resolution and namespace scoping.
-/// `use std::collections::*` imports submodules (arrays, maps) for qualified calls.
-/// Non-overlapping functions can be imported specifically for unqualified use.
+/// Tests all std modules with qualified names, wildcard imports,
+/// specific imports, and global builtins.
 ///
 
 use std::collections::*;
@@ -11,6 +11,16 @@ use std::collections::maps::values;
 use std::collections::maps::contains_key;
 use std::strings::*;
 use std::testing::*;
+use std::datetime::*;
+use std::metrics::*;
+use std::random::*;
+use std::io::read_line;
+use std::threads::sleep;
+use std::fs::exists;
+use std::path::{is_absolute, separator};
+use std::env::setenv;
+use std::os::pagesize;
+use std::process::getpid;
 
 fn sum_array(arr: [int]) -> int {
     var total: int = 0;
@@ -49,7 +59,7 @@ fn main() {
     assert_eq(maps::count(scores), 3, "maps count");
 
     // ==========================================
-    // Scenario 4: String functions
+    // Scenario 4: String functions (wildcard import)
     // ==========================================
     var greeting: string = "Hello, World!";
     var parts: [string] = split(greeting, ", ");
@@ -165,5 +175,87 @@ fn main() {
     var inter: [int] = arrays::intersect(set1, set2);
     assert_eq(arrays::count(inter), 3, "intersect [3,4,5]");
 
+    // ==========================================
+    // Scenario 18: datetime module (wildcard import)
+    // ==========================================
+    var ts: int = now_ms();
+    assert_true(ts > 0, "now_ms > 0");
+    var ts_s: int = now_s();
+    assert_true(ts_s > 0, "now_s > 0");
+    var yr: int = year(ts);
+    assert_true(yr >= 2024, "year >= 2024");
+    var mo: int = month(ts);
+    assert_true(mo >= 1 and mo <= 12, "month 1-12");
+    var dy: int = day(ts);
+    assert_true(dy >= 1 and dy <= 31, "day 1-31");
+
+    // ==========================================
+    // Scenario 19: metrics module (wildcard import)
+    // ==========================================
+    var start: int = perf_now();
+    var dummy: int = 0;
+    var i: int = 0;
+    while (i < 100) {
+        dummy = dummy + i;
+        i = i + 1;
+    }
+    var ms: int = elapsed_ms(start);
+    assert_true(ms >= 0, "elapsed_ms >= 0");
+    var us: int = elapsed_us(start);
+    assert_true(us >= 0, "elapsed_us >= 0");
+
+    // ==========================================
+    // Scenario 20: random module (wildcard import)
+    // ==========================================
+    var r: int = random(1, 100);
+    assert_true(r >= 1 and r <= 100, "random in range");
+    var rf: float = random_float();
+    assert_true(rf >= 0.0 and rf < 1.0, "random_float in [0,1)");
+
+    // ==========================================
+    // Scenario 21: fs module (specific import)
+    // ==========================================
+    assert_true(exists("."), "current dir exists");
+
+    // ==========================================
+    // Scenario 22: path module (specific imports)
+    // ==========================================
+    var sep: string = separator();
+    assert_true(len(sep) > 0, "separator non-empty");
+    assert_true(is_absolute("/tmp"), "absolute path check");
+
+    // ==========================================
+    // Scenario 23: env module (specific import)
+    // ==========================================
+    setenv("NAML_STRESS_TEST", "hello_naml") catch e {
+        println(fmt("env error: {}", e.message));
+    };
+
+    // ==========================================
+    // Scenario 24: os module (specific import)
+    // ==========================================
+    var ps: int = pagesize();
+    assert_true(ps > 0, "pagesize > 0");
+
+    // ==========================================
+    // Scenario 25: process module (specific import)
+    // ==========================================
+    var pid: int = getpid();
+    assert_true(pid > 0, "getpid > 0");
+
+    // ==========================================
+    // Scenario 26: threads module (specific import, sleep)
+    // ==========================================
+    var before: int = perf_now();
+    sleep(1);
+    var after: int = elapsed_ms(before);
+    assert_true(after >= 0, "sleep completed");
+
+    // ==========================================
+    // Scenario 27: global builtins work without import
+    // ==========================================
+    print("");
     println("All import stress tests passed!");
+    var msg: string = fmt("{} tests verified", 27);
+    assert_true(len(msg) > 0, "fmt works");
 }
