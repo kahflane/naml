@@ -145,6 +145,20 @@ use std::threads::*;
 var ch: channel<int> = open_channel(10);  // buffered channel with capacity 10
 ```
 
+### Atomics
+
+Lock-free atomic types for concurrent programming (native only). Requires `use std::threads::*;`:
+
+```naml
+use std::threads::*;
+
+var counter: atomic<int> = with_atomic(0);    // atomic integer
+var flags: atomic<uint> = with_atomic(0);     // atomic unsigned integer
+var ready: atomic<bool> = with_atomic(false);  // atomic boolean
+```
+
+Supported inner types: `int`, `uint`, `bool`.
+
 ### Function Types
 
 First-class function types:
@@ -989,6 +1003,11 @@ use std::threads::*;
 
 var ch: channel<int> = open_channel(10);
 join();
+
+// Atomic operations
+var counter: atomic<int> = with_atomic(0);
+atomic_add(counter, 1);
+var val: int = atomic_load(counter);
 ```
 
 ---
@@ -1036,6 +1055,44 @@ Channel functions:
 - `send(ch, value)` - Send a value (blocks if full)
 - `receive(ch) -> option<T>` - Receive a value (blocks if empty, returns `none` if closed)
 - `close(ch)` - Close the channel
+
+### Atomics
+
+Lock-free atomic operations for shared state between threads. All operations use sequential consistency ordering. Requires `use std::threads::*;`:
+
+```naml
+use std::threads::*;
+
+fn main() {
+    var counter: atomic<int> = with_atomic(0);
+
+    spawn { atomic_add(counter, 1); };
+    spawn { atomic_add(counter, 1); };
+    spawn { atomic_add(counter, 1); };
+
+    join();
+    println(fmt("counter = {}", atomic_load(counter)));  // 3
+}
+```
+
+Atomic functions:
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `with_atomic` | `(value: T) -> atomic<T>` | Create an atomic with initial value |
+| `atomic_load` | `(a: atomic<T>) -> T` | Read the current value |
+| `atomic_store` | `(a: atomic<T>, value: T)` | Write a new value |
+| `atomic_add` | `(a: atomic<T>, value: T) -> T` | Add and return old value (`int`/`uint` only) |
+| `atomic_sub` | `(a: atomic<T>, value: T) -> T` | Subtract and return old value (`int`/`uint` only) |
+| `atomic_inc` | `(a: atomic<T>) -> T` | Increment by 1, return old value (`int`/`uint` only) |
+| `atomic_dec` | `(a: atomic<T>) -> T` | Decrement by 1, return old value (`int`/`uint` only) |
+| `atomic_cas` | `(a: atomic<T>, expected: T, new: T) -> bool` | Compare-and-swap, returns true on success |
+| `atomic_swap` | `(a: atomic<T>, value: T) -> T` | Swap and return old value |
+| `atomic_and` | `(a: atomic<T>, value: T) -> T` | Bitwise AND, return old value (`int`/`uint` only) |
+| `atomic_or` | `(a: atomic<T>, value: T) -> T` | Bitwise OR, return old value (`int`/`uint` only) |
+| `atomic_xor` | `(a: atomic<T>, value: T) -> T` | Bitwise XOR, return old value (`int`/`uint` only) |
+
+Supported inner types: `int`, `uint`, `bool`. Boolean atomics support `with_atomic`, `atomic_load`, `atomic_store`, `atomic_cas`, and `atomic_swap`.
 
 ### Join
 
@@ -1218,7 +1275,7 @@ fn add(a: int, b: int) -> int {
 `throw`, `throws`, `try`, `catch`
 
 ### Type Keywords
-`int`, `uint`, `float`, `decimal`, `bool`, `string`, `bytes`, `option`, `map`, `channel`
+`int`, `uint`, `float`, `decimal`, `bool`, `string`, `bytes`, `option`, `map`, `channel`, `mutex`, `rwlock`, `atomic`
 
 ### Boolean/Option Keywords
 `true`, `false`, `none`, `some`
