@@ -8,7 +8,7 @@ use crate::codegen::cranelift::{
     call_map_set, compile_expression,
     types, CompileContext, HeapType,
 };
-use crate::codegen::cranelift::heap::{get_heap_type_resolved, heap_type_from_tc_type};
+use crate::codegen::cranelift::heap::get_heap_type_resolved;
 use crate::codegen::CodegenError;
 use crate::source::Spanned;
 use crate::typechecker::Type;
@@ -221,16 +221,9 @@ pub fn compile_statement(
 
                         builder.def_var(var, val);
 
-                        // Incref the new value only if it's NOT a fresh value.
-                        // Fresh values (from Call/StructLiteral) already have rc=1.
-                        let is_fresh_value = matches!(
-                            &assign.value,
-                            Expression::StructLiteral(_) | Expression::Call(_)
-                        );
-                        if !is_fresh_value {
-                            if let Some(ref heap_type) = heap_type_clone {
-                                emit_incref(ctx, builder, val, heap_type)?;
-                            }
+                        // Incref the new value since we're storing a new reference
+                        if let Some(ref heap_type) = heap_type_clone {
+                            emit_incref(ctx, builder, val, heap_type)?;
                         }
                     } else {
                         return Err(CodegenError::JitCompile(format!(
@@ -299,30 +292,20 @@ pub fn compile_statement(
                                 let exc_name_str = ctx.interner.resolve(exc_name).to_string();
                                 if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
                                     // Find field offset (message at 0, stack at 8, user fields at 16+)
-                                    let (offset, field_heap_type) = if field_name == "message" {
-                                        (0, Some(HeapType::String))
+                                    let offset = if field_name == "message" {
+                                        0
                                     } else if field_name == "stack" {
-                                        (8, None)
+                                        8
                                     } else if let Some(idx) =
                                         struct_def.fields.iter().position(|f| f == &field_name)
                                     {
-                                        let ht = struct_def.field_heap_types.get(idx).and_then(|h| h.clone());
-                                        (16 + (idx * 8) as i32, ht)
+                                        16 + (idx * 8) as i32
                                     } else {
                                         return Err(CodegenError::JitCompile(format!(
                                             "Unknown field: {}",
                                             field_name
                                         )));
                                     };
-                                    if let Some(ref field_ht) = field_heap_type {
-                                        let old_val = builder.ins().load(
-                                            cranelift::prelude::types::I64,
-                                            MemFlags::new(),
-                                            base_ptr,
-                                            offset,
-                                        );
-                                        emit_decref(ctx, builder, old_val, field_ht)?;
-                                    }
                                     builder
                                         .ins()
                                         .store(MemFlags::new(), value, base_ptr, offset);
@@ -336,40 +319,9 @@ pub fn compile_statement(
                                         struct_def.fields.iter().position(|f| f == &field_name)
                                 {
                                     let offset = (24 + idx * 8) as i32;
-                                    if let Some(Some(field_ht)) = struct_def.field_heap_types.get(idx) {
-                                        let old_val = builder.ins().load(
-                                            cranelift::prelude::types::I64,
-                                            MemFlags::new(),
-                                            base_ptr,
-                                            offset,
-                                        );
-                                        emit_decref(ctx, builder, old_val, field_ht)?;
-                                    }
-                                    let store_val = if matches!(ctx.annotations.get_type(assign.value.span()), Some(Type::Option(_))) {
-                                        let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), value, 0);
-                                        let is_some = builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
-                                        let some_block = builder.create_block();
-                                        let none_block = builder.create_block();
-                                        let merge_block = builder.create_block();
-                                        builder.append_block_param(merge_block, cranelift::prelude::types::I64);
-                                        builder.ins().brif(is_some, some_block, &[], none_block, &[]);
-                                        builder.switch_to_block(some_block);
-                                        builder.seal_block(some_block);
-                                        let inner_val = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), value, 8);
-                                        builder.ins().jump(merge_block, &[inner_val]);
-                                        builder.switch_to_block(none_block);
-                                        builder.seal_block(none_block);
-                                        let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-                                        builder.ins().jump(merge_block, &[zero]);
-                                        builder.switch_to_block(merge_block);
-                                        builder.seal_block(merge_block);
-                                        builder.block_params(merge_block)[0]
-                                    } else {
-                                        value
-                                    };
                                     builder
                                         .ins()
-                                        .store(MemFlags::new(), store_val, base_ptr, offset);
+                                        .store(MemFlags::new(), value, base_ptr, offset);
                                     return Ok(());
                                 }
                             } else if let crate::typechecker::Type::Generic(name, _) = type_ann {
@@ -380,40 +332,9 @@ pub fn compile_statement(
                                         struct_def.fields.iter().position(|f| f == &field_name)
                                 {
                                     let offset = (24 + idx * 8) as i32;
-                                    if let Some(Some(field_ht)) = struct_def.field_heap_types.get(idx) {
-                                        let old_val = builder.ins().load(
-                                            cranelift::prelude::types::I64,
-                                            MemFlags::new(),
-                                            base_ptr,
-                                            offset,
-                                        );
-                                        emit_decref(ctx, builder, old_val, field_ht)?;
-                                    }
-                                    let store_val = if matches!(ctx.annotations.get_type(assign.value.span()), Some(Type::Option(_))) {
-                                        let tag = builder.ins().load(cranelift::prelude::types::I32, MemFlags::new(), value, 0);
-                                        let is_some = builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
-                                        let some_block = builder.create_block();
-                                        let none_block = builder.create_block();
-                                        let merge_block = builder.create_block();
-                                        builder.append_block_param(merge_block, cranelift::prelude::types::I64);
-                                        builder.ins().brif(is_some, some_block, &[], none_block, &[]);
-                                        builder.switch_to_block(some_block);
-                                        builder.seal_block(some_block);
-                                        let inner_val = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), value, 8);
-                                        builder.ins().jump(merge_block, &[inner_val]);
-                                        builder.switch_to_block(none_block);
-                                        builder.seal_block(none_block);
-                                        let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
-                                        builder.ins().jump(merge_block, &[zero]);
-                                        builder.switch_to_block(merge_block);
-                                        builder.seal_block(merge_block);
-                                        builder.block_params(merge_block)[0]
-                                    } else {
-                                        value
-                                    };
                                     builder
                                         .ins()
-                                        .store(MemFlags::new(), store_val, base_ptr, offset);
+                                        .store(MemFlags::new(), value, base_ptr, offset);
                                     return Ok(());
                                 }
                             }
@@ -454,15 +375,6 @@ pub fn compile_statement(
 
                                             // Store with correct type (offset = 24 byte header + field_index * 8)
                                             let offset = (24 + idx * 8) as i32;
-                                            if let Some(Some(field_ht)) = struct_def.field_heap_types.get(idx) {
-                                                let old_val = builder.ins().load(
-                                                    cranelift::prelude::types::I64,
-                                                    MemFlags::new(),
-                                                    struct_ptr,
-                                                    offset,
-                                                );
-                                                emit_decref(ctx, builder, old_val, field_ht)?;
-                                            }
                                             builder.ins().store(MemFlags::new(), store_value, struct_ptr, offset);
                                             return Ok(());
                                         }
@@ -580,14 +492,7 @@ pub fn compile_statement(
         }
 
         Statement::Expression(expr_stmt) => {
-            let val = compile_expression(ctx, builder, &expr_stmt.expr)?;
-            if matches!(&expr_stmt.expr, Expression::Call(_) | Expression::StructLiteral(_)) {
-                if let Some(expr_type) = ctx.annotations.get_type(expr_stmt.expr.span()) {
-                    if let Some(heap_type) = heap_type_from_tc_type(expr_type, ctx.interner) {
-                        emit_decref(ctx, builder, val, &heap_type)?;
-                    }
-                }
-            }
+            compile_expression(ctx, builder, &expr_stmt.expr)?;
         }
 
         Statement::If(if_stmt) => {
@@ -655,7 +560,6 @@ pub fn compile_statement(
             // Save and set loop context for break/continue
             let prev_loop_exit = ctx.loop_exit_block.take();
             let prev_loop_header = ctx.loop_header_block.take();
-            let prev_loop_heap_vars = ctx.loop_heap_vars_before.take();
             ctx.loop_exit_block = Some(exit_block);
             ctx.loop_header_block = Some(header_block);
 
@@ -674,7 +578,6 @@ pub fn compile_statement(
             // Track heap variables before loop body to detect loop-local vars
             let heap_vars_before: std::collections::HashSet<String> =
                 ctx.var_heap_types.keys().cloned().collect();
-            ctx.loop_heap_vars_before = Some(heap_vars_before.clone());
 
             for stmt in &while_stmt.body.statements {
                 compile_statement(ctx, builder, stmt)?;
@@ -715,7 +618,6 @@ pub fn compile_statement(
             // Restore previous loop context
             ctx.loop_exit_block = prev_loop_exit;
             ctx.loop_header_block = prev_loop_header;
-            ctx.loop_heap_vars_before = prev_loop_heap_vars;
         }
 
         Statement::For(for_stmt) => {
@@ -798,7 +700,6 @@ pub fn compile_statement(
 
                 let prev_loop_exit = ctx.loop_exit_block.take();
                 let prev_loop_header = ctx.loop_header_block.take();
-                let prev_loop_heap_vars = ctx.loop_heap_vars_before.take();
                 ctx.loop_exit_block = Some(exit_block);
                 ctx.loop_header_block = Some(header_block);
 
@@ -821,10 +722,6 @@ pub fn compile_statement(
                 builder.seal_block(body_block);
                 ctx.block_terminated = false;
 
-                let heap_vars_before: std::collections::HashSet<String> =
-                    ctx.var_heap_types.keys().cloned().collect();
-                ctx.loop_heap_vars_before = Some(heap_vars_before.clone());
-
                 for stmt in &for_stmt.body.statements {
                     compile_statement(ctx, builder, stmt)?;
                     if ctx.block_terminated {
@@ -834,19 +731,6 @@ pub fn compile_statement(
 
                 // Increment index
                 if !ctx.block_terminated {
-                    let loop_local_vars: Vec<(Variable, HeapType)> = ctx
-                        .var_heap_types
-                        .iter()
-                        .filter(|(name, _)| !heap_vars_before.contains(name.as_str()))
-                        .filter_map(|(name, ht)| {
-                            ctx.variables.get(name).map(|v| (*v, ht.clone()))
-                        })
-                        .collect();
-                    for (var, ref heap_type) in loop_local_vars {
-                        let val = builder.use_var(var);
-                        emit_decref(ctx, builder, val, heap_type)?;
-                    }
-
                     let idx_val = builder.use_var(idx_var);
                     let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
                     let next_idx = builder.ins().iadd(idx_val, one);
@@ -867,10 +751,8 @@ pub fn compile_statement(
                 builder.seal_block(exit_block);
                 ctx.block_terminated = false;
 
-                ctx.var_heap_types.retain(|name, _| heap_vars_before.contains(name.as_str()));
                 ctx.loop_exit_block = prev_loop_exit;
                 ctx.loop_header_block = prev_loop_header;
-                ctx.loop_heap_vars_before = prev_loop_heap_vars;
             } else if is_string {
                 // Handle string character iteration
                 let raw_str_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
@@ -916,7 +798,6 @@ pub fn compile_statement(
 
                 let prev_loop_exit = ctx.loop_exit_block.take();
                 let prev_loop_header = ctx.loop_header_block.take();
-                let prev_loop_heap_vars = ctx.loop_heap_vars_before.take();
                 ctx.loop_exit_block = Some(exit_block);
                 ctx.loop_header_block = Some(header_block);
 
@@ -936,10 +817,6 @@ pub fn compile_statement(
                 let char_code = call_string_char_at(ctx, builder, str_ptr, idx_val)?;
                 builder.def_var(char_var, char_code);
 
-                let heap_vars_before: std::collections::HashSet<String> =
-                    ctx.var_heap_types.keys().cloned().collect();
-                ctx.loop_heap_vars_before = Some(heap_vars_before.clone());
-
                 for stmt in &for_stmt.body.statements {
                     compile_statement(ctx, builder, stmt)?;
                     if ctx.block_terminated {
@@ -948,19 +825,6 @@ pub fn compile_statement(
                 }
 
                 if !ctx.block_terminated {
-                    let loop_local_vars: Vec<(Variable, HeapType)> = ctx
-                        .var_heap_types
-                        .iter()
-                        .filter(|(name, _)| !heap_vars_before.contains(name.as_str()))
-                        .filter_map(|(name, ht)| {
-                            ctx.variables.get(name).map(|v| (*v, ht.clone()))
-                        })
-                        .collect();
-                    for (var, ref heap_type) in loop_local_vars {
-                        let val = builder.use_var(var);
-                        emit_decref(ctx, builder, val, heap_type)?;
-                    }
-
                     let idx_val = builder.use_var(idx_var);
                     let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
                     let next_idx = builder.ins().iadd(idx_val, one);
@@ -973,10 +837,8 @@ pub fn compile_statement(
                 builder.seal_block(exit_block);
                 ctx.block_terminated = false;
 
-                ctx.var_heap_types.retain(|name, _| heap_vars_before.contains(name.as_str()));
                 ctx.loop_exit_block = prev_loop_exit;
                 ctx.loop_header_block = prev_loop_header;
-                ctx.loop_heap_vars_before = prev_loop_heap_vars;
             } else {
                 // Original array iteration code
                 let arr_ptr = compile_expression(ctx, builder, &for_stmt.iterable)?;
@@ -1005,7 +867,6 @@ pub fn compile_statement(
 
                 let prev_loop_exit = ctx.loop_exit_block.take();
                 let prev_loop_header = ctx.loop_header_block.take();
-                let prev_loop_heap_vars = ctx.loop_heap_vars_before.take();
                 ctx.loop_exit_block = Some(exit_block);
                 ctx.loop_header_block = Some(header_block);
 
@@ -1025,10 +886,6 @@ pub fn compile_statement(
                 let elem = call_array_index(ctx, builder, arr_ptr, idx_val)?;
                 builder.def_var(val_var, elem);
 
-                let heap_vars_before: std::collections::HashSet<String> =
-                    ctx.var_heap_types.keys().cloned().collect();
-                ctx.loop_heap_vars_before = Some(heap_vars_before.clone());
-
                 for stmt in &for_stmt.body.statements {
                     compile_statement(ctx, builder, stmt)?;
                     if ctx.block_terminated {
@@ -1037,19 +894,6 @@ pub fn compile_statement(
                 }
 
                 if !ctx.block_terminated {
-                    let loop_local_vars: Vec<(Variable, HeapType)> = ctx
-                        .var_heap_types
-                        .iter()
-                        .filter(|(name, _)| !heap_vars_before.contains(name.as_str()))
-                        .filter_map(|(name, ht)| {
-                            ctx.variables.get(name).map(|v| (*v, ht.clone()))
-                        })
-                        .collect();
-                    for (var, ref heap_type) in loop_local_vars {
-                        let val = builder.use_var(var);
-                        emit_decref(ctx, builder, val, heap_type)?;
-                    }
-
                     let idx_val = builder.use_var(idx_var);
                     let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
                     let next_idx = builder.ins().iadd(idx_val, one);
@@ -1062,36 +906,25 @@ pub fn compile_statement(
                 builder.seal_block(exit_block);
                 ctx.block_terminated = false;
 
-                ctx.var_heap_types.retain(|name, _| heap_vars_before.contains(name.as_str()));
                 ctx.loop_exit_block = prev_loop_exit;
                 ctx.loop_header_block = prev_loop_header;
-                ctx.loop_heap_vars_before = prev_loop_heap_vars;
             }
         }
 
         Statement::Loop(loop_stmt) => {
-            let header_block = builder.create_block();
             let body_block = builder.create_block();
             let exit_block = builder.create_block();
 
             let prev_loop_exit = ctx.loop_exit_block.take();
             let prev_loop_header = ctx.loop_header_block.take();
-            let prev_loop_heap_vars = ctx.loop_heap_vars_before.take();
             ctx.loop_exit_block = Some(exit_block);
-            ctx.loop_header_block = Some(header_block);
+            ctx.loop_header_block = Some(body_block);
 
-            builder.ins().jump(header_block, &[]);
-
-            builder.switch_to_block(header_block);
             builder.ins().jump(body_block, &[]);
 
             builder.switch_to_block(body_block);
             builder.seal_block(body_block);
             ctx.block_terminated = false;
-
-            let heap_vars_before: std::collections::HashSet<String> =
-                ctx.var_heap_types.keys().cloned().collect();
-            ctx.loop_heap_vars_before = Some(heap_vars_before.clone());
 
             for stmt in &loop_stmt.body.statements {
                 compile_statement(ctx, builder, stmt)?;
@@ -1101,49 +934,19 @@ pub fn compile_statement(
             }
 
             if !ctx.block_terminated {
-                let loop_local_vars: Vec<(Variable, HeapType)> = ctx
-                    .var_heap_types
-                    .iter()
-                    .filter(|(name, _)| !heap_vars_before.contains(name.as_str()))
-                    .filter_map(|(name, ht)| {
-                        ctx.variables.get(name).map(|v| (*v, ht.clone()))
-                    })
-                    .collect();
-                for (var, ref heap_type) in loop_local_vars {
-                    let val = builder.use_var(var);
-                    emit_decref(ctx, builder, val, heap_type)?;
-                }
-
-                builder.ins().jump(header_block, &[]);
+                builder.ins().jump(body_block, &[]);
             }
 
-            builder.seal_block(header_block);
             builder.switch_to_block(exit_block);
             builder.seal_block(exit_block);
             ctx.block_terminated = false;
 
-            ctx.var_heap_types.retain(|name, _| heap_vars_before.contains(name.as_str()));
             ctx.loop_exit_block = prev_loop_exit;
             ctx.loop_header_block = prev_loop_header;
-            ctx.loop_heap_vars_before = prev_loop_heap_vars;
         }
 
         Statement::Break(_) => {
             if let Some(exit_block) = ctx.loop_exit_block {
-                if let Some(ref heap_vars_before) = ctx.loop_heap_vars_before {
-                    let loop_local_vars: Vec<(Variable, HeapType)> = ctx
-                        .var_heap_types
-                        .iter()
-                        .filter(|(name, _)| !heap_vars_before.contains(name.as_str()))
-                        .filter_map(|(name, ht)| {
-                            ctx.variables.get(name).map(|v| (*v, ht.clone()))
-                        })
-                        .collect();
-                    for (var, ref heap_type) in loop_local_vars {
-                        let val = builder.use_var(var);
-                        emit_decref(ctx, builder, val, heap_type)?;
-                    }
-                }
                 builder.ins().jump(exit_block, &[]);
                 ctx.block_terminated = true;
             } else {
@@ -1155,20 +958,6 @@ pub fn compile_statement(
 
         Statement::Continue(_) => {
             if let Some(header_block) = ctx.loop_header_block {
-                if let Some(ref heap_vars_before) = ctx.loop_heap_vars_before {
-                    let loop_local_vars: Vec<(Variable, HeapType)> = ctx
-                        .var_heap_types
-                        .iter()
-                        .filter(|(name, _)| !heap_vars_before.contains(name.as_str()))
-                        .filter_map(|(name, ht)| {
-                            ctx.variables.get(name).map(|v| (*v, ht.clone()))
-                        })
-                        .collect();
-                    for (var, ref heap_type) in loop_local_vars {
-                        let val = builder.use_var(var);
-                        emit_decref(ctx, builder, val, heap_type)?;
-                    }
-                }
                 builder.ins().jump(header_block, &[]);
                 ctx.block_terminated = true;
             } else {
