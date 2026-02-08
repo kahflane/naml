@@ -962,6 +962,63 @@ impl<'a> JitCompiler<'a> {
         );
         builder.symbol("naml_fs_stat", crate::runtime::naml_fs_stat as *const u8);
         builder.symbol(
+            "naml_fs_symlink",
+            crate::runtime::naml_fs_symlink as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_readlink",
+            crate::runtime::naml_fs_readlink as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_lstat",
+            crate::runtime::naml_fs_lstat as *const u8,
+        );
+        builder.symbol("naml_fs_link", crate::runtime::naml_fs_link as *const u8);
+        builder.symbol(
+            "naml_fs_chtimes",
+            crate::runtime::naml_fs_chtimes as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_chown",
+            crate::runtime::naml_fs_chown as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_lchown",
+            crate::runtime::naml_fs_lchown as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_same_file",
+            crate::runtime::naml_fs_same_file as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_read_at",
+            crate::runtime::naml_fs_file_read_at as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_write_at",
+            crate::runtime::naml_fs_file_write_at as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_name",
+            crate::runtime::naml_fs_file_name as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_stat",
+            crate::runtime::naml_fs_file_stat as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_truncate",
+            crate::runtime::naml_fs_file_truncate as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_chmod",
+            crate::runtime::naml_fs_file_chmod as *const u8,
+        );
+        builder.symbol(
+            "naml_fs_file_chown",
+            crate::runtime::naml_fs_file_chown as *const u8,
+        );
+        builder.symbol(
             "naml_io_error_new",
             crate::runtime::naml_io_error_new as *const u8,
         );
@@ -3859,6 +3916,115 @@ impl<'a> JitCompiler<'a> {
             &mut self.runtime_funcs,
             "naml_fs_file_size",
             &[i64t],
+            &[i64t],
+        )?;
+
+        // Link/symlink operations
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_symlink",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_readlink",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_lstat",
+            &[ptr],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_link",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_chtimes",
+            &[ptr, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_chown",
+            &[ptr, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_lchown",
+            &[ptr, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_same_file",
+            &[ptr, ptr],
+            &[i64t],
+        )?;
+
+        // Additional file handle operations
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_read_at",
+            &[i64t, i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_write_at",
+            &[i64t, ptr, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_name",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_stat",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_truncate",
+            &[i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_chmod",
+            &[i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_fs_file_chown",
+            &[i64t, i64t, i64t],
             &[i64t],
         )?;
 

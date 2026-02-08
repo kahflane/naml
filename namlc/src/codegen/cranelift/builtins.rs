@@ -308,6 +308,44 @@ pub enum BuiltinStrategy {
     FsFileSize,
 
     // ========================================
+    // Link/symlink strategies
+    // ========================================
+    /// (target, link_path) -> unit throws IOError
+    FsSymlink,
+    /// (path) -> string throws IOError
+    FsReadlink,
+    /// (path) -> [int] throws IOError
+    FsLstat,
+    /// (src, dst) -> unit throws IOError
+    FsLink,
+    /// (path, atime_ms, mtime_ms) -> unit throws IOError
+    FsChtimes,
+    /// (path, uid, gid) -> unit throws IOError
+    FsChown,
+    /// (path, uid, gid) -> unit throws IOError
+    FsLchown,
+    /// (path1, path2) -> bool throws IOError
+    FsSameFile,
+
+    // ========================================
+    // Additional file handle strategies
+    // ========================================
+    /// (handle, buf_size, offset) -> string throws IOError
+    FsFileReadAt,
+    /// (handle, content, offset) -> int throws IOError
+    FsFileWriteAt,
+    /// (handle) -> string throws IOError
+    FsFileName,
+    /// (handle) -> [int] throws IOError
+    FsFileStat,
+    /// (handle, size) -> unit throws IOError
+    FsFileTruncate,
+    /// (handle, mode) -> unit throws IOError
+    FsFileChmod,
+    /// (handle, uid, gid) -> unit throws IOError
+    FsFileChown,
+
+    // ========================================
     // Path module strategies
     // ========================================
     /// ([string]) -> string (join)
@@ -1352,6 +1390,72 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "file_size",
             strategy: BuiltinStrategy::FsFileSize,
+        },
+        // ========================================
+        // Link/symlink operations
+        // ========================================
+        BuiltinFunction {
+            name: "symlink",
+            strategy: BuiltinStrategy::FsSymlink,
+        },
+        BuiltinFunction {
+            name: "readlink",
+            strategy: BuiltinStrategy::FsReadlink,
+        },
+        BuiltinFunction {
+            name: "lstat",
+            strategy: BuiltinStrategy::FsLstat,
+        },
+        BuiltinFunction {
+            name: "link",
+            strategy: BuiltinStrategy::FsLink,
+        },
+        BuiltinFunction {
+            name: "chtimes",
+            strategy: BuiltinStrategy::FsChtimes,
+        },
+        BuiltinFunction {
+            name: "chown",
+            strategy: BuiltinStrategy::FsChown,
+        },
+        BuiltinFunction {
+            name: "lchown",
+            strategy: BuiltinStrategy::FsLchown,
+        },
+        BuiltinFunction {
+            name: "same_file",
+            strategy: BuiltinStrategy::FsSameFile,
+        },
+        // ========================================
+        // Additional file handle operations
+        // ========================================
+        BuiltinFunction {
+            name: "file_read_at",
+            strategy: BuiltinStrategy::FsFileReadAt,
+        },
+        BuiltinFunction {
+            name: "file_write_at",
+            strategy: BuiltinStrategy::FsFileWriteAt,
+        },
+        BuiltinFunction {
+            name: "file_name",
+            strategy: BuiltinStrategy::FsFileName,
+        },
+        BuiltinFunction {
+            name: "file_stat",
+            strategy: BuiltinStrategy::FsFileStat,
+        },
+        BuiltinFunction {
+            name: "file_truncate",
+            strategy: BuiltinStrategy::FsFileTruncate,
+        },
+        BuiltinFunction {
+            name: "file_chmod",
+            strategy: BuiltinStrategy::FsFileChmod,
+        },
+        BuiltinFunction {
+            name: "file_chown",
+            strategy: BuiltinStrategy::FsFileChown,
         },
         // ========================================
         // Path module
@@ -2671,6 +2775,116 @@ pub fn compile_builtin_call(
         BuiltinStrategy::FsFileSize => {
             let handle = compile_expression(ctx, builder, &args[0])?;
             call_one_arg_int_runtime(ctx, builder, "naml_fs_file_size", handle)
+        }
+
+        // ========================================
+        // Link/symlink operations
+        // ========================================
+        BuiltinStrategy::FsSymlink => {
+            let target = compile_expression(ctx, builder, &args[0])?;
+            let target = ensure_naml_string(ctx, builder, target, &args[0])?;
+            let link_path = compile_expression(ctx, builder, &args[1])?;
+            let link_path = ensure_naml_string(ctx, builder, link_path, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_symlink", target, link_path)
+        }
+
+        BuiltinStrategy::FsReadlink => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_readlink", path)
+        }
+
+        BuiltinStrategy::FsLstat => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_lstat", path)
+        }
+
+        BuiltinStrategy::FsLink => {
+            let src = compile_expression(ctx, builder, &args[0])?;
+            let src = ensure_naml_string(ctx, builder, src, &args[0])?;
+            let dst = compile_expression(ctx, builder, &args[1])?;
+            let dst = ensure_naml_string(ctx, builder, dst, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_link", src, dst)
+        }
+
+        BuiltinStrategy::FsChtimes => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let atime = compile_expression(ctx, builder, &args[1])?;
+            let mtime = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_chtimes", path, atime, mtime)
+        }
+
+        BuiltinStrategy::FsChown => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let uid = compile_expression(ctx, builder, &args[1])?;
+            let gid = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_chown", path, uid, gid)
+        }
+
+        BuiltinStrategy::FsLchown => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            let uid = compile_expression(ctx, builder, &args[1])?;
+            let gid = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_lchown", path, uid, gid)
+        }
+
+        BuiltinStrategy::FsSameFile => {
+            let path1 = compile_expression(ctx, builder, &args[0])?;
+            let path1 = ensure_naml_string(ctx, builder, path1, &args[0])?;
+            let path2 = compile_expression(ctx, builder, &args[1])?;
+            let path2 = ensure_naml_string(ctx, builder, path2, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_same_file", path1, path2)
+        }
+
+        // ========================================
+        // Additional file handle operations
+        // ========================================
+        BuiltinStrategy::FsFileReadAt => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let buf_size = compile_expression(ctx, builder, &args[1])?;
+            let offset = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_ptr_runtime(ctx, builder, "naml_fs_file_read_at", handle, buf_size, offset)
+        }
+
+        BuiltinStrategy::FsFileWriteAt => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let content = compile_expression(ctx, builder, &args[1])?;
+            let content = ensure_naml_string(ctx, builder, content, &args[1])?;
+            let offset = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_file_write_at", handle, content, offset)
+        }
+
+        BuiltinStrategy::FsFileName => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_file_name", handle)
+        }
+
+        BuiltinStrategy::FsFileStat => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_fs_file_stat", handle)
+        }
+
+        BuiltinStrategy::FsFileTruncate => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let size = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_file_truncate", handle, size)
+        }
+
+        BuiltinStrategy::FsFileChmod => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let mode = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_fs_file_chmod", handle, mode)
+        }
+
+        BuiltinStrategy::FsFileChown => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let uid = compile_expression(ctx, builder, &args[1])?;
+            let gid = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_fs_file_chown", handle, uid, gid)
         }
 
         // ========================================

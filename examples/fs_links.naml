@@ -1,0 +1,153 @@
+use std::fs::*;
+
+fn main() {
+    println("=== Link & Symlink Test ===");
+    println("");
+
+    var dir: string = "/tmp/naml_link_test";
+    remove_all(dir) catch e {
+        var _: int = 0;
+    };
+
+    mkdir_all(dir) catch e {
+        println(fmt("mkdir failed: {}", e.message));
+        return;
+    };
+
+    var file_path: string = join([dir, "original.txt"]);
+    write(file_path, "Hello from original!") catch e {
+        println(fmt("write failed: {}", e.message));
+        return;
+    };
+
+    // Create a symbolic link
+    var sym_path: string = join([dir, "symlink.txt"]);
+    symlink(file_path, sym_path) catch e {
+        println(fmt("symlink failed: {}", e.message));
+        return;
+    };
+    println(fmt("Created symlink: {} -> {}", sym_path, file_path));
+
+    // Read the symlink target
+    var target: string = readlink(sym_path) catch e {
+        println(fmt("readlink failed: {}", e.message));
+        return;
+    };
+    println(fmt("readlink: {}", target));
+
+    // Read content through symlink
+    var content: string = read(sym_path) catch e {
+        println(fmt("read failed: {}", e.message));
+        return;
+    };
+    println(fmt("Content through symlink: {}", content));
+
+    // lstat - should show is_symlink = 1
+    var lstats: [int] = lstat(sym_path) catch e {
+        println(fmt("lstat failed: {}", e.message));
+        return;
+    };
+    println(fmt("lstat is_symlink: {}", lstats[6]!));
+
+    // stat - follows symlink, should show is_symlink = 0
+    var stats: [int] = stat(sym_path) catch e {
+        println(fmt("stat failed: {}", e.message));
+        return;
+    };
+    println(fmt("stat is_symlink (follows link): {}", stats[6]!));
+
+    // Hard link
+    var hard_path: string = join([dir, "hardlink.txt"]);
+    link(file_path, hard_path) catch e {
+        println(fmt("link failed: {}", e.message));
+        return;
+    };
+    println(fmt("Created hard link: {}", hard_path));
+
+    // same_file - hard link and original should be same file
+    var same: bool = same_file(file_path, hard_path) catch e {
+        println(fmt("same_file failed: {}", e.message));
+        return;
+    };
+    println(fmt("same_file(original, hardlink): {}", same));
+
+    // same_file - symlink and original should be same (follows symlinks)
+    var same2: bool = same_file(file_path, sym_path) catch e {
+        println(fmt("same_file failed: {}", e.message));
+        return;
+    };
+    println(fmt("same_file(original, symlink): {}", same2));
+
+    // chtimes - set times to a known value
+    chtimes(file_path, 1000000000, 2000000000) catch e {
+        println(fmt("chtimes failed: {}", e.message));
+        return;
+    };
+    var new_stats: [int] = stat(file_path) catch e {
+        println(fmt("stat failed: {}", e.message));
+        return;
+    };
+    println(fmt("After chtimes, modified_ms: {}", new_stats[2]!));
+
+    // file_read_at / file_write_at
+    var fh: int = file_open(file_path, "r+") catch e {
+        println(fmt("file_open failed: {}", e.message));
+        return;
+    };
+
+    var at_content: string = file_read_at(fh, 5, 0) catch e {
+        println(fmt("file_read_at failed: {}", e.message));
+        return;
+    };
+    println(fmt("file_read_at(0, 5): '{}'", at_content));
+
+    var written: int = file_write_at(fh, "WORLD", 6) catch e {
+        println(fmt("file_write_at failed: {}", e.message));
+        return;
+    };
+    println(fmt("file_write_at wrote {} bytes at offset 6", written));
+
+    // file_name
+    var name: string = file_name(fh) catch e {
+        println(fmt("file_name failed: {}", e.message));
+        return;
+    };
+    println(fmt("file_name: {}", name));
+
+    // file_stat
+    var fstats: [int] = file_stat(fh) catch e {
+        println(fmt("file_stat failed: {}", e.message));
+        return;
+    };
+    println(fmt("file_stat size: {}", fstats[0]!));
+
+    // file_truncate
+    file_truncate(fh, 10) catch e {
+        println(fmt("file_truncate failed: {}", e.message));
+        return;
+    };
+    var fstats2: [int] = file_stat(fh) catch e {
+        println(fmt("file_stat failed: {}", e.message));
+        return;
+    };
+    println(fmt("After truncate, size: {}", fstats2[0]!));
+
+    // file_chmod (420 = 0o644)
+    file_chmod(fh, 420) catch e {
+        println(fmt("file_chmod failed: {}", e.message));
+        return;
+    };
+    println("After chmod 420 (0o644)");
+
+    file_close(fh) catch e {
+        println(fmt("file_close failed: {}", e.message));
+        return;
+    };
+
+    println("");
+    println("Cleaning up...");
+    remove_all(dir) catch e {
+        println(fmt("cleanup failed: {}", e.message));
+    };
+    println("=== All tests passed! ===");
+}

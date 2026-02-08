@@ -46,3 +46,4 @@ path = "src/lib.rs"
 naml-std-core.workspace = true
 memmap2 = "0.9"
 tempfile = "3"
+libc.workspace = true

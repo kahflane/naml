@@ -64,10 +64,14 @@
 //!
 
 mod file_handle;
+mod links;
 mod mmap;
+mod ownership;
 
 pub use file_handle::*;
+pub use links::*;
 pub use mmap::*;
+pub use ownership::*;
 
 use naml_std_core::{
     naml_exception_set_typed, naml_stack_capture, naml_string_new,
@@ -764,15 +768,49 @@ pub unsafe extern "C" fn naml_fs_truncate(path: *const NamlString, size: i64) ->
     }
 }
 
+/// Convert std::fs::Metadata to a NamlArray with 7 elements:
+/// [size, mode, modified, created, is_dir, is_file, is_symlink]
+pub(crate) fn metadata_to_array(meta: &std::fs::Metadata) -> *mut naml_std_core::NamlArray {
+    let arr = unsafe { naml_std_core::naml_array_new(7) };
+
+    unsafe { naml_std_core::naml_array_push(arr, meta.len() as i64) };
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        unsafe { naml_std_core::naml_array_push(arr, meta.permissions().mode() as i64) };
+    }
+    #[cfg(not(unix))]
+    {
+        let mode = if meta.permissions().readonly() { 0o444 } else { 0o644 };
+        unsafe { naml_std_core::naml_array_push(arr, mode) };
+    }
+
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    unsafe { naml_std_core::naml_array_push(arr, modified) };
+
+    let created = meta
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    unsafe { naml_std_core::naml_array_push(arr, created) };
+
+    unsafe { naml_std_core::naml_array_push(arr, if meta.is_dir() { 1 } else { 0 }) };
+    unsafe { naml_std_core::naml_array_push(arr, if meta.is_file() { 1 } else { 0 }) };
+    unsafe { naml_std_core::naml_array_push(arr, if meta.is_symlink() { 1 } else { 0 }) };
+
+    arr
+}
+
 /// Get file metadata (stat)
 /// Returns an array with: [size, mode, modified, created, is_dir, is_file, is_symlink]
-/// - size: file size in bytes
-/// - mode: permission bits (Unix) or 0o644/0o444 (Windows)
-/// - modified: last modified time as Unix timestamp in milliseconds
-/// - created: creation time as Unix timestamp in milliseconds
-/// - is_dir: 1 if directory, 0 otherwise
-/// - is_file: 1 if regular file, 0 otherwise
-/// - is_symlink: 1 if symlink, 0 otherwise
 /// Returns null and sets exception on error
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_fs_stat(path: *const NamlString) -> *mut naml_std_core::NamlArray {
@@ -786,52 +824,44 @@ pub unsafe extern "C" fn naml_fs_stat(path: *const NamlString) -> *mut naml_std_
         }
     };
 
-    // Create array with 7 elements
-    let arr = unsafe { naml_std_core::naml_array_new(7) };
+    metadata_to_array(&meta)
+}
 
-    // size
-    unsafe { naml_std_core::naml_array_push(arr, meta.len() as i64) };
+/// Change file access and modification times
+/// atime_ms and mtime_ms are Unix timestamps in milliseconds
+/// Returns 0 on success, sets exception on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_chtimes(
+    path: *const NamlString,
+    atime_ms: i64,
+    mtime_ms: i64,
+) -> i64 {
+    let path_str = unsafe { path_from_naml_string(path) };
 
-    // mode
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        unsafe { naml_std_core::naml_array_push(arr, meta.permissions().mode() as i64) };
+    let file = match std::fs::OpenOptions::new().write(true).open(&path_str) {
+        Ok(f) => f,
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            return 0;
+        }
+    };
+
+    let atime = std::time::SystemTime::UNIX_EPOCH
+        + std::time::Duration::from_millis(atime_ms as u64);
+    let mtime = std::time::SystemTime::UNIX_EPOCH
+        + std::time::Duration::from_millis(mtime_ms as u64);
+
+    let times = std::fs::FileTimes::new()
+        .set_accessed(atime)
+        .set_modified(mtime);
+
+    match file.set_times(times) {
+        Ok(()) => 0,
+        Err(e) => {
+            throw_io_error(e, &path_str);
+            0
+        }
     }
-    #[cfg(not(unix))]
-    {
-        let mode = if meta.permissions().readonly() { 0o444 } else { 0o644 };
-        unsafe { naml_std_core::naml_array_push(arr, mode) };
-    }
-
-    // modified - Unix timestamp in milliseconds
-    let modified = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    unsafe { naml_std_core::naml_array_push(arr, modified) };
-
-    // created - Unix timestamp in milliseconds
-    let created = meta
-        .created()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    unsafe { naml_std_core::naml_array_push(arr, created) };
-
-    // is_dir
-    unsafe { naml_std_core::naml_array_push(arr, if meta.is_dir() { 1 } else { 0 }) };
-
-    // is_file
-    unsafe { naml_std_core::naml_array_push(arr, if meta.is_file() { 1 } else { 0 }) };
-
-    // is_symlink
-    unsafe { naml_std_core::naml_array_push(arr, if meta.is_symlink() { 1 } else { 0 }) };
-
-    arr
 }
 
 #[cfg(test)]

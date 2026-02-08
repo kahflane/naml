@@ -604,6 +604,329 @@ pub extern "C" fn naml_fs_file_size(handle: i64) -> i64 {
     }
 }
 
+/// Read bytes from file at a specific offset without changing the file cursor
+/// Returns string with bytes read, or null on error
+#[cfg(unix)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_file_read_at(
+    handle: i64,
+    buf_size: i64,
+    offset: i64,
+) -> *mut NamlString {
+    use std::os::unix::fs::FileExt;
+
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return std::ptr::null_mut();
+        }
+    };
+
+    let mut buf = vec![0u8; buf_size as usize];
+    match fh.file.read_at(&mut buf, offset as u64) {
+        Ok(0) => unsafe { naml_string_new(std::ptr::null(), 0) },
+        Ok(n) => {
+            buf.truncate(n);
+            unsafe { naml_string_new(buf.as_ptr(), n) }
+        }
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[cfg(not(unix))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_file_read_at(
+    handle: i64,
+    buf_size: i64,
+    offset: i64,
+) -> *mut NamlString {
+    use std::os::windows::fs::FileExt;
+
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return std::ptr::null_mut();
+        }
+    };
+
+    let mut buf = vec![0u8; buf_size as usize];
+    match fh.file.seek_read(&mut buf, offset as u64) {
+        Ok(0) => unsafe { naml_string_new(std::ptr::null(), 0) },
+        Ok(n) => {
+            buf.truncate(n);
+            unsafe { naml_string_new(buf.as_ptr(), n) }
+        }
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Write bytes to file at a specific offset without changing the file cursor
+/// Returns number of bytes written, or -1 on error
+#[cfg(unix)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_file_write_at(
+    handle: i64,
+    content: *const NamlString,
+    offset: i64,
+) -> i64 {
+    use std::os::unix::fs::FileExt;
+
+    let content_str = unsafe { crate::path_from_naml_string(content) };
+
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return -1;
+        }
+    };
+
+    match fh.file.write_at(content_str.as_bytes(), offset as u64) {
+        Ok(n) => n as i64,
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            -1
+        }
+    }
+}
+
+#[cfg(not(unix))]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_file_write_at(
+    handle: i64,
+    content: *const NamlString,
+    offset: i64,
+) -> i64 {
+    use std::os::windows::fs::FileExt;
+
+    let content_str = unsafe { crate::path_from_naml_string(content) };
+
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return -1;
+        }
+    };
+
+    match fh.file.seek_write(content_str.as_bytes(), offset as u64) {
+        Ok(n) => n as i64,
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            -1
+        }
+    }
+}
+
+/// Get the path associated with a file handle
+/// Returns the path string, or null on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_file_name(handle: i64) -> *mut NamlString {
+    let registry = FILE_REGISTRY.lock().unwrap();
+    match registry.get(handle) {
+        Some(fh) => unsafe { naml_string_new(fh.path.as_ptr(), fh.path.len()) },
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Get file metadata from an open handle
+/// Returns an array with: [size, mode, modified, created, is_dir, is_file, is_symlink]
+/// Returns null and sets exception on error
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_fs_file_stat(handle: i64) -> *mut naml_std_core::NamlArray {
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return std::ptr::null_mut();
+        }
+    };
+
+    match fh.file.metadata() {
+        Ok(meta) => crate::metadata_to_array(&meta),
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Truncate file to specified size via handle
+/// Returns 0 on success, sets exception on error
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_fs_file_truncate(handle: i64, size: i64) -> i64 {
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return -1;
+        }
+    };
+
+    match fh.file.set_len(size as u64) {
+        Ok(()) => 0,
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            -1
+        }
+    }
+}
+
+/// Change file permissions via handle (Unix mode bits)
+/// Returns 0 on success, sets exception on error
+#[cfg(unix)]
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_fs_file_chmod(handle: i64, mode: i64) -> i64 {
+    use std::os::unix::fs::PermissionsExt;
+
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return -1;
+        }
+    };
+
+    let permissions = std::fs::Permissions::from_mode(mode as u32);
+    match fh.file.set_permissions(permissions) {
+        Ok(()) => 0,
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            -1
+        }
+    }
+}
+
+#[cfg(not(unix))]
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_fs_file_chmod(handle: i64, mode: i64) -> i64 {
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return -1;
+        }
+    };
+
+    let readonly = (mode & 0o200) == 0;
+    match fh.file.metadata() {
+        Ok(meta) => {
+            let mut perms = meta.permissions();
+            perms.set_readonly(readonly);
+            match fh.file.set_permissions(perms) {
+                Ok(()) => 0,
+                Err(e) => {
+                    let path = fh.path.clone();
+                    drop(registry);
+                    throw_io_error(e, &path);
+                    -1
+                }
+            }
+        }
+        Err(e) => {
+            let path = fh.path.clone();
+            drop(registry);
+            throw_io_error(e, &path);
+            -1
+        }
+    }
+}
+
+/// Change file ownership via handle (Unix only)
+/// Returns 0 on success, sets exception on error
+#[cfg(unix)]
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_fs_file_chown(handle: i64, uid: i64, gid: i64) -> i64 {
+    use std::os::unix::io::AsRawFd;
+
+    let registry = FILE_REGISTRY.lock().unwrap();
+    let fh = match registry.get(handle) {
+        Some(h) => h,
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            return -1;
+        }
+    };
+
+    let fd = fh.file.as_raw_fd();
+    let result = unsafe { libc::fchown(fd, uid as libc::uid_t, gid as libc::gid_t) };
+    if result == 0 {
+        0
+    } else {
+        let e = std::io::Error::last_os_error();
+        let path = fh.path.clone();
+        drop(registry);
+        throw_io_error(e, &path);
+        -1
+    }
+}
+
+#[cfg(not(unix))]
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_fs_file_chown(handle: i64, _uid: i64, _gid: i64) -> i64 {
+    let registry = FILE_REGISTRY.lock().unwrap();
+    match registry.get(handle) {
+        Some(fh) => {
+            let path = fh.path.clone();
+            drop(registry);
+            let e = std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "file_chown is not supported on this platform",
+            );
+            throw_io_error(e, &path);
+            -1
+        }
+        None => {
+            drop(registry);
+            throw_file_error("Invalid file handle", handle);
+            -1
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

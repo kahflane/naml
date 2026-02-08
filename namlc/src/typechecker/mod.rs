@@ -1808,6 +1808,125 @@ impl<'a> TypeChecker<'a> {
                 Type::Array(Box::new(Type::Int)),
                 vec!["IOError", "PermissionError"],
             ),
+            // Link operations
+            StdModuleFn::throwing(
+                "symlink",
+                vec![("target", Type::String), ("link_path", Type::String)],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            StdModuleFn::throwing(
+                "readlink",
+                vec![("path", Type::String)],
+                Type::String,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "lstat",
+                vec![("path", Type::String)],
+                Type::Array(Box::new(Type::Int)),
+                vec!["IOError", "PermissionError"],
+            ),
+            StdModuleFn::throwing(
+                "link",
+                vec![("src", Type::String), ("dst", Type::String)],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            // Timestamps
+            StdModuleFn::throwing(
+                "chtimes",
+                vec![
+                    ("path", Type::String),
+                    ("atime_ms", Type::Int),
+                    ("mtime_ms", Type::Int),
+                ],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            // Ownership
+            StdModuleFn::throwing(
+                "chown",
+                vec![
+                    ("path", Type::String),
+                    ("uid", Type::Int),
+                    ("gid", Type::Int),
+                ],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            StdModuleFn::throwing(
+                "lchown",
+                vec![
+                    ("path", Type::String),
+                    ("uid", Type::Int),
+                    ("gid", Type::Int),
+                ],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            // File comparison
+            StdModuleFn::throwing(
+                "same_file",
+                vec![("path1", Type::String), ("path2", Type::String)],
+                Type::Bool,
+                vec!["IOError"],
+            ),
+            // Additional file handle operations
+            StdModuleFn::throwing(
+                "file_read_at",
+                vec![
+                    ("handle", Type::Int),
+                    ("buf_size", Type::Int),
+                    ("offset", Type::Int),
+                ],
+                Type::String,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_write_at",
+                vec![
+                    ("handle", Type::Int),
+                    ("content", Type::String),
+                    ("offset", Type::Int),
+                ],
+                Type::Int,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_name",
+                vec![("handle", Type::Int)],
+                Type::String,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_stat",
+                vec![("handle", Type::Int)],
+                Type::Array(Box::new(Type::Int)),
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_truncate",
+                vec![("handle", Type::Int), ("size", Type::Int)],
+                Type::Unit,
+                vec!["IOError"],
+            ),
+            StdModuleFn::throwing(
+                "file_chmod",
+                vec![("handle", Type::Int), ("mode", Type::Int)],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
+            StdModuleFn::throwing(
+                "file_chown",
+                vec![
+                    ("handle", Type::Int),
+                    ("uid", Type::Int),
+                    ("gid", Type::Int),
+                ],
+                Type::Unit,
+                vec!["IOError", "PermissionError"],
+            ),
         ]
     }
 
