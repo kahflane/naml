@@ -32,6 +32,7 @@ pub fn naml_to_cranelift(ty: &NamlType) -> Type {
         NamlType::Channel(_) => types::I64,
         NamlType::Mutex(_) => types::I64,
         NamlType::Rwlock(_) => types::I64,
+        NamlType::Atomic(_) => types::I64,
 
         NamlType::Named(_) => types::I64,
         NamlType::Generic(_, _) => types::I64,
@@ -58,6 +59,7 @@ pub fn tc_type_to_cranelift(ty: &TcType) -> Type {
         TcType::Channel(_) => types::I64,
         TcType::Mutex(_) => types::I64,
         TcType::Rwlock(_) => types::I64,
+        TcType::Atomic(_) => types::I64,
         TcType::Struct(_) => types::I64,
         TcType::Enum(_) => types::I64,
         TcType::Interface(_) => types::I64,

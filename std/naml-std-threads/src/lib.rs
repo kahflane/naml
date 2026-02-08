@@ -37,8 +37,10 @@ pub mod scheduler;
 pub mod channel;
 pub mod mutex;
 pub mod rwlock;
+pub mod atomic;
 
 pub use scheduler::*;
 pub use channel::*;
 pub use mutex::*;
 pub use rwlock::*;
+pub use atomic::*;

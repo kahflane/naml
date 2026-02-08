@@ -134,6 +134,30 @@ pub enum BuiltinStrategy {
     MutexNew,
     /// (value) -> rwlock<T>
     RwlockNew,
+    /// (value) -> atomic<T>
+    AtomicNew,
+    /// (atomic<T>) -> T
+    AtomicLoad,
+    /// (atomic<T>, T) -> void
+    AtomicStore,
+    /// (atomic<T>, T) -> T
+    AtomicAdd,
+    /// (atomic<T>, T) -> T
+    AtomicSub,
+    /// (atomic<T>) -> T
+    AtomicInc,
+    /// (atomic<T>) -> T
+    AtomicDec,
+    /// (atomic<T>, T, T) -> bool
+    AtomicCas,
+    /// (atomic<T>, T) -> T
+    AtomicSwap,
+    /// (atomic<T>, T) -> T
+    AtomicAnd,
+    /// (atomic<T>, T) -> T
+    AtomicOr,
+    /// (atomic<T>, T) -> T
+    AtomicXor,
 
     // ========================================
     // Lambda-based collection strategies
@@ -1180,6 +1204,54 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "threads::with_rwlock",
             strategy: BuiltinStrategy::RwlockNew,
+        },
+        BuiltinFunction {
+            name: "threads::with_atomic",
+            strategy: BuiltinStrategy::AtomicNew,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_load",
+            strategy: BuiltinStrategy::AtomicLoad,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_store",
+            strategy: BuiltinStrategy::AtomicStore,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_add",
+            strategy: BuiltinStrategy::AtomicAdd,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_sub",
+            strategy: BuiltinStrategy::AtomicSub,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_inc",
+            strategy: BuiltinStrategy::AtomicInc,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_dec",
+            strategy: BuiltinStrategy::AtomicDec,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_cas",
+            strategy: BuiltinStrategy::AtomicCas,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_swap",
+            strategy: BuiltinStrategy::AtomicSwap,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_and",
+            strategy: BuiltinStrategy::AtomicAnd,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_or",
+            strategy: BuiltinStrategy::AtomicOr,
+        },
+        BuiltinFunction {
+            name: "threads::atomic_xor",
+            strategy: BuiltinStrategy::AtomicXor,
         },
         // ========================================
         // File system module
@@ -2263,6 +2335,144 @@ pub fn compile_builtin_call(
         BuiltinStrategy::RwlockNew => {
             let value = compile_expression(ctx, builder, &args[0])?;
             call_rwlock_new(ctx, builder, value)
+        }
+
+        BuiltinStrategy::AtomicNew => {
+            let value = compile_expression(ctx, builder, &args[0])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_new", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[value]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::AtomicLoad => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_load", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr]);
+            let result = builder.inst_results(call)[0];
+            if suffix == "bool" {
+                Ok(builder.ins().ireduce(types::I8, result))
+            } else {
+                Ok(result)
+            }
+        }
+
+        BuiltinStrategy::AtomicStore => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_store", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            builder.ins().call(func_ref, &[ptr, value]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::AtomicAdd => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_add", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr, value]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::AtomicSub => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_sub", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr, value]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::AtomicInc => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_inc", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::AtomicDec => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_dec", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::AtomicCas => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let expected = compile_expression(ctx, builder, &args[1])?;
+            let expected = ensure_i64(builder, expected);
+            let new = compile_expression(ctx, builder, &args[2])?;
+            let new = ensure_i64(builder, new);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_cas", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr, expected, new]);
+            let result = builder.inst_results(call)[0];
+            Ok(builder.ins().ireduce(types::I8, result))
+        }
+
+        BuiltinStrategy::AtomicSwap => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_swap", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr, value]);
+            let result = builder.inst_results(call)[0];
+            if suffix == "bool" {
+                Ok(builder.ins().ireduce(types::I8, result))
+            } else {
+                Ok(result)
+            }
+        }
+
+        BuiltinStrategy::AtomicAnd => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_and", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr, value]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::AtomicOr => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_or", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr, value]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::AtomicXor => {
+            let ptr = compile_expression(ctx, builder, &args[0])?;
+            let value = compile_expression(ctx, builder, &args[1])?;
+            let value = ensure_i64(builder, value);
+            let suffix = get_atomic_type_suffix_from_atomic_arg(ctx, &args[0]);
+            let func_name = format!("naml_atomic_{}_xor", suffix);
+            let func_ref = rt_func_ref(ctx, builder, &func_name)?;
+            let call = builder.ins().call(func_ref, &[ptr, value]);
+            Ok(builder.inst_results(call)[0])
         }
 
         // ========================================
@@ -3848,5 +4058,36 @@ pub fn compile_builtin_call(
                 response,
             )
         }
+    }
+}
+
+fn get_atomic_type_suffix_from_arg(ctx: &CompileContext<'_>, arg: &Expression<'_>) -> &'static str {
+    use crate::source::Spanned;
+    if let Some(ty) = ctx.annotations.get_type(arg.span()) {
+        let resolved = ty.resolve();
+        match &resolved {
+            crate::typechecker::types::Type::Uint => "uint",
+            crate::typechecker::types::Type::Bool => "bool",
+            _ => "int",
+        }
+    } else {
+        "int"
+    }
+}
+
+fn get_atomic_type_suffix_from_atomic_arg(ctx: &CompileContext<'_>, arg: &Expression<'_>) -> &'static str {
+    use crate::source::Spanned;
+    if let Some(ty) = ctx.annotations.get_type(arg.span()) {
+        let resolved = ty.resolve();
+        match &resolved {
+            crate::typechecker::types::Type::Atomic(inner) => match inner.as_ref() {
+                crate::typechecker::types::Type::Uint => "uint",
+                crate::typechecker::types::Type::Bool => "bool",
+                _ => "int",
+            },
+            _ => "int",
+        }
+    } else {
+        "int"
     }
 }

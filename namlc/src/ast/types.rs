@@ -49,6 +49,7 @@ pub enum NamlType {
     Channel(Box<NamlType>),
     Mutex(Box<NamlType>),
     Rwlock(Box<NamlType>),
+    Atomic(Box<NamlType>),
 
     Named(Ident),
     Generic(Ident, Vec<NamlType>),
@@ -88,6 +89,10 @@ impl NamlType {
 
     pub fn rwlock(inner: NamlType) -> Self {
         NamlType::Rwlock(Box::new(inner))
+    }
+
+    pub fn atomic(inner: NamlType) -> Self {
+        NamlType::Atomic(Box::new(inner))
     }
 
     pub fn function(params: Vec<NamlType>, returns: NamlType) -> Self {

@@ -40,6 +40,7 @@ fn fix_generic_spur(ty: &mut Type, type_param_spur: lasso::Spur) {
         Type::Option(inner) => fix_generic_spur(inner, type_param_spur),
         Type::Mutex(inner) => fix_generic_spur(inner, type_param_spur),
         Type::Rwlock(inner) => fix_generic_spur(inner, type_param_spur),
+        Type::Atomic(inner) => fix_generic_spur(inner, type_param_spur),
         Type::Map(k, v) => {
             fix_generic_spur(k, type_param_spur);
             fix_generic_spur(v, type_param_spur);
@@ -167,6 +168,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Channel(inner) => format!("Channel_{}", self.mangle_type(inner)),
             Type::Mutex(inner) => format!("Mutex_{}", self.mangle_type(inner)),
             Type::Rwlock(inner) => format!("Rwlock_{}", self.mangle_type(inner)),
+            Type::Atomic(inner) => format!("Atomic_{}", self.mangle_type(inner)),
             Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
             Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
@@ -204,6 +206,7 @@ impl<'a> TypeInferrer<'a> {
             Type::Channel(inner) => format!("channel<{}>", self.display_type(inner)),
             Type::Mutex(inner) => format!("mutex<{}>", self.display_type(inner)),
             Type::Rwlock(inner) => format!("rwlock<{}>", self.display_type(inner)),
+            Type::Atomic(inner) => format!("atomic<{}>", self.display_type(inner)),
             Type::Struct(s) => self.interner.resolve(&s.name).to_string(),
             Type::Enum(e) => self.interner.resolve(&e.name).to_string(),
             Type::Interface(i) => self.interner.resolve(&i.name).to_string(),
@@ -2100,6 +2103,7 @@ impl<'a> TypeInferrer<'a> {
             ast::NamlType::Channel(inner) => Type::Channel(Box::new(self.convert_ast_type(inner))),
             ast::NamlType::Mutex(inner) => Type::Mutex(Box::new(self.convert_ast_type(inner))),
             ast::NamlType::Rwlock(inner) => Type::Rwlock(Box::new(self.convert_ast_type(inner))),
+            ast::NamlType::Atomic(inner) => Type::Atomic(Box::new(self.convert_ast_type(inner))),
             ast::NamlType::Named(ident) => {
                 // Check for built-in types first
                 let name = self.interner.resolve(&ident.symbol);

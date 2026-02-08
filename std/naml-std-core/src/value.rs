@@ -31,6 +31,9 @@ pub enum HeapTag {
     Mutex = 7,
     Rwlock = 8,
     Json = 9,
+    AtomicInt = 10,
+    AtomicUint = 11,
+    AtomicBool = 12,
 }
 
 /// Header for all heap-allocated objects

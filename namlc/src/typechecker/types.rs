@@ -44,6 +44,7 @@ pub enum Type {
     Channel(Box<Type>),
     Mutex(Box<Type>),
     Rwlock(Box<Type>),
+    Atomic(Box<Type>),
 
     Struct(StructType),
     Enum(EnumType),
@@ -191,6 +192,10 @@ impl Type {
         Type::Rwlock(Box::new(inner))
     }
 
+    pub fn atomic(inner: Type) -> Self {
+        Type::Atomic(Box::new(inner))
+    }
+
     pub fn function(params: Vec<Type>, returns: Type) -> Self {
         Type::Function(FunctionType {
             params,
@@ -236,6 +241,7 @@ impl Type {
             Type::Channel(inner) => Type::Channel(Box::new(inner.resolve())),
             Type::Mutex(inner) => Type::Mutex(Box::new(inner.resolve())),
             Type::Rwlock(inner) => Type::Rwlock(Box::new(inner.resolve())),
+            Type::Atomic(inner) => Type::Atomic(Box::new(inner.resolve())),
             Type::Function(f) => Type::Function(FunctionType {
                 params: f.params.iter().map(|p| p.resolve()).collect(),
                 returns: Box::new(f.returns.resolve()),
@@ -258,7 +264,7 @@ impl Type {
                 false
             }
             Type::Array(elem) | Type::FixedArray(elem, _) => elem.contains_var(var_id),
-            Type::Option(inner) | Type::Channel(inner) | Type::Mutex(inner) | Type::Rwlock(inner) => inner.contains_var(var_id),
+            Type::Option(inner) | Type::Channel(inner) | Type::Mutex(inner) | Type::Rwlock(inner) | Type::Atomic(inner) => inner.contains_var(var_id),
             Type::Map(k, v) => k.contains_var(var_id) || v.contains_var(var_id),
             Type::Function(f) => {
                 f.params.iter().any(|p| p.contains_var(var_id))
@@ -295,6 +301,7 @@ impl Type {
             Type::Channel(inner) => Type::Channel(Box::new(inner.substitute(substitutions))),
             Type::Mutex(inner) => Type::Mutex(Box::new(inner.substitute(substitutions))),
             Type::Rwlock(inner) => Type::Rwlock(Box::new(inner.substitute(substitutions))),
+            Type::Atomic(inner) => Type::Atomic(Box::new(inner.substitute(substitutions))),
             Type::Function(f) => Type::Function(FunctionType {
                 params: f.params.iter().map(|p| p.substitute(substitutions)).collect(),
                 returns: Box::new(f.returns.substitute(substitutions)),
@@ -323,6 +330,7 @@ impl fmt::Display for Type {
             Type::Channel(inner) => write!(f, "channel<{}>", inner),
             Type::Mutex(inner) => write!(f, "mutex<{}>", inner),
             Type::Rwlock(inner) => write!(f, "rwlock<{}>", inner),
+            Type::Atomic(inner) => write!(f, "atomic<{}>", inner),
             Type::Struct(s) => write!(f, "struct:{:?}", s.name),
             Type::Enum(e) => write!(f, "enum:{:?}", e.name),
             Type::Interface(i) => write!(f, "interface:{:?}", i.name),

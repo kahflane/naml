@@ -18,7 +18,7 @@ const KEYWORDS: &[&str] = &[
     "switch", "case", "default", "spawn", "throw", "throws", "try", "catch",
     "use", "mod", "extern", "true", "false", "some", "none",
     "int", "uint", "float", "bool", "string", "bytes", "option", "map", "channel",
-    "mutex", "rwlock", "locked", "rlocked", "wlocked", "implements", "in",
+    "mutex", "rwlock", "atomic", "locked", "rlocked", "wlocked", "implements", "in",
     "and", "or", "not", "as", "is", "self", "super",
 ];
 
@@ -228,7 +228,7 @@ impl DocumentAnalysis {
     fn type_completions(&self) -> CompletionResponse {
         let primitive_types = [
             "int", "uint", "float", "bool", "string", "bytes",
-            "option", "map", "channel", "mutex", "rwlock",
+            "option", "map", "channel", "mutex", "rwlock", "atomic",
         ];
 
         let mut items: Vec<CompletionItem> = primitive_types.iter().map(|t| {

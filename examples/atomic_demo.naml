@@ -1,0 +1,162 @@
+///
+/// Atomic Types Demo
+///
+/// Demonstrates lock-free atomic operations for concurrent programming.
+/// Tests atomic<int>, atomic<uint>, and atomic<bool> with:
+/// - Basic load/store operations
+/// - Arithmetic (add, sub, inc, dec)
+/// - Compare-and-swap (CAS) and swap
+/// - Bitwise operations (and, or, xor)
+/// - Multi-threaded concurrent access
+/// - Function calls with atomic parameters from spawn blocks
+///
+
+use std::threads::*;
+use std::testing::*;
+
+fn main() {
+    print("=== Atomic Types Demo ===\n\n");
+
+    test_atomic_int_basics();
+    test_atomic_int_arithmetic();
+    test_atomic_int_cas_and_swap();
+    test_atomic_int_bitwise();
+    test_atomic_bool();
+    test_atomic_concurrent_counter();
+
+    print("\n=== All Atomic Tests Passed ===\n");
+}
+
+fn test_atomic_int_basics() {
+    print("--- atomic<int> basics ---\n");
+
+    var counter: atomic<int> = with_atomic(42);
+    var val: int = atomic_load(counter);
+    assert_eq(val, 42, "Initial load should be 42");
+
+    atomic_store(counter, 100);
+    val = atomic_load(counter);
+    assert_eq(val, 100, "After store, load should be 100");
+
+    println(fmt("  atomic_load/store: PASS"));
+}
+
+fn test_atomic_int_arithmetic() {
+    print("--- atomic<int> arithmetic ---\n");
+
+    var counter: atomic<int> = with_atomic(10);
+
+    var old: int = atomic_add(counter, 5);
+    assert_eq(old, 10, "atomic_add should return old value 10");
+    assert_eq(atomic_load(counter), 15, "After add(5), should be 15");
+
+    old = atomic_sub(counter, 3);
+    assert_eq(old, 15, "atomic_sub should return old value 15");
+    assert_eq(atomic_load(counter), 12, "After sub(3), should be 12");
+
+    old = atomic_inc(counter);
+    assert_eq(old, 12, "atomic_inc should return old value 12");
+    assert_eq(atomic_load(counter), 13, "After inc, should be 13");
+
+    old = atomic_dec(counter);
+    assert_eq(old, 13, "atomic_dec should return old value 13");
+    assert_eq(atomic_load(counter), 12, "After dec, should be 12");
+
+    println(fmt("  atomic arithmetic: PASS"));
+}
+
+fn test_atomic_int_cas_and_swap() {
+    print("--- atomic<int> CAS and swap ---\n");
+
+    var counter: atomic<int> = with_atomic(42);
+
+    var ok: bool = atomic_cas(counter, 42, 100);
+    assert(ok, "CAS(42 -> 100) should succeed");
+    assert_eq(atomic_load(counter), 100, "After successful CAS, should be 100");
+
+    ok = atomic_cas(counter, 42, 200);
+    assert(!ok, "CAS(42 -> 200) should fail since current is 100");
+    assert_eq(atomic_load(counter), 100, "After failed CAS, should still be 100");
+
+    var old: int = atomic_swap(counter, 999);
+    assert_eq(old, 100, "swap should return old value 100");
+    assert_eq(atomic_load(counter), 999, "After swap, should be 999");
+
+    println(fmt("  atomic CAS/swap: PASS"));
+}
+
+fn test_atomic_int_bitwise() {
+    print("--- atomic<int> bitwise ---\n");
+
+    var bits: atomic<int> = with_atomic(255);
+
+    var old: int = atomic_and(bits, 15);
+    assert_eq(old, 255, "atomic_and should return old value 255");
+    assert_eq(atomic_load(bits), 15, "255 AND 15 = 15");
+
+    old = atomic_or(bits, 240);
+    assert_eq(old, 15, "atomic_or should return old value 15");
+    assert_eq(atomic_load(bits), 255, "15 OR 240 = 255");
+
+    old = atomic_xor(bits, 170);
+    assert_eq(old, 255, "atomic_xor should return old value 255");
+    assert_eq(atomic_load(bits), 85, "255 XOR 170 = 85");
+
+    println(fmt("  atomic bitwise: PASS"));
+}
+
+fn test_atomic_bool() {
+    print("--- atomic<bool> ---\n");
+
+    var flag: atomic<bool> = with_atomic(false);
+    var val: bool = atomic_load(flag);
+    assert(!val, "Initial load should be false");
+
+    atomic_store(flag, true);
+    val = atomic_load(flag);
+    assert(val, "After store(true), should be true");
+
+    var ok: bool = atomic_cas(flag, true, false);
+    assert(ok, "CAS(true -> false) should succeed");
+    assert(!atomic_load(flag), "After CAS, should be false");
+
+    ok = atomic_cas(flag, true, false);
+    assert(!ok, "CAS(true -> false) should fail since current is false");
+
+    var old: bool = atomic_swap(flag, true);
+    assert(!old, "swap should return old value false");
+    assert(atomic_load(flag), "After swap, should be true");
+
+    println(fmt("  atomic<bool>: PASS"));
+}
+
+fn test_atomic_concurrent_counter() {
+    print("--- concurrent atomic counter ---\n");
+
+    var counter: atomic<int> = with_atomic(0);
+    var num_workers: int = 4;
+    var increments_per_worker: int = 250;
+
+    spawn { worker_increment(counter, increments_per_worker, 1); };
+    spawn { worker_increment(counter, increments_per_worker, 2); };
+    spawn { worker_increment(counter, increments_per_worker, 3); };
+    spawn { worker_increment(counter, increments_per_worker, 4); };
+
+    join();
+
+    var final_val: int = atomic_load(counter);
+    var expected: int = num_workers * increments_per_worker;
+    assert_eq(final_val, expected, fmt("Concurrent counter should be {}", expected));
+
+    println(fmt("  concurrent counter ({} workers x {} = {}): PASS", num_workers, increments_per_worker, final_val));
+}
+
+fn worker_increment(counter: atomic<int>, count: int, id: int) {
+    var i: int = 0;
+    while (i < count) {
+        atomic_add(counter, 1);
+        i = i + 1;
+    }
+    println(fmt("  Worker {} completed {} increments", id, count));
+}
+

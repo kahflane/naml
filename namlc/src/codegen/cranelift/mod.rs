@@ -741,6 +741,47 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_rwlock_decref as *const u8,
         );
 
+        // AtomicInt operations
+        builder.symbol("naml_atomic_int_new", crate::runtime::naml_atomic_int_new as *const u8);
+        builder.symbol("naml_atomic_int_load", crate::runtime::naml_atomic_int_load as *const u8);
+        builder.symbol("naml_atomic_int_store", crate::runtime::naml_atomic_int_store as *const u8);
+        builder.symbol("naml_atomic_int_add", crate::runtime::naml_atomic_int_add as *const u8);
+        builder.symbol("naml_atomic_int_sub", crate::runtime::naml_atomic_int_sub as *const u8);
+        builder.symbol("naml_atomic_int_inc", crate::runtime::naml_atomic_int_inc as *const u8);
+        builder.symbol("naml_atomic_int_dec", crate::runtime::naml_atomic_int_dec as *const u8);
+        builder.symbol("naml_atomic_int_cas", crate::runtime::naml_atomic_int_cas as *const u8);
+        builder.symbol("naml_atomic_int_swap", crate::runtime::naml_atomic_int_swap as *const u8);
+        builder.symbol("naml_atomic_int_and", crate::runtime::naml_atomic_int_and as *const u8);
+        builder.symbol("naml_atomic_int_or", crate::runtime::naml_atomic_int_or as *const u8);
+        builder.symbol("naml_atomic_int_xor", crate::runtime::naml_atomic_int_xor as *const u8);
+        builder.symbol("naml_atomic_int_incref", crate::runtime::naml_atomic_int_incref as *const u8);
+        builder.symbol("naml_atomic_int_decref", crate::runtime::naml_atomic_int_decref as *const u8);
+
+        // AtomicUint operations
+        builder.symbol("naml_atomic_uint_new", crate::runtime::naml_atomic_uint_new as *const u8);
+        builder.symbol("naml_atomic_uint_load", crate::runtime::naml_atomic_uint_load as *const u8);
+        builder.symbol("naml_atomic_uint_store", crate::runtime::naml_atomic_uint_store as *const u8);
+        builder.symbol("naml_atomic_uint_add", crate::runtime::naml_atomic_uint_add as *const u8);
+        builder.symbol("naml_atomic_uint_sub", crate::runtime::naml_atomic_uint_sub as *const u8);
+        builder.symbol("naml_atomic_uint_inc", crate::runtime::naml_atomic_uint_inc as *const u8);
+        builder.symbol("naml_atomic_uint_dec", crate::runtime::naml_atomic_uint_dec as *const u8);
+        builder.symbol("naml_atomic_uint_cas", crate::runtime::naml_atomic_uint_cas as *const u8);
+        builder.symbol("naml_atomic_uint_swap", crate::runtime::naml_atomic_uint_swap as *const u8);
+        builder.symbol("naml_atomic_uint_and", crate::runtime::naml_atomic_uint_and as *const u8);
+        builder.symbol("naml_atomic_uint_or", crate::runtime::naml_atomic_uint_or as *const u8);
+        builder.symbol("naml_atomic_uint_xor", crate::runtime::naml_atomic_uint_xor as *const u8);
+        builder.symbol("naml_atomic_uint_incref", crate::runtime::naml_atomic_uint_incref as *const u8);
+        builder.symbol("naml_atomic_uint_decref", crate::runtime::naml_atomic_uint_decref as *const u8);
+
+        // AtomicBool operations
+        builder.symbol("naml_atomic_bool_new", crate::runtime::naml_atomic_bool_new as *const u8);
+        builder.symbol("naml_atomic_bool_load", crate::runtime::naml_atomic_bool_load as *const u8);
+        builder.symbol("naml_atomic_bool_store", crate::runtime::naml_atomic_bool_store as *const u8);
+        builder.symbol("naml_atomic_bool_cas", crate::runtime::naml_atomic_bool_cas as *const u8);
+        builder.symbol("naml_atomic_bool_swap", crate::runtime::naml_atomic_bool_swap as *const u8);
+        builder.symbol("naml_atomic_bool_incref", crate::runtime::naml_atomic_bool_incref as *const u8);
+        builder.symbol("naml_atomic_bool_decref", crate::runtime::naml_atomic_bool_decref as *const u8);
+
         // Map operations
         builder.symbol("naml_map_new", crate::runtime::naml_map_new as *const u8);
         builder.symbol("naml_map_set", crate::runtime::naml_map_set as *const u8);
@@ -3409,6 +3450,47 @@ impl<'a> JitCompiler<'a> {
             &[ptr],
             &[],
         )?;
+
+        // AtomicInt functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_new", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_load", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_store", &[ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_add", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_sub", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_inc", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_dec", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_cas", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_swap", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_and", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_or", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_xor", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_int_decref", &[ptr], &[])?;
+
+        // AtomicUint functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_new", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_load", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_store", &[ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_add", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_sub", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_inc", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_dec", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_cas", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_swap", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_and", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_or", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_xor", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_uint_decref", &[ptr], &[])?;
+
+        // AtomicBool functions
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_bool_new", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_bool_load", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_bool_store", &[ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_bool_cas", &[ptr, i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_bool_swap", &[ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_bool_incref", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_atomic_bool_decref", &[ptr], &[])?;
 
         // Scheduler/runtime
         declare(

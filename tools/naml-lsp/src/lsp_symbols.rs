@@ -331,6 +331,7 @@ fn format_type(ty: &Type, interner: &Rodeo) -> String {
         Type::Channel(inner) => format!("channel<{}>", format_type(inner, interner)),
         Type::Mutex(inner) => format!("mutex<{}>", format_type(inner, interner)),
         Type::Rwlock(inner) => format!("rwlock<{}>", format_type(inner, interner)),
+        Type::Atomic(inner) => format!("atomic<{}>", format_type(inner, interner)),
         Type::Struct(s) => interner.resolve(&s.name).to_string(),
         Type::Enum(e) => interner.resolve(&e.name).to_string(),
         Type::Interface(i) => interner.resolve(&i.name).to_string(),

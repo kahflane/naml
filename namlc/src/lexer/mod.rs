@@ -419,6 +419,7 @@ pub enum Keyword {
     Locked,
     Rlocked,
     Wlocked,
+    Atomic,
 }
 
 pub fn tokenize(source: &str) -> (Vec<Token>, Rodeo) {
@@ -988,6 +989,7 @@ impl<'a, 'r> Lexer<'a, 'r> {
             (0x6974706F, 0x6E6F) => TokenKind::Keyword(Keyword::Option), // "option"
             (0x6B636F6C, 0x6465) => TokenKind::Keyword(Keyword::Locked), // "locked"
             (0x6F6C7772, 0x6B63) => TokenKind::Keyword(Keyword::Rwlock), // "rwlock"
+            (0x6D6F7461, 0x6369) => TokenKind::Keyword(Keyword::Atomic), // "atomic"
             _ => TokenKind::Ident,
         }
     }
