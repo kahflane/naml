@@ -32,6 +32,7 @@ pub const EXCEPTION_TYPE_TIMEOUT_ERROR: i64 = 6;
 pub const EXCEPTION_TYPE_ENV_ERROR: i64 = 7;
 pub const EXCEPTION_TYPE_OS_ERROR: i64 = 8;
 pub const EXCEPTION_TYPE_PROCESS_ERROR: i64 = 9;
+pub const EXCEPTION_TYPE_DB_ERROR: i64 = 10;
 
 /// Set the current exception (called by throw)
 #[unsafe(no_mangle)]

@@ -29,8 +29,6 @@ const BUILTINS: &[(&str, &str)] = &[
     ("warn", "fn warn(args: ...any)"),
     ("error", "fn error(args: ...any)"),
     ("panic", "fn panic(args: ...any)"),
-    ("read_line", "fn read_line() -> string"),
-    ("sleep", "fn sleep(ms: int)"),
 ];
 
 enum CompletionContext {

@@ -119,6 +119,7 @@ naml-std-env.workspace = true
 naml-std-os.workspace = true
 naml-std-process.workspace = true
 naml-std-testing.workspace = true
+naml-std-sqlite3.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

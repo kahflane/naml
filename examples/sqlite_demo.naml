@@ -1,0 +1,199 @@
+use std::db::sqlite::*;
+
+fn main() {
+    println("=== SQLite3 Demo ===");
+    println("");
+
+    // Open in-memory database
+    var db: int = open_memory() catch e {
+        println(fmt("DBError: {}", e.message));
+        return;
+    };
+    println("Opened in-memory database");
+
+    // Create table
+    exec(db, "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL, score REAL)") catch e {
+        println(fmt("DBError: {}", e.message));
+        return;
+    };
+    println("Created users table");
+
+    // Insert data
+    exec(db, "INSERT INTO users (name, age, score) VALUES ('Alice', 30, 95.5)") catch e {
+        println(e.message);
+        return;
+    };
+    exec(db, "INSERT INTO users (name, age, score) VALUES ('Bob', 25, 87.3)") catch e {
+        println(e.message);
+        return;
+    };
+    exec(db, "INSERT INTO users (name, age, score) VALUES ('Charlie', 35, 92.1)") catch e {
+        println(e.message);
+        return;
+    };
+    println("Inserted 3 users");
+
+    var changed: int = changes(db);
+    println(fmt("Last insert affected {} row(s)", changed));
+
+    var last_id: int = last_insert_id(db);
+    println(fmt("Last insert ID: {}", last_id));
+
+    // Query all users
+    println("");
+    println("--- All Users ---");
+    var rows: int = query(db, "SELECT * FROM users", []) catch e {
+        println(e.message);
+        return;
+    };
+
+    var count: int = row_count(rows);
+    println(fmt("Found {} users", count));
+
+    var cols: string = columns(rows);
+    println(fmt("Columns: {}", cols));
+
+    var col_count_val: int = column_count(rows);
+    println(fmt("Column count: {}", col_count_val));
+
+    var i: int = 0;
+    while (i < count) {
+        var row: int = row_at(rows, i);
+        var id: int = get_int(row, "id");
+        var name: string = get_string(row, "name");
+        var age: int = get_int(row, "age");
+        var score: float = get_float(row, "score");
+        println(fmt("  User {}: name={}, age={}, score={}", id, name, age, score));
+        i = i + 1;
+    }
+
+    // Query with parameters
+    println("");
+    println("--- Users older than 28 ---");
+    var filtered: int = query(db, "SELECT name, age FROM users WHERE age > ?", ["28"]) catch e {
+        println(e.message);
+        return;
+    };
+
+    var fcount: int = row_count(filtered);
+    var j: int = 0;
+    while (j < fcount) {
+        var frow: int = row_at(filtered, j);
+        var fname: string = get_string(frow, "name");
+        var fage: int = get_int(frow, "age");
+        println(fmt("  {}: age {}", fname, fage));
+        j = j + 1;
+    }
+
+    // Transactions
+    println("");
+    println("--- Transaction Test ---");
+    begin(db) catch e {
+        println(e.message);
+        return;
+    };
+    exec(db, "INSERT INTO users (name, age, score) VALUES ('Dave', 28, 88.0)") catch e {
+        println(e.message);
+        return;
+    };
+    commit(db) catch e {
+        println(e.message);
+        return;
+    };
+    println("Transaction committed");
+
+    var after_tx: int = query(db, "SELECT * FROM users", []) catch e {
+        println(e.message);
+        return;
+    };
+    println(fmt("Total users after transaction: {}", row_count(after_tx)));
+
+    // Prepared statements
+    println("");
+    println("--- Prepared Statement Test ---");
+    var stmt: int = prepare(db, "INSERT INTO users (name, age, score) VALUES (?, ?, ?)") catch e {
+        println(e.message);
+        return;
+    };
+
+    bind_string(stmt, 1, "Eve") catch e {
+        println(e.message);
+        return;
+    };
+    bind_int(stmt, 2, 22) catch e {
+        println(e.message);
+        return;
+    };
+    bind_float(stmt, 3, 91.0) catch e {
+        println(e.message);
+        return;
+    };
+    step(stmt) catch e {
+        println(e.message);
+        return;
+    };
+    println("Inserted Eve via prepared statement");
+
+    reset(stmt);
+
+    bind_string(stmt, 1, "Frank") catch e {
+        println(e.message);
+        return;
+    };
+    bind_int(stmt, 2, 31) catch e {
+        println(e.message);
+        return;
+    };
+    bind_float(stmt, 3, 85.5) catch e {
+        println(e.message);
+        return;
+    };
+    step(stmt) catch e {
+        println(e.message);
+        return;
+    };
+    println("Inserted Frank via prepared statement");
+
+    finalize(stmt);
+    println("Statement finalized");
+
+    // Final count
+    println("");
+    println("--- Final State ---");
+    var final_rows: int = query(db, "SELECT * FROM users ORDER BY id", []) catch e {
+        println(e.message);
+        return;
+    };
+
+    var total: int = row_count(final_rows);
+    println(fmt("Total users: {}", total));
+
+    var k: int = 0;
+    while (k < total) {
+        var krow: int = row_at(final_rows, k);
+        var kname: string = get_string(krow, "name");
+        var kage: int = get_int(krow, "age");
+        println(fmt("  {} (age {})", kname, kage));
+        k = k + 1;
+    }
+
+    // NULL check
+    println("");
+    println("--- NULL Test ---");
+    exec(db, "INSERT INTO users (name, age) VALUES ('NoScore', 40)") catch e {
+        println(e.message);
+        return;
+    };
+    var null_rows: int = query(db, "SELECT * FROM users WHERE name = ?", ["NoScore"]) catch e {
+        println(e.message);
+        return;
+    };
+    var null_row: int = row_at(null_rows, 0);
+    var score_null: bool = is_null(null_row, "score");
+    println(fmt("NoScore's score is null: {}", score_null));
+
+    // Clean up
+    close(db);
+    println("");
+    println("Database closed. Demo complete!");
+}

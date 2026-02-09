@@ -303,6 +303,20 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let db_error_name = self.interner.get_or_intern("DBError");
+        self.symbols.define_type(
+            db_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: db_error_name,
+                fields: vec![
+                    (msg_name, Type::String),
+                    (code_name, Type::Int),
+                ],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -344,6 +358,8 @@ impl<'a> TypeChecker<'a> {
             "net::http::client",
             "net::http::server",
             "net::http::middleware",
+            "db",
+            "db::sqlite",
         ];
 
         for module in modules {
@@ -2890,8 +2906,141 @@ impl<'a> TypeChecker<'a> {
             "net::http::client" => Some(Self::get_net_http_client_functions()),
             "net::http::serve" => Some(Self::get_net_http_server_functions()),
             "net::http::middleware" => Some(Self::get_net_http_middleware_functions()),
+            "db" => Some(vec![]),
+            "db::sqlite" => Some(Self::get_db_sqlite_functions()),
             _ => None,
         }
+    }
+
+    fn get_db_sqlite_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing(
+                "open",
+                vec![("path", Type::String)],
+                Type::Int,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "open_memory",
+                vec![],
+                Type::Int,
+                vec!["DBError"],
+            ),
+            StdModuleFn::new("close", vec![("db", Type::Int)], Type::Unit),
+            StdModuleFn::throwing(
+                "exec",
+                vec![("db", Type::Int), ("sql", Type::String)],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "query",
+                vec![
+                    ("db", Type::Int),
+                    ("sql", Type::String),
+                    ("params", Type::array(Type::String)),
+                ],
+                Type::Int,
+                vec!["DBError"],
+            ),
+            StdModuleFn::new("row_count", vec![("rows", Type::Int)], Type::Int),
+            StdModuleFn::new(
+                "row_at",
+                vec![("rows", Type::Int), ("index", Type::Int)],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "get_string",
+                vec![("row", Type::Int), ("col", Type::String)],
+                Type::String,
+            ),
+            StdModuleFn::new(
+                "get_int",
+                vec![("row", Type::Int), ("col", Type::String)],
+                Type::Int,
+            ),
+            StdModuleFn::new(
+                "get_float",
+                vec![("row", Type::Int), ("col", Type::String)],
+                Type::Float,
+            ),
+            StdModuleFn::new(
+                "get_bool",
+                vec![("row", Type::Int), ("col", Type::String)],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "is_null",
+                vec![("row", Type::Int), ("col", Type::String)],
+                Type::Bool,
+            ),
+            StdModuleFn::new("columns", vec![("rows", Type::Int)], Type::String),
+            StdModuleFn::new("column_count", vec![("rows", Type::Int)], Type::Int),
+            StdModuleFn::throwing(
+                "begin",
+                vec![("db", Type::Int)],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "commit",
+                vec![("db", Type::Int)],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "rollback",
+                vec![("db", Type::Int)],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "prepare",
+                vec![("db", Type::Int), ("sql", Type::String)],
+                Type::Int,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "bind_string",
+                vec![
+                    ("stmt", Type::Int),
+                    ("index", Type::Int),
+                    ("val", Type::String),
+                ],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "bind_int",
+                vec![
+                    ("stmt", Type::Int),
+                    ("index", Type::Int),
+                    ("val", Type::Int),
+                ],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "bind_float",
+                vec![
+                    ("stmt", Type::Int),
+                    ("index", Type::Int),
+                    ("val", Type::Float),
+                ],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "step",
+                vec![("stmt", Type::Int)],
+                Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::new("reset", vec![("stmt", Type::Int)], Type::Unit),
+            StdModuleFn::new("finalize", vec![("stmt", Type::Int)], Type::Unit),
+            StdModuleFn::new("changes", vec![("db", Type::Int)], Type::Int),
+            StdModuleFn::new("last_insert_id", vec![("db", Type::Int)], Type::Int),
+        ]
     }
 
     fn resolve_local_module(

@@ -25,6 +25,7 @@ members = [
     "std/naml-std-os",
     "std/naml-std-process",
     "std/naml-std-testing",
+    "std/naml-std-sqlite3",
     "tools/naml-lsp",
 ]
 
@@ -172,6 +173,7 @@ naml-std-env = { path = "std/naml-std-env" }
 naml-std-os = { path = "std/naml-std-os" }
 naml-std-process = { path = "std/naml-std-process" }
 naml-std-testing = { path = "std/naml-std-testing" }
+naml-std-sqlite3 = { path = "std/naml-std-sqlite3" }
 
 [profile.release]
 lto = true

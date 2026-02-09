@@ -1,0 +1,408 @@
+use std::db::sqlite::*;
+
+fn insert_user(db: int, name: string, age: int, score: float) {
+    var stmt: int = prepare(db, "INSERT INTO users (name, age, score) VALUES (?, ?, ?)") catch e {
+        println(fmt("prepare failed: {}", e.message));
+        return;
+    };
+    bind_string(stmt, 1, name) catch e {
+        println(fmt("bind_string failed: {}", e.message));
+        return;
+    };
+    bind_int(stmt, 2, age) catch e {
+        println(fmt("bind_int failed: {}", e.message));
+        return;
+    };
+    bind_float(stmt, 3, score) catch e {
+        println(fmt("bind_float failed: {}", e.message));
+        return;
+    };
+    step(stmt) catch e {
+        println(fmt("step failed: {}", e.message));
+        return;
+    };
+    finalize(stmt);
+}
+
+fn insert_user_nullable(db: int, name: string, age: int) {
+    exec(db, fmt("INSERT INTO users (name, age) VALUES ('{}', {})", name, age)) catch e {
+        println(fmt("insert_nullable failed: {}", e.message));
+        return;
+    };
+}
+
+fn query_users_by_age(db: int, min_age: int) -> int {
+    var rows: int = query(db, "SELECT * FROM users WHERE age >= ?", [fmt("{}", min_age)]) catch e {
+        println(fmt("query failed: {}", e.message));
+        return 0;
+    };
+    return row_count(rows);
+}
+
+fn verify_user(db: int, expected_name: string, expected_age: int, expected_score: float) -> bool {
+    var rows: int = query(db, "SELECT * FROM users WHERE name = ?", [expected_name]) catch e {
+        println(fmt("verify query failed: {}", e.message));
+        return false;
+    };
+    var ct: int = row_count(rows);
+    if (ct == 0) {
+        println(fmt("FAIL: user '{}' not found", expected_name));
+        return false;
+    }
+    var row: int = row_at(rows, 0);
+    var age: int = get_int(row, "age");
+    var score: float = get_float(row, "score");
+    if (age != expected_age) {
+        println(fmt("FAIL: {}.age = {}, expected {}", expected_name, age, expected_age));
+        return false;
+    }
+    if (score != expected_score) {
+        println(fmt("FAIL: {}.score = {}, expected {}", expected_name, score, expected_score));
+        return false;
+    }
+    return true;
+}
+
+fn check_null_score(db: int, name: string) -> bool {
+    var rows: int = query(db, "SELECT * FROM users WHERE name = ?", [name]) catch e {
+        println(fmt("null check query failed: {}", e.message));
+        return false;
+    };
+    if (row_count(rows) == 0) {
+        println(fmt("FAIL: null check user '{}' not found", name));
+        return false;
+    }
+    var row: int = row_at(rows, 0);
+    var null_check: bool = is_null(row, "score");
+    return null_check;
+}
+
+fn bulk_insert_transaction(db: int, prefix: string, count: int) {
+    begin(db) catch e {
+        println(fmt("begin failed: {}", e.message));
+        return;
+    };
+    var k: int = 0;
+    while (k < count) {
+        var uname: string = fmt("{}_{}", prefix, k);
+        var uage: int = 20 + k;
+        var uscore: float = 50.0 + (k * 3) as float;
+        insert_user(db, uname, uage, uscore);
+        k = k + 1;
+    }
+    commit(db) catch e {
+        println(fmt("commit failed: {}", e.message));
+        return;
+    };
+}
+
+fn main() {
+    println("=== SQLite3 Stress Test ===");
+    var pass_count: int = 0;
+    var fail_count: int = 0;
+
+    var db: int = open_memory() catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+
+    exec(db, "CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, age INTEGER NOT NULL, score REAL)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+
+    // Test 1: Prepared statement inserts through function calls
+    println("Test 1: prepared statement inserts via function...");
+    insert_user(db, "Alice", 30, 95.5);
+    insert_user(db, "Bob", 25, 87.3);
+    insert_user(db, "Charlie", 35, 92.1);
+    insert_user(db, "Dave", 28, 88.0);
+    insert_user(db, "Eve", 22, 91.0);
+    var r1: int = query_users_by_age(db, 0);
+    if (r1 == 5) {
+        println(fmt("  PASS: inserted 5 users (got {})", r1));
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: expected 5, got {}", r1));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 2: Verify values round-trip through get_int/get_float/get_string
+    println("Test 2: value round-trip verification...");
+    var v1: bool = verify_user(db, "Alice", 30, 95.5);
+    var v2: bool = verify_user(db, "Bob", 25, 87.3);
+    var v3: bool = verify_user(db, "Charlie", 35, 92.1);
+    var v4: bool = verify_user(db, "Dave", 28, 88.0);
+    var v5: bool = verify_user(db, "Eve", 22, 91.0);
+    if (v1 && v2 && v3 && v4 && v5) {
+        println("  PASS: all values verified");
+        pass_count = pass_count + 1;
+    } else {
+        println("  FAIL: value mismatch");
+        fail_count = fail_count + 1;
+    }
+
+    // Test 3: Parameterized query filtering
+    println("Test 3: parameterized query filtering...");
+    var older: int = query_users_by_age(db, 30);
+    if (older == 2) {
+        println(fmt("  PASS: 2 users age >= 30 (got {})", older));
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: expected 2 users age >= 30, got {}", older));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 4: NULL handling through functions
+    println("Test 4: NULL score handling...");
+    insert_user_nullable(db, "NoScore1", 40);
+    insert_user_nullable(db, "NoScore2", 41);
+    var n1: bool = check_null_score(db, "NoScore1");
+    var n2: bool = check_null_score(db, "NoScore2");
+    var n3: bool = check_null_score(db, "Alice");
+    if (n1 && n2 && !n3) {
+        println("  PASS: null checks correct");
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: n1={}, n2={}, n3={}", n1, n2, n3));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 5: Bulk insert in transaction
+    println("Test 5: bulk transactional insert (50 rows)...");
+    bulk_insert_transaction(db, "batch", 50);
+    var total_rows: int = query(db, "SELECT * FROM users", []) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var total: int = row_count(total_rows);
+    if (total == 57) {
+        println(fmt("  PASS: total rows = {} (5 + 2 nullable + 50 batch)", total));
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: expected 57 total rows, got {}", total));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 6: Column metadata
+    println("Test 6: column metadata...");
+    var cols: string = columns(total_rows);
+    var col_ct: int = column_count(total_rows);
+    if (col_ct == 4) {
+        println(fmt("  PASS: {} columns ({})", col_ct, cols));
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: expected 4 columns, got {}", col_ct));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 7: Iterate ALL rows, verify floats don't corrupt
+    println("Test 7: iterate all rows, check float integrity...");
+    var all_rows: int = query(db, "SELECT * FROM users ORDER BY id", []) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var all_ct: int = row_count(all_rows);
+    var float_ok: bool = true;
+    var string_ok: bool = true;
+    var idx: int = 0;
+    while (idx < all_ct) {
+        var r: int = row_at(all_rows, idx);
+        var rname: string = get_string(r, "name");
+        var rage: int = get_int(r, "age");
+        var rnull: bool = is_null(r, "score");
+        if (!rnull) {
+            var rscore: float = get_float(r, "score");
+            if (rscore < 0.0) {
+                float_ok = false;
+                println(fmt("  corrupt float at row {}: {}", idx, rscore));
+            }
+        }
+        if (rname == "") {
+            string_ok = false;
+            println(fmt("  empty name at row {}", idx));
+        }
+        idx = idx + 1;
+    }
+    if (float_ok && string_ok) {
+        println(fmt("  PASS: iterated {} rows, all floats and strings valid", all_ct));
+        pass_count = pass_count + 1;
+    } else {
+        println("  FAIL: data corruption detected");
+        fail_count = fail_count + 1;
+    }
+
+    // Test 8: changes() and last_insert_id()
+    println("Test 8: changes() and last_insert_id()...");
+    exec(db, "INSERT INTO users (name, age, score) VALUES ('Final', 99, 100.0)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var ch: int = changes(db);
+    var lid: int = last_insert_id(db);
+    if (ch == 1 && lid > 0) {
+        println(fmt("  PASS: changes={}, last_id={}", ch, lid));
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: changes={}, last_id={}", ch, lid));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 9: Rollback transaction
+    println("Test 9: rollback transaction...");
+    var before_rollback: int = query(db, "SELECT COUNT(*) as cnt FROM users", []) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var before_ct: int = get_int(row_at(before_rollback, 0), "cnt");
+    begin(db) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    exec(db, "INSERT INTO users (name, age, score) VALUES ('Ghost', 0, 0.0)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    rollback(db) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var after_rollback: int = query(db, "SELECT COUNT(*) as cnt FROM users", []) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var after_ct: int = get_int(row_at(after_rollback, 0), "cnt");
+    if (before_ct == after_ct) {
+        println(fmt("  PASS: rollback preserved count={}", after_ct));
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: before={}, after={}", before_ct, after_ct));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 10: Reuse prepared statement with reset
+    println("Test 10: prepared statement reset + rebind...");
+    var ps: int = prepare(db, "INSERT INTO users (name, age, score) VALUES (?, ?, ?)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var pi: int = 0;
+    while (pi < 10) {
+        bind_string(ps, 1, fmt("reset_{}", pi)) catch e {
+            println(fmt("bind err: {}", e.message));
+            return;
+        };
+        bind_int(ps, 2, 50 + pi) catch e {
+            println(fmt("bind err: {}", e.message));
+            return;
+        };
+        bind_float(ps, 3, 70.0 + pi as float) catch e {
+            println(fmt("bind err: {}", e.message));
+            return;
+        };
+        step(ps) catch e {
+            println(fmt("step err: {}", e.message));
+            return;
+        };
+        reset(ps);
+        pi = pi + 1;
+    }
+    finalize(ps);
+    var reset_rows: int = query(db, "SELECT * FROM users WHERE name LIKE 'reset_%'", []) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var reset_ct: int = row_count(reset_rows);
+    if (reset_ct == 10) {
+        println(fmt("  PASS: reset+rebind inserted {} rows", reset_ct));
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: expected 10 reset rows, got {}", reset_ct));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 11: get_bool (SQLite stores bool as 0/1 integer)
+    println("Test 11: bool column handling...");
+    exec(db, "CREATE TABLE flags (id INTEGER PRIMARY KEY, name TEXT, active INTEGER)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    exec(db, "INSERT INTO flags (name, active) VALUES ('on', 1)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    exec(db, "INSERT INTO flags (name, active) VALUES ('off', 0)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var flag_rows: int = query(db, "SELECT * FROM flags ORDER BY id", []) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var on_row: int = row_at(flag_rows, 0);
+    var off_row: int = row_at(flag_rows, 1);
+    var on_val: bool = get_bool(on_row, "active");
+    var off_val: bool = get_bool(off_row, "active");
+    if (on_val && !off_val) {
+        println("  PASS: bool values correct");
+        pass_count = pass_count + 1;
+    } else {
+        println(fmt("  FAIL: on={}, off={}", on_val, off_val));
+        fail_count = fail_count + 1;
+    }
+
+    // Test 12: Open file-based DB, write, close, reopen, verify
+    println("Test 12: file-based DB persistence...");
+    var fdb: int = open("/tmp/naml_sqlite_stress.db") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    exec(fdb, "CREATE TABLE IF NOT EXISTS persist (val TEXT)") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    exec(fdb, "DELETE FROM persist") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    exec(fdb, "INSERT INTO persist (val) VALUES ('hello_naml'), (';;;;')") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    close(fdb);
+
+    var fdb2: int = open("/tmp/naml_sqlite_stress.db") catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var persist_rows: int = query(fdb2, "SELECT * FROM persist", []) catch e {
+        println(fmt("FATAL: {}", e.message));
+        return;
+    };
+    var persist_ct: int = row_count(persist_rows);
+    if (persist_ct == 1) {
+        var prow: int = row_at(persist_rows, 0);
+        var pval: string = get_string(prow, "val");
+        if (pval == "hello_naml") {
+            println("  PASS: file DB persisted and read back");
+            pass_count = pass_count + 1;
+        } else {
+            println(fmt("  FAIL: expected 'hello_naml', got '{}'", pval));
+            fail_count = fail_count + 1;
+        }
+    } else {
+        println(fmt("  FAIL: expected 1 row, got {}", persist_ct));
+        fail_count = fail_count + 1;
+    }
+    close(fdb2);
+
+    close(db);
+
+    println("");
+    println(fmt("=== Results: {} passed, {} failed ===", pass_count, fail_count));
+    if (fail_count == 0) {
+        println("ALL TESTS PASSED");
+    } else {
+        println("SOME TESTS FAILED");
+    }
+}

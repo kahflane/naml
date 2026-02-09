@@ -2035,6 +2035,34 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_net_http_middleware_request_id as *const u8,
         );
 
+        builder.symbol("naml_db_sqlite_error_new", crate::runtime::naml_db_sqlite_error_new as *const u8);
+        builder.symbol("naml_db_sqlite_open", crate::runtime::naml_db_sqlite_open as *const u8);
+        builder.symbol("naml_db_sqlite_open_memory", crate::runtime::naml_db_sqlite_open_memory as *const u8);
+        builder.symbol("naml_db_sqlite_close", crate::runtime::naml_db_sqlite_close as *const u8);
+        builder.symbol("naml_db_sqlite_exec", crate::runtime::naml_db_sqlite_exec as *const u8);
+        builder.symbol("naml_db_sqlite_query", crate::runtime::naml_db_sqlite_query as *const u8);
+        builder.symbol("naml_db_sqlite_row_count", crate::runtime::naml_db_sqlite_row_count as *const u8);
+        builder.symbol("naml_db_sqlite_row_at", crate::runtime::naml_db_sqlite_row_at as *const u8);
+        builder.symbol("naml_db_sqlite_get_string", crate::runtime::naml_db_sqlite_get_string as *const u8);
+        builder.symbol("naml_db_sqlite_get_int", crate::runtime::naml_db_sqlite_get_int as *const u8);
+        builder.symbol("naml_db_sqlite_get_float", crate::runtime::naml_db_sqlite_get_float as *const u8);
+        builder.symbol("naml_db_sqlite_get_bool", crate::runtime::naml_db_sqlite_get_bool as *const u8);
+        builder.symbol("naml_db_sqlite_is_null", crate::runtime::naml_db_sqlite_is_null as *const u8);
+        builder.symbol("naml_db_sqlite_columns", crate::runtime::naml_db_sqlite_columns as *const u8);
+        builder.symbol("naml_db_sqlite_column_count", crate::runtime::naml_db_sqlite_column_count as *const u8);
+        builder.symbol("naml_db_sqlite_begin", crate::runtime::naml_db_sqlite_begin as *const u8);
+        builder.symbol("naml_db_sqlite_commit", crate::runtime::naml_db_sqlite_commit as *const u8);
+        builder.symbol("naml_db_sqlite_rollback", crate::runtime::naml_db_sqlite_rollback as *const u8);
+        builder.symbol("naml_db_sqlite_prepare", crate::runtime::naml_db_sqlite_prepare as *const u8);
+        builder.symbol("naml_db_sqlite_bind_string", crate::runtime::naml_db_sqlite_bind_string as *const u8);
+        builder.symbol("naml_db_sqlite_bind_int", crate::runtime::naml_db_sqlite_bind_int as *const u8);
+        builder.symbol("naml_db_sqlite_bind_float", crate::runtime::naml_db_sqlite_bind_float as *const u8);
+        builder.symbol("naml_db_sqlite_step", crate::runtime::naml_db_sqlite_step as *const u8);
+        builder.symbol("naml_db_sqlite_reset", crate::runtime::naml_db_sqlite_reset as *const u8);
+        builder.symbol("naml_db_sqlite_finalize", crate::runtime::naml_db_sqlite_finalize as *const u8);
+        builder.symbol("naml_db_sqlite_changes", crate::runtime::naml_db_sqlite_changes as *const u8);
+        builder.symbol("naml_db_sqlite_last_insert_id", crate::runtime::naml_db_sqlite_last_insert_id as *const u8);
+
         let module = JITModule::new(builder);
         let ctx = module.make_context();
 
@@ -5459,6 +5487,34 @@ impl<'a> JitCompiler<'a> {
             &[],
             &[ptr],
         )?;
+
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_error_new", &[ptr, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_open", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_open_memory", &[], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_close", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_exec", &[i64t, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_query", &[i64t, ptr, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_row_count", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_row_at", &[i64t, i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_get_string", &[i64t, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_get_int", &[i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_get_float", &[i64t, ptr], &[f64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_get_bool", &[i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_is_null", &[i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_columns", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_column_count", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_begin", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_commit", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_rollback", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_prepare", &[i64t, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_bind_string", &[i64t, i64t, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_bind_int", &[i64t, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_bind_float", &[i64t, i64t, f64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_step", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_reset", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_finalize", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_changes", &[i64t], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_last_insert_id", &[i64t], &[i64t])?;
 
         Ok(())
     }

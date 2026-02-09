@@ -1,0 +1,12 @@
+[package]
+name = "naml-std-sqlite3"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "naml_std_sqlite3"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
+rusqlite = { version = "0.31", features = ["bundled"] }

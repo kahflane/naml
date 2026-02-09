@@ -276,6 +276,7 @@ pub fn compile_expression(
                         "EnvError" => Some(7i64),
                         "OSError" => Some(8i64),
                         "ProcessError" => Some(9i64),
+                        "DBError" => Some(10i64),
                         "EncodeError" => Some(11i64),
                         _ => None,
                     };

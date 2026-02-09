@@ -634,6 +634,62 @@ pub enum BuiltinStrategy {
     NetHttpStatus,
     /// (response: int) -> bytes
     NetHttpBody,
+
+    // ========================================
+    // SQLite database strategies
+    // ========================================
+    /// (path: string) -> int throws DBError
+    SqliteOpen,
+    /// () -> int throws DBError
+    SqliteOpenMemory,
+    /// (handle: int) -> unit
+    SqliteClose,
+    /// (handle: int, sql: string) -> unit throws DBError
+    SqliteExec,
+    /// (handle: int, sql: string, params: [string]) -> int throws DBError
+    SqliteQuery,
+    /// (rows: int) -> int
+    SqliteRowCount,
+    /// (rows: int, index: int) -> int
+    SqliteRowAt,
+    /// (row: int, col: string) -> string
+    SqliteGetString,
+    /// (row: int, col: string) -> int
+    SqliteGetInt,
+    /// (row: int, col: string) -> float
+    SqliteGetFloat,
+    /// (row: int, col: string) -> bool
+    SqliteGetBool,
+    /// (row: int, col: string) -> bool
+    SqliteIsNull,
+    /// (rows: int) -> string
+    SqliteColumns,
+    /// (rows: int) -> int
+    SqliteColumnCount,
+    /// (handle: int) -> unit throws DBError
+    SqliteBegin,
+    /// (handle: int) -> unit throws DBError
+    SqliteCommit,
+    /// (handle: int) -> unit throws DBError
+    SqliteRollback,
+    /// (handle: int, sql: string) -> int throws DBError
+    SqlitePrepare,
+    /// (stmt: int, index: int, val: string) -> unit throws DBError
+    SqliteBindString,
+    /// (stmt: int, index: int, val: int) -> unit throws DBError
+    SqliteBindInt,
+    /// (stmt: int, index: int, val: float) -> unit throws DBError
+    SqliteBindFloat,
+    /// (stmt: int) -> unit throws DBError
+    SqliteStep,
+    /// (stmt: int) -> unit
+    SqliteReset,
+    /// (stmt: int) -> unit
+    SqliteFinalize,
+    /// (handle: int) -> int
+    SqliteChanges,
+    /// (handle: int) -> int
+    SqliteLastInsertId,
 }
 
 /// Registry entry for a built-in function
@@ -2064,6 +2120,35 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
             name: "net::http::client::body",
             strategy: BuiltinStrategy::NetHttpBody,
         },
+        // ========================================
+        // SQLite database module
+        // ========================================
+        BuiltinFunction { name: "db::sqlite::open", strategy: BuiltinStrategy::SqliteOpen },
+        BuiltinFunction { name: "db::sqlite::open_memory", strategy: BuiltinStrategy::SqliteOpenMemory },
+        BuiltinFunction { name: "db::sqlite::close", strategy: BuiltinStrategy::SqliteClose },
+        BuiltinFunction { name: "db::sqlite::exec", strategy: BuiltinStrategy::SqliteExec },
+        BuiltinFunction { name: "db::sqlite::query", strategy: BuiltinStrategy::SqliteQuery },
+        BuiltinFunction { name: "db::sqlite::row_count", strategy: BuiltinStrategy::SqliteRowCount },
+        BuiltinFunction { name: "db::sqlite::row_at", strategy: BuiltinStrategy::SqliteRowAt },
+        BuiltinFunction { name: "db::sqlite::get_string", strategy: BuiltinStrategy::SqliteGetString },
+        BuiltinFunction { name: "db::sqlite::get_int", strategy: BuiltinStrategy::SqliteGetInt },
+        BuiltinFunction { name: "db::sqlite::get_float", strategy: BuiltinStrategy::SqliteGetFloat },
+        BuiltinFunction { name: "db::sqlite::get_bool", strategy: BuiltinStrategy::SqliteGetBool },
+        BuiltinFunction { name: "db::sqlite::is_null", strategy: BuiltinStrategy::SqliteIsNull },
+        BuiltinFunction { name: "db::sqlite::columns", strategy: BuiltinStrategy::SqliteColumns },
+        BuiltinFunction { name: "db::sqlite::column_count", strategy: BuiltinStrategy::SqliteColumnCount },
+        BuiltinFunction { name: "db::sqlite::begin", strategy: BuiltinStrategy::SqliteBegin },
+        BuiltinFunction { name: "db::sqlite::commit", strategy: BuiltinStrategy::SqliteCommit },
+        BuiltinFunction { name: "db::sqlite::rollback", strategy: BuiltinStrategy::SqliteRollback },
+        BuiltinFunction { name: "db::sqlite::prepare", strategy: BuiltinStrategy::SqlitePrepare },
+        BuiltinFunction { name: "db::sqlite::bind_string", strategy: BuiltinStrategy::SqliteBindString },
+        BuiltinFunction { name: "db::sqlite::bind_int", strategy: BuiltinStrategy::SqliteBindInt },
+        BuiltinFunction { name: "db::sqlite::bind_float", strategy: BuiltinStrategy::SqliteBindFloat },
+        BuiltinFunction { name: "db::sqlite::step", strategy: BuiltinStrategy::SqliteStep },
+        BuiltinFunction { name: "db::sqlite::reset", strategy: BuiltinStrategy::SqliteReset },
+        BuiltinFunction { name: "db::sqlite::finalize", strategy: BuiltinStrategy::SqliteFinalize },
+        BuiltinFunction { name: "db::sqlite::changes", strategy: BuiltinStrategy::SqliteChanges },
+        BuiltinFunction { name: "db::sqlite::last_insert_id", strategy: BuiltinStrategy::SqliteLastInsertId },
     ];
     REGISTRY
 }
@@ -4365,6 +4450,205 @@ pub fn compile_builtin_call(
                 "naml_net_http_response_get_body_bytes",
                 response,
             )
+        }
+
+        // ========================================
+        // SQLite database strategies
+        // ========================================
+        BuiltinStrategy::SqliteOpen => {
+            let path = compile_expression(ctx, builder, &args[0])?;
+            let path = ensure_naml_string(ctx, builder, path, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_db_sqlite_open", path)
+        }
+
+        BuiltinStrategy::SqliteOpenMemory => {
+            call_int_runtime(ctx, builder, "naml_db_sqlite_open_memory")
+        }
+
+        BuiltinStrategy::SqliteClose => {
+            use super::runtime::rt_func_ref;
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_close")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteExec => {
+            use super::runtime::rt_func_ref;
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let sql = compile_expression(ctx, builder, &args[1])?;
+            let sql = ensure_naml_string(ctx, builder, sql, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_exec")?;
+            builder.ins().call(func_ref, &[handle, sql]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteQuery => {
+            use super::runtime::rt_func_ref;
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let sql = compile_expression(ctx, builder, &args[1])?;
+            let sql = ensure_naml_string(ctx, builder, sql, &args[1])?;
+            let params = compile_expression(ctx, builder, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_query")?;
+            let call = builder.ins().call(func_ref, &[handle, sql, params]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::SqliteRowCount => {
+            let rows = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_db_sqlite_row_count", rows)
+        }
+
+        BuiltinStrategy::SqliteRowAt => {
+            let rows = compile_expression(ctx, builder, &args[0])?;
+            let index = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_db_sqlite_row_at", rows, index)
+        }
+
+        BuiltinStrategy::SqliteGetString => {
+            let row = compile_expression(ctx, builder, &args[0])?;
+            let col = compile_expression(ctx, builder, &args[1])?;
+            let col = ensure_naml_string(ctx, builder, col, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, "naml_db_sqlite_get_string", row, col)
+        }
+
+        BuiltinStrategy::SqliteGetInt => {
+            let row = compile_expression(ctx, builder, &args[0])?;
+            let col = compile_expression(ctx, builder, &args[1])?;
+            let col = ensure_naml_string(ctx, builder, col, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_db_sqlite_get_int", row, col)
+        }
+
+        BuiltinStrategy::SqliteGetFloat => {
+            use super::runtime::rt_func_ref;
+            let row = compile_expression(ctx, builder, &args[0])?;
+            let col = compile_expression(ctx, builder, &args[1])?;
+            let col = ensure_naml_string(ctx, builder, col, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_get_float")?;
+            let call = builder.ins().call(func_ref, &[row, col]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::SqliteGetBool => {
+            let row = compile_expression(ctx, builder, &args[0])?;
+            let col = compile_expression(ctx, builder, &args[1])?;
+            let col = ensure_naml_string(ctx, builder, col, &args[1])?;
+            let i64_val = call_two_arg_int_runtime(ctx, builder, "naml_db_sqlite_get_bool", row, col)?;
+            Ok(builder.ins().ireduce(types::I8, i64_val))
+        }
+
+        BuiltinStrategy::SqliteIsNull => {
+            let row = compile_expression(ctx, builder, &args[0])?;
+            let col = compile_expression(ctx, builder, &args[1])?;
+            let col = ensure_naml_string(ctx, builder, col, &args[1])?;
+            let i64_val = call_two_arg_int_runtime(ctx, builder, "naml_db_sqlite_is_null", row, col)?;
+            Ok(builder.ins().ireduce(types::I8, i64_val))
+        }
+
+        BuiltinStrategy::SqliteColumns => {
+            let rows = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_db_sqlite_columns", rows)
+        }
+
+        BuiltinStrategy::SqliteColumnCount => {
+            let rows = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_db_sqlite_column_count", rows)
+        }
+
+        BuiltinStrategy::SqliteBegin => {
+            use super::runtime::rt_func_ref;
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_begin")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteCommit => {
+            use super::runtime::rt_func_ref;
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_commit")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteRollback => {
+            use super::runtime::rt_func_ref;
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_rollback")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqlitePrepare => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let sql = compile_expression(ctx, builder, &args[1])?;
+            let sql = ensure_naml_string(ctx, builder, sql, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_db_sqlite_prepare", handle, sql)
+        }
+
+        BuiltinStrategy::SqliteBindString => {
+            use super::runtime::rt_func_ref;
+            let stmt = compile_expression(ctx, builder, &args[0])?;
+            let index = compile_expression(ctx, builder, &args[1])?;
+            let val = compile_expression(ctx, builder, &args[2])?;
+            let val = ensure_naml_string(ctx, builder, val, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_bind_string")?;
+            builder.ins().call(func_ref, &[stmt, index, val]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteBindInt => {
+            use super::runtime::rt_func_ref;
+            let stmt = compile_expression(ctx, builder, &args[0])?;
+            let index = compile_expression(ctx, builder, &args[1])?;
+            let val = compile_expression(ctx, builder, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_bind_int")?;
+            builder.ins().call(func_ref, &[stmt, index, val]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteBindFloat => {
+            use super::runtime::rt_func_ref;
+            let stmt = compile_expression(ctx, builder, &args[0])?;
+            let index = compile_expression(ctx, builder, &args[1])?;
+            let val = compile_expression(ctx, builder, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_bind_float")?;
+            builder.ins().call(func_ref, &[stmt, index, val]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteStep => {
+            use super::runtime::rt_func_ref;
+            let stmt = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_step")?;
+            builder.ins().call(func_ref, &[stmt]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteReset => {
+            use super::runtime::rt_func_ref;
+            let stmt = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_reset")?;
+            builder.ins().call(func_ref, &[stmt]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteFinalize => {
+            use super::runtime::rt_func_ref;
+            let stmt = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_finalize")?;
+            builder.ins().call(func_ref, &[stmt]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteChanges => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_db_sqlite_changes", handle)
+        }
+
+        BuiltinStrategy::SqliteLastInsertId => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_db_sqlite_last_insert_id", handle)
         }
     }
 }
