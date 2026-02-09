@@ -18,6 +18,7 @@ pub mod url;
 pub mod json;
 pub mod toml;
 pub mod yaml;
+pub mod binary;
 
 pub use utf8::*;
 pub use hex::*;
@@ -26,6 +27,7 @@ pub use url::*;
 pub use json::*;
 pub use toml::*;
 pub use yaml::*;
+pub use binary::*;
 
 use naml_std_core::value::NamlString;
 

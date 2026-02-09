@@ -1,0 +1,227 @@
+// Binary Demo - std::encoding::binary
+// Tests integer/float read/write, buffer operations, and search
+
+use std::encoding::binary::*;
+use std::testing::*;
+
+fn main() {
+    println("=== Binary Buffer Read/Write Demo ===");
+
+    // Allocate a buffer and test integer round-trips
+    var buf: bytes = alloc(64);
+
+    // u8 / i8
+    write_u8(buf, 0, 255);
+    write_i8(buf, 1, -128);
+    assert_eq(read_u8(buf, 0), 255, "u8 round-trip");
+    assert_eq(read_i8(buf, 1), -128, "i8 round-trip");
+    println("u8/i8: PASS");
+
+    // u16 big/little endian
+    write_u16_be(buf, 2, 4660);
+    write_u16_le(buf, 4, 22136);
+    assert_eq(read_u16_be(buf, 2), 4660, "u16_be round-trip");
+    assert_eq(read_u16_le(buf, 4), 22136, "u16_le round-trip");
+    println("u16 BE/LE: PASS");
+
+    // i16 big/little endian
+    write_i16_be(buf, 6, -32000);
+    write_i16_le(buf, 8, -16000);
+    assert_eq(read_i16_be(buf, 6), -32000, "i16_be round-trip");
+    assert_eq(read_i16_le(buf, 8), -16000, "i16_le round-trip");
+    println("i16 BE/LE: PASS");
+
+    // u32 big/little endian
+    write_u32_be(buf, 10, 305419896);
+    write_u32_le(buf, 14, 2018915346);
+    assert_eq(read_u32_be(buf, 10), 305419896, "u32_be round-trip");
+    assert_eq(read_u32_le(buf, 14), 2018915346, "u32_le round-trip");
+    println("u32 BE/LE: PASS");
+
+    // i32 big/little endian
+    write_i32_be(buf, 18, -100000);
+    write_i32_le(buf, 22, -200000);
+    assert_eq(read_i32_be(buf, 18), -100000, "i32_be round-trip");
+    assert_eq(read_i32_le(buf, 22), -200000, "i32_le round-trip");
+    println("i32 BE/LE: PASS");
+
+    // u64 / i64
+    write_u64_be(buf, 26, 1000000000000);
+    write_i64_le(buf, 34, -999999999999);
+    assert_eq(read_u64_be(buf, 26), 1000000000000, "u64_be round-trip");
+    assert_eq(read_i64_le(buf, 34), -999999999999, "i64_le round-trip");
+    println("u64/i64: PASS");
+
+    // Float round-trips
+    write_f64_be(buf, 42, 3.14159265);
+    var pi: float = read_f64_be(buf, 42);
+    assert_approx(pi, 3.14159265, 0.0000001, "f64_be round-trip");
+    println("f64 BE: PASS");
+
+    write_f32_le(buf, 50, 2.71828);
+    var e: float = read_f32_le(buf, 50);
+    assert_approx(e, 2.71828, 0.001, "f32_le round-trip (reduced precision)");
+    println("f32 LE: PASS");
+
+    println("");
+    println("=== Buffer Operations ===");
+
+    // from_string
+    var hello: bytes = from_string("Hello");
+    assert_eq(len(hello), 5, "from_string length");
+    assert_eq(read_u8(hello, 0), 72, "from_string first byte is H");
+    println("from_string: PASS");
+
+    // len and capacity
+    var small: bytes = alloc(16);
+    assert_eq(len(small), 16, "alloc sets len");
+    println(fmt("capacity: {}", capacity(small)));
+    println("len/capacity: PASS");
+
+    // slice
+    var abcde: bytes = alloc(5);
+    write_u8(abcde, 0, 65);
+    write_u8(abcde, 1, 66);
+    write_u8(abcde, 2, 67);
+    write_u8(abcde, 3, 68);
+    write_u8(abcde, 4, 69);
+    var mid: bytes = slice(abcde, 1, 4);
+    assert_eq(len(mid), 3, "slice length");
+    assert_eq(read_u8(mid, 0), 66, "slice starts at B");
+    assert_eq(read_u8(mid, 2), 68, "slice ends at D");
+    println("slice: PASS");
+
+    // concat
+    var part1: bytes = alloc(2);
+    write_u8(part1, 0, 170);
+    write_u8(part1, 1, 187);
+    var part2: bytes = alloc(2);
+    write_u8(part2, 0, 204);
+    write_u8(part2, 1, 221);
+    var merged: bytes = concat(part1, part2);
+    assert_eq(len(merged), 4, "concat length");
+    assert_eq(read_u8(merged, 0), 170, "concat first byte");
+    assert_eq(read_u8(merged, 3), 221, "concat last byte");
+    println("concat: PASS");
+
+    // fill and clear
+    var fbuf: bytes = alloc(4);
+    fill(fbuf, 255);
+    assert_eq(read_u8(fbuf, 0), 255, "fill 0xFF");
+    assert_eq(read_u8(fbuf, 3), 255, "fill 0xFF last");
+    clear(fbuf);
+    assert_eq(read_u8(fbuf, 0), 0, "clear zeroes");
+    println("fill/clear: PASS");
+
+    // copy_within
+    var cpbuf: bytes = alloc(8);
+    write_u8(cpbuf, 0, 10);
+    write_u8(cpbuf, 1, 20);
+    write_u8(cpbuf, 2, 30);
+    copy_within(cpbuf, 0, 3, 4);
+    assert_eq(read_u8(cpbuf, 4), 10, "copy_within[0]");
+    assert_eq(read_u8(cpbuf, 5), 20, "copy_within[1]");
+    assert_eq(read_u8(cpbuf, 6), 30, "copy_within[2]");
+    println("copy_within: PASS");
+
+    println("");
+    println("=== Search Operations ===");
+
+    // Build ABCDE buffer for searching
+    var hay: bytes = alloc(5);
+    write_u8(hay, 0, 65);
+    write_u8(hay, 1, 66);
+    write_u8(hay, 2, 67);
+    write_u8(hay, 3, 68);
+    write_u8(hay, 4, 69);
+
+    // index_of
+    var needle_cd: bytes = alloc(2);
+    write_u8(needle_cd, 0, 67);
+    write_u8(needle_cd, 1, 68);
+    assert_eq(index_of(hay, needle_cd), 2, "index_of CD in ABCDE");
+    println("index_of: PASS");
+
+    // contains
+    assert_true(contains(hay, needle_cd), "contains CD");
+    var needle_zz: bytes = alloc(2);
+    write_u8(needle_zz, 0, 90);
+    write_u8(needle_zz, 1, 90);
+    assert_false(contains(hay, needle_zz), "not contains ZZ");
+    println("contains: PASS");
+
+    // starts_with / ends_with
+    var prefix_ab: bytes = alloc(2);
+    write_u8(prefix_ab, 0, 65);
+    write_u8(prefix_ab, 1, 66);
+    assert_true(starts_with(hay, prefix_ab), "starts_with AB");
+
+    var suffix_de: bytes = alloc(2);
+    write_u8(suffix_de, 0, 68);
+    write_u8(suffix_de, 1, 69);
+    assert_true(ends_with(hay, suffix_de), "ends_with DE");
+    println("starts_with/ends_with: PASS");
+
+    // equals
+    var hay_copy: bytes = alloc(5);
+    write_u8(hay_copy, 0, 65);
+    write_u8(hay_copy, 1, 66);
+    write_u8(hay_copy, 2, 67);
+    write_u8(hay_copy, 3, 68);
+    write_u8(hay_copy, 4, 69);
+    assert_true(equals(hay, hay_copy), "equals same content");
+    write_u8(hay_copy, 0, 0);
+    assert_false(equals(hay, hay_copy), "not equals after modification");
+    println("equals: PASS");
+
+    println("");
+    println("=== Protocol Message Example (PostgreSQL Startup) ===");
+
+    // Build a simplified PostgreSQL startup message:
+    // [4 bytes: total length BE] [4 bytes: protocol version BE] [payload...]
+    var msg: bytes = alloc(64);
+    var offset: int = 0;
+
+    // Protocol version 3.0 = 196608
+    write_i32_be(msg, 4, 196608);
+    offset = 8;
+
+    // user parameter
+    var user_key: bytes = from_string("user");
+    var user_val: bytes = from_string("postgres");
+
+    // Write user key + null terminator
+    var j: int = 0;
+    while (j < len(user_key)) {
+        write_u8(msg, offset + j, read_u8(user_key, j));
+        j = j + 1;
+    }
+    write_u8(msg, offset + j, 0);
+    offset = offset + j + 1;
+
+    // Write user value + null terminator
+    var k: int = 0;
+    while (k < len(user_val)) {
+        write_u8(msg, offset + k, read_u8(user_val, k));
+        k = k + 1;
+    }
+    write_u8(msg, offset + k, 0);
+    offset = offset + k + 1;
+
+    // Final terminator
+    write_u8(msg, offset, 0);
+    offset = offset + 1;
+
+    // Write total length at offset 0
+    write_i32_be(msg, 0, offset);
+
+    // Verify
+    var total_len: int = read_i32_be(msg, 0);
+    var proto_ver: int = read_i32_be(msg, 4);
+    println(fmt("Message length: {} bytes", total_len));
+    println(fmt("Protocol version: {}", proto_ver));
+    assert_eq(proto_ver, 196608, "protocol version 3.0");
+
+    println("");
+    println("All binary encoding tests passed!");
+}

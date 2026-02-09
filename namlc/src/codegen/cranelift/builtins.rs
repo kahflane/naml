@@ -563,6 +563,30 @@ pub enum BuiltinStrategy {
     YamlEncode,
 
     // ========================================
+    // Binary encoding strategies
+    // ========================================
+    /// (arg0) -> result: alloc, from_string, len, capacity
+    BinaryOneArgCall(&'static str),
+    /// (arg0, arg1) -> result: int reads, index_of, concat
+    BinaryTwoArgCall(&'static str),
+    /// (arg0, arg1, arg2) -> result: slice
+    BinaryThreeArgCall(&'static str),
+    /// (bytes, offset) -> f64: float reads
+    BinaryReadFloat(&'static str),
+    /// (arg0) -> void: clear
+    BinaryOneArgVoid(&'static str),
+    /// (arg0, arg1) -> void: append, resize, fill
+    BinaryTwoArgVoid(&'static str),
+    /// (arg0, arg1, arg2) -> void: int writes
+    BinaryThreeArgVoid(&'static str),
+    /// (bytes, offset, f64) -> void: float writes
+    BinaryWriteFloat(&'static str),
+    /// (arg0, arg1, arg2, arg3) -> void: copy_within
+    BinaryFourArgVoid(&'static str),
+    /// (arg0, arg1) -> bool: contains, starts_with, ends_with, equals
+    BinaryTwoArgBool(&'static str),
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -2061,6 +2085,61 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
             name: "encoding::yaml::encode",
             strategy: BuiltinStrategy::YamlEncode,
         },
+        // ========================================
+        // Binary encoding module
+        // ========================================
+        BuiltinFunction { name: "encoding::binary::read_u8", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u8") },
+        BuiltinFunction { name: "encoding::binary::read_i8", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i8") },
+        BuiltinFunction { name: "encoding::binary::read_u16_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u16_be") },
+        BuiltinFunction { name: "encoding::binary::read_u16_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u16_le") },
+        BuiltinFunction { name: "encoding::binary::read_i16_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i16_be") },
+        BuiltinFunction { name: "encoding::binary::read_i16_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i16_le") },
+        BuiltinFunction { name: "encoding::binary::read_u32_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u32_be") },
+        BuiltinFunction { name: "encoding::binary::read_u32_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u32_le") },
+        BuiltinFunction { name: "encoding::binary::read_i32_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i32_be") },
+        BuiltinFunction { name: "encoding::binary::read_i32_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i32_le") },
+        BuiltinFunction { name: "encoding::binary::read_u64_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u64_be") },
+        BuiltinFunction { name: "encoding::binary::read_u64_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u64_le") },
+        BuiltinFunction { name: "encoding::binary::read_i64_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i64_be") },
+        BuiltinFunction { name: "encoding::binary::read_i64_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i64_le") },
+        BuiltinFunction { name: "encoding::binary::read_f32_be", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f32_be") },
+        BuiltinFunction { name: "encoding::binary::read_f32_le", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f32_le") },
+        BuiltinFunction { name: "encoding::binary::read_f64_be", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f64_be") },
+        BuiltinFunction { name: "encoding::binary::read_f64_le", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f64_le") },
+        BuiltinFunction { name: "encoding::binary::write_u8", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u8") },
+        BuiltinFunction { name: "encoding::binary::write_i8", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i8") },
+        BuiltinFunction { name: "encoding::binary::write_u16_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u16_be") },
+        BuiltinFunction { name: "encoding::binary::write_u16_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u16_le") },
+        BuiltinFunction { name: "encoding::binary::write_i16_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i16_be") },
+        BuiltinFunction { name: "encoding::binary::write_i16_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i16_le") },
+        BuiltinFunction { name: "encoding::binary::write_u32_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u32_be") },
+        BuiltinFunction { name: "encoding::binary::write_u32_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u32_le") },
+        BuiltinFunction { name: "encoding::binary::write_i32_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i32_be") },
+        BuiltinFunction { name: "encoding::binary::write_i32_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i32_le") },
+        BuiltinFunction { name: "encoding::binary::write_u64_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u64_be") },
+        BuiltinFunction { name: "encoding::binary::write_u64_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u64_le") },
+        BuiltinFunction { name: "encoding::binary::write_i64_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i64_be") },
+        BuiltinFunction { name: "encoding::binary::write_i64_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i64_le") },
+        BuiltinFunction { name: "encoding::binary::write_f32_be", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f32_be") },
+        BuiltinFunction { name: "encoding::binary::write_f32_le", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f32_le") },
+        BuiltinFunction { name: "encoding::binary::write_f64_be", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f64_be") },
+        BuiltinFunction { name: "encoding::binary::write_f64_le", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f64_le") },
+        BuiltinFunction { name: "encoding::binary::alloc", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_alloc") },
+        BuiltinFunction { name: "encoding::binary::from_string", strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_binary_from_string") },
+        BuiltinFunction { name: "encoding::binary::len", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_len") },
+        BuiltinFunction { name: "encoding::binary::capacity", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_capacity") },
+        BuiltinFunction { name: "encoding::binary::slice", strategy: BuiltinStrategy::BinaryThreeArgCall("naml_encoding_binary_slice") },
+        BuiltinFunction { name: "encoding::binary::concat", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_concat") },
+        BuiltinFunction { name: "encoding::binary::append", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_append") },
+        BuiltinFunction { name: "encoding::binary::copy_within", strategy: BuiltinStrategy::BinaryFourArgVoid("naml_encoding_binary_copy_within") },
+        BuiltinFunction { name: "encoding::binary::clear", strategy: BuiltinStrategy::BinaryOneArgVoid("naml_encoding_binary_clear") },
+        BuiltinFunction { name: "encoding::binary::resize", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_resize") },
+        BuiltinFunction { name: "encoding::binary::fill", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_fill") },
+        BuiltinFunction { name: "encoding::binary::index_of", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_index_of") },
+        BuiltinFunction { name: "encoding::binary::contains", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_contains") },
+        BuiltinFunction { name: "encoding::binary::starts_with", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_starts_with") },
+        BuiltinFunction { name: "encoding::binary::ends_with", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_ends_with") },
+        BuiltinFunction { name: "encoding::binary::equals", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_equals") },
         // ========================================
         // Networking module (strict hierarchy: net::tcp::listener, net::tcp::client, etc.)
         // ========================================
@@ -3908,6 +3987,84 @@ pub fn compile_builtin_call(
 
             let result = builder.block_params(merge_block)[0];
             Ok(result)
+        }
+
+        // ========================================
+        // Binary encoding strategies
+        // ========================================
+        BuiltinStrategy::BinaryOneArgCall(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            let call = builder.ins().call(func_ref, &[arg0]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::BinaryTwoArgCall(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, runtime_fn, arg0, arg1)
+        }
+
+        BuiltinStrategy::BinaryThreeArgCall(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            let arg2 = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_ptr_runtime(ctx, builder, runtime_fn, arg0, arg1, arg2)
+        }
+
+        BuiltinStrategy::BinaryReadFloat(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            let call = builder.ins().call(func_ref, &[arg0, arg1]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::BinaryOneArgVoid(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            builder.ins().call(func_ref, &[arg0]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::BinaryTwoArgVoid(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            builder.ins().call(func_ref, &[arg0, arg1]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::BinaryThreeArgVoid(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            let arg2 = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, runtime_fn, arg0, arg1, arg2)
+        }
+
+        BuiltinStrategy::BinaryWriteFloat(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            let arg2 = compile_expression(ctx, builder, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            builder.ins().call(func_ref, &[arg0, arg1, arg2]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::BinaryFourArgVoid(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            let arg2 = compile_expression(ctx, builder, &args[2])?;
+            let arg3 = compile_expression(ctx, builder, &args[3])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            builder.ins().call(func_ref, &[arg0, arg1, arg2, arg3]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::BinaryTwoArgBool(runtime_fn) => {
+            let arg0 = compile_expression(ctx, builder, &args[0])?;
+            let arg1 = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_bool_runtime(ctx, builder, runtime_fn, arg0, arg1)
         }
 
         // ========================================

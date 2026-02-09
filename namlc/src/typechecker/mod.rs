@@ -358,6 +358,7 @@ impl<'a> TypeChecker<'a> {
             "encoding::json",
             "encoding::toml",
             "encoding::yaml",
+            "encoding::binary",
             "testing",
             "env",
             "os",
@@ -2080,6 +2081,63 @@ impl<'a> TypeChecker<'a> {
         ]
     }
 
+    fn get_encoding_binary_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("read_u8", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_i8", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_u16_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_u16_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_i16_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_i16_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_u32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_u32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_i32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_i32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_u64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_u64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_i64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_i64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
+            StdModuleFn::new("read_f32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
+            StdModuleFn::new("read_f32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
+            StdModuleFn::new("read_f64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
+            StdModuleFn::new("read_f64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
+            StdModuleFn::new("write_u8", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_i8", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_u16_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_u16_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_i16_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_i16_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_u32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_u32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_i32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_i32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_u64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_u64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_i64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_i64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("write_f32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
+            StdModuleFn::new("write_f32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
+            StdModuleFn::new("write_f64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
+            StdModuleFn::new("write_f64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
+            StdModuleFn::new("alloc", vec![("capacity", Type::Int)], Type::Bytes),
+            StdModuleFn::new("from_string", vec![("s", Type::String)], Type::Bytes),
+            StdModuleFn::new("len", vec![("buf", Type::Bytes)], Type::Int),
+            StdModuleFn::new("capacity", vec![("buf", Type::Bytes)], Type::Int),
+            StdModuleFn::new("slice", vec![("buf", Type::Bytes), ("start", Type::Int), ("end", Type::Int)], Type::Bytes),
+            StdModuleFn::new("concat", vec![("a", Type::Bytes), ("b", Type::Bytes)], Type::Bytes),
+            StdModuleFn::new("append", vec![("dst", Type::Bytes), ("src", Type::Bytes)], Type::Unit),
+            StdModuleFn::new("copy_within", vec![("buf", Type::Bytes), ("src_start", Type::Int), ("src_end", Type::Int), ("dst_start", Type::Int)], Type::Unit),
+            StdModuleFn::new("clear", vec![("buf", Type::Bytes)], Type::Unit),
+            StdModuleFn::new("resize", vec![("buf", Type::Bytes), ("new_len", Type::Int)], Type::Unit),
+            StdModuleFn::new("fill", vec![("buf", Type::Bytes), ("value", Type::Int)], Type::Unit),
+            StdModuleFn::new("index_of", vec![("haystack", Type::Bytes), ("needle", Type::Bytes)], Type::Int),
+            StdModuleFn::new("contains", vec![("haystack", Type::Bytes), ("needle", Type::Bytes)], Type::Bool),
+            StdModuleFn::new("starts_with", vec![("buf", Type::Bytes), ("prefix", Type::Bytes)], Type::Bool),
+            StdModuleFn::new("ends_with", vec![("buf", Type::Bytes), ("suffix", Type::Bytes)], Type::Bool),
+            StdModuleFn::new("equals", vec![("a", Type::Bytes), ("b", Type::Bytes)], Type::Bool),
+        ]
+    }
+
     fn get_net_tcp_server_functions() -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
@@ -2993,6 +3051,7 @@ impl<'a> TypeChecker<'a> {
             "encoding::json" => Some(Self::get_encoding_json_functions()),
             "encoding::toml" => Some(Self::get_encoding_toml_functions()),
             "encoding::yaml" => Some(Self::get_encoding_yaml_functions()),
+            "encoding::binary" => Some(Self::get_encoding_binary_functions()),
             // Net module hierarchy - strict: parent modules expose only submodules, not functions
             // Parent modules - no functions, only submodules
             "net" => Some(vec![]),

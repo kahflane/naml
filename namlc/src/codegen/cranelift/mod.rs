@@ -1767,6 +1767,60 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_decode_error_new as *const u8,
         );
 
+        // Binary encoding operations
+        builder.symbol("naml_encoding_binary_read_u8", crate::runtime::naml_encoding_binary_read_u8 as *const u8);
+        builder.symbol("naml_encoding_binary_read_i8", crate::runtime::naml_encoding_binary_read_i8 as *const u8);
+        builder.symbol("naml_encoding_binary_read_u16_be", crate::runtime::naml_encoding_binary_read_u16_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_u16_le", crate::runtime::naml_encoding_binary_read_u16_le as *const u8);
+        builder.symbol("naml_encoding_binary_read_i16_be", crate::runtime::naml_encoding_binary_read_i16_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_i16_le", crate::runtime::naml_encoding_binary_read_i16_le as *const u8);
+        builder.symbol("naml_encoding_binary_read_u32_be", crate::runtime::naml_encoding_binary_read_u32_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_u32_le", crate::runtime::naml_encoding_binary_read_u32_le as *const u8);
+        builder.symbol("naml_encoding_binary_read_i32_be", crate::runtime::naml_encoding_binary_read_i32_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_i32_le", crate::runtime::naml_encoding_binary_read_i32_le as *const u8);
+        builder.symbol("naml_encoding_binary_read_u64_be", crate::runtime::naml_encoding_binary_read_u64_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_u64_le", crate::runtime::naml_encoding_binary_read_u64_le as *const u8);
+        builder.symbol("naml_encoding_binary_read_i64_be", crate::runtime::naml_encoding_binary_read_i64_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_i64_le", crate::runtime::naml_encoding_binary_read_i64_le as *const u8);
+        builder.symbol("naml_encoding_binary_read_f32_be", crate::runtime::naml_encoding_binary_read_f32_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_f32_le", crate::runtime::naml_encoding_binary_read_f32_le as *const u8);
+        builder.symbol("naml_encoding_binary_read_f64_be", crate::runtime::naml_encoding_binary_read_f64_be as *const u8);
+        builder.symbol("naml_encoding_binary_read_f64_le", crate::runtime::naml_encoding_binary_read_f64_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_u8", crate::runtime::naml_encoding_binary_write_u8 as *const u8);
+        builder.symbol("naml_encoding_binary_write_i8", crate::runtime::naml_encoding_binary_write_i8 as *const u8);
+        builder.symbol("naml_encoding_binary_write_u16_be", crate::runtime::naml_encoding_binary_write_u16_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_u16_le", crate::runtime::naml_encoding_binary_write_u16_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_i16_be", crate::runtime::naml_encoding_binary_write_i16_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_i16_le", crate::runtime::naml_encoding_binary_write_i16_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_u32_be", crate::runtime::naml_encoding_binary_write_u32_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_u32_le", crate::runtime::naml_encoding_binary_write_u32_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_i32_be", crate::runtime::naml_encoding_binary_write_i32_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_i32_le", crate::runtime::naml_encoding_binary_write_i32_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_u64_be", crate::runtime::naml_encoding_binary_write_u64_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_u64_le", crate::runtime::naml_encoding_binary_write_u64_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_i64_be", crate::runtime::naml_encoding_binary_write_i64_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_i64_le", crate::runtime::naml_encoding_binary_write_i64_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_f32_be", crate::runtime::naml_encoding_binary_write_f32_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_f32_le", crate::runtime::naml_encoding_binary_write_f32_le as *const u8);
+        builder.symbol("naml_encoding_binary_write_f64_be", crate::runtime::naml_encoding_binary_write_f64_be as *const u8);
+        builder.symbol("naml_encoding_binary_write_f64_le", crate::runtime::naml_encoding_binary_write_f64_le as *const u8);
+        builder.symbol("naml_encoding_binary_alloc", crate::runtime::naml_encoding_binary_alloc as *const u8);
+        builder.symbol("naml_encoding_binary_from_string", crate::runtime::naml_encoding_binary_from_string as *const u8);
+        builder.symbol("naml_encoding_binary_len", crate::runtime::naml_encoding_binary_len as *const u8);
+        builder.symbol("naml_encoding_binary_capacity", crate::runtime::naml_encoding_binary_capacity as *const u8);
+        builder.symbol("naml_encoding_binary_slice", crate::runtime::naml_encoding_binary_slice as *const u8);
+        builder.symbol("naml_encoding_binary_concat", crate::runtime::naml_encoding_binary_concat as *const u8);
+        builder.symbol("naml_encoding_binary_append", crate::runtime::naml_encoding_binary_append as *const u8);
+        builder.symbol("naml_encoding_binary_copy_within", crate::runtime::naml_encoding_binary_copy_within as *const u8);
+        builder.symbol("naml_encoding_binary_clear", crate::runtime::naml_encoding_binary_clear as *const u8);
+        builder.symbol("naml_encoding_binary_resize", crate::runtime::naml_encoding_binary_resize as *const u8);
+        builder.symbol("naml_encoding_binary_fill", crate::runtime::naml_encoding_binary_fill as *const u8);
+        builder.symbol("naml_encoding_binary_index_of", crate::runtime::naml_encoding_binary_index_of as *const u8);
+        builder.symbol("naml_encoding_binary_contains", crate::runtime::naml_encoding_binary_contains as *const u8);
+        builder.symbol("naml_encoding_binary_starts_with", crate::runtime::naml_encoding_binary_starts_with as *const u8);
+        builder.symbol("naml_encoding_binary_ends_with", crate::runtime::naml_encoding_binary_ends_with as *const u8);
+        builder.symbol("naml_encoding_binary_equals", crate::runtime::naml_encoding_binary_equals as *const u8);
+
         // JSON encoding operations
         builder.symbol(
             "naml_json_decode",
@@ -5121,6 +5175,63 @@ impl<'a> JitCompiler<'a> {
             &[ptr, ptr, ptr],
             &[],
         )?;
+
+        // Binary encoding operations - integer reads: (ptr, i64) -> i64
+        for name in [
+            "naml_encoding_binary_read_u8", "naml_encoding_binary_read_i8",
+            "naml_encoding_binary_read_u16_be", "naml_encoding_binary_read_u16_le",
+            "naml_encoding_binary_read_i16_be", "naml_encoding_binary_read_i16_le",
+            "naml_encoding_binary_read_u32_be", "naml_encoding_binary_read_u32_le",
+            "naml_encoding_binary_read_i32_be", "naml_encoding_binary_read_i32_le",
+            "naml_encoding_binary_read_u64_be", "naml_encoding_binary_read_u64_le",
+            "naml_encoding_binary_read_i64_be", "naml_encoding_binary_read_i64_le",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr, i64t], &[i64t])?;
+        }
+        // Float reads: (ptr, i64) -> f64
+        for name in [
+            "naml_encoding_binary_read_f32_be", "naml_encoding_binary_read_f32_le",
+            "naml_encoding_binary_read_f64_be", "naml_encoding_binary_read_f64_le",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr, i64t], &[f64t])?;
+        }
+        // Integer writes: (ptr, i64, i64) -> void
+        for name in [
+            "naml_encoding_binary_write_u8", "naml_encoding_binary_write_i8",
+            "naml_encoding_binary_write_u16_be", "naml_encoding_binary_write_u16_le",
+            "naml_encoding_binary_write_i16_be", "naml_encoding_binary_write_i16_le",
+            "naml_encoding_binary_write_u32_be", "naml_encoding_binary_write_u32_le",
+            "naml_encoding_binary_write_i32_be", "naml_encoding_binary_write_i32_le",
+            "naml_encoding_binary_write_u64_be", "naml_encoding_binary_write_u64_le",
+            "naml_encoding_binary_write_i64_be", "naml_encoding_binary_write_i64_le",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr, i64t, i64t], &[])?;
+        }
+        // Float writes: (ptr, i64, f64) -> void
+        for name in [
+            "naml_encoding_binary_write_f32_be", "naml_encoding_binary_write_f32_le",
+            "naml_encoding_binary_write_f64_be", "naml_encoding_binary_write_f64_le",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr, i64t, f64t], &[])?;
+        }
+        // Buffer operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_alloc", &[i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_from_string", &[ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_len", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_capacity", &[ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_slice", &[ptr, i64t, i64t], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_concat", &[ptr, ptr], &[ptr])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_append", &[ptr, ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_copy_within", &[ptr, i64t, i64t, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_clear", &[ptr], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_resize", &[ptr, i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_fill", &[ptr, i64t], &[])?;
+        // Search operations
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_index_of", &[ptr, ptr], &[i64t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_contains", &[ptr, ptr], &[i32t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_starts_with", &[ptr, ptr], &[i32t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_ends_with", &[ptr, ptr], &[i32t])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_encoding_binary_equals", &[ptr, ptr], &[i32t])?;
 
         // Datetime operations
         declare(
