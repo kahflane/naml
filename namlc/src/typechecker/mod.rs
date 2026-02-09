@@ -358,6 +358,7 @@ impl<'a> TypeChecker<'a> {
             "net::http::client",
             "net::http::server",
             "net::http::middleware",
+            "timers",
             "db",
             "db::sqlite",
         ];
@@ -2526,6 +2527,42 @@ impl<'a> TypeChecker<'a> {
                 StdModuleFn::new("elapsed_ms", vec![("start_ns", Type::Int)], Type::Int),
                 StdModuleFn::new("elapsed_us", vec![("start_ns", Type::Int)], Type::Int),
                 StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int),
+            ]),
+            "timers" => Some(vec![
+                StdModuleFn::new(
+                    "set_timeout",
+                    vec![
+                        (
+                            "callback",
+                            Type::Function(types::FunctionType {
+                                params: vec![],
+                                returns: Box::new(Type::Unit),
+                                throws: vec![],
+                                is_variadic: false,
+                            }),
+                        ),
+                        ("ms", Type::Int),
+                    ],
+                    Type::Int,
+                ),
+                StdModuleFn::new("cancel_timeout", vec![("handle", Type::Int)], Type::Unit),
+                StdModuleFn::new(
+                    "set_interval",
+                    vec![
+                        (
+                            "callback",
+                            Type::Function(types::FunctionType {
+                                params: vec![],
+                                returns: Box::new(Type::Unit),
+                                throws: vec![],
+                                is_variadic: false,
+                            }),
+                        ),
+                        ("ms", Type::Int),
+                    ],
+                    Type::Int,
+                ),
+                StdModuleFn::new("cancel_interval", vec![("handle", Type::Int)], Type::Unit),
             ]),
             "strings" => Some(vec![
                 StdModuleFn::new("len", vec![("s", Type::String)], Type::Int),

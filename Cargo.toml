@@ -26,6 +26,7 @@ members = [
     "std/naml-std-process",
     "std/naml-std-testing",
     "std/naml-std-sqlite3",
+    "std/naml-std-timers",
     "tools/naml-lsp",
 ]
 
@@ -174,6 +175,7 @@ naml-std-os = { path = "std/naml-std-os" }
 naml-std-process = { path = "std/naml-std-process" }
 naml-std-testing = { path = "std/naml-std-testing" }
 naml-std-sqlite3 = { path = "std/naml-std-sqlite3" }
+naml-std-timers = { path = "std/naml-std-timers" }
 
 [profile.release]
 lto = true

@@ -38,6 +38,7 @@ pub use naml_std_os::*;
 pub use naml_std_process::*;
 pub use naml_std_testing::*;
 pub use naml_std_sqlite3::*;
+pub use naml_std_timers::*;
 
 // Import collection arrays functions (not the arrays module to avoid conflict with naml_std_core::array)
 pub use naml_std_collections::arrays::*;

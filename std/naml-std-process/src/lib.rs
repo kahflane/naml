@@ -160,7 +160,7 @@ pub extern "C" fn naml_process_pipe_write() -> i64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn naml_process_start(
+pub unsafe extern "C" fn naml_process_start(
     name: *const NamlString,
     args: *mut NamlArray,
 ) -> i64 {

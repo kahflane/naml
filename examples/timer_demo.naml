@@ -1,0 +1,84 @@
+use std::timers::*;
+use std::threads::{open_channel, send, receive, close, join, sleep};
+
+fn main() {
+    println("=== Timer Demo ===");
+
+    // Test 1: Basic timeout fires after delay
+    println("\n--- Test 1: Basic timeout ---");
+    var ch1: channel<int> = open_channel(1);
+    set_timeout(fn() {
+        send(ch1, 42);
+    }, 100);
+    var result1: int = receive(ch1) ?? 0;
+    println(fmt("Timeout fired with value: {}", result1));
+    close(ch1);
+
+    // Test 2: Cancel a timeout before it fires
+    println("\n--- Test 2: Cancel timeout ---");
+    var ch2: channel<int> = open_channel(1);
+    var t2: int = set_timeout(fn() {
+        send(ch2, 999);
+    }, 500);
+    cancel_timeout(t2);
+    sleep(700);
+    join();
+    close(ch2);
+    var result2: int = receive(ch2) ?? -1;
+    println(fmt("After cancel, received: {} (expected -1)", result2));
+
+    // Test 3: Interval ticks multiple times
+    println("\n--- Test 3: Interval ---");
+    var ch3: channel<string> = open_channel(10);
+    var iv: int = set_interval(fn() {
+        send(ch3, "1");
+    }, 80);
+
+    sleep(350);
+    cancel_interval(iv);
+    sleep(100);
+    join();
+    close(ch3);
+
+    var ticks: int = 0;
+    var done: bool = false;
+    while (!done) {
+        var val: string = receive(ch3) ?? "-1";
+        if (val == "-1") {
+            done = true;
+        } else {
+            ticks = ticks + 1;
+        }
+    }
+    println(fmt("Interval ticked {} times (expected ~3-4)", ticks));
+
+    // Test 4: Multiple timeouts fire in correct order
+    println("\n--- Test 4: Timeout ordering ---");
+    var ch4: channel<int> = open_channel(3);
+    set_timeout(fn() { send(ch4, 3); }, 150);
+    set_timeout(fn() { send(ch4, 1); }, 50);
+    set_timeout(fn() { send(ch4, 2); }, 100);
+
+    sleep(300);
+    join();
+
+    var first: int = receive(ch4) ?? 0;
+    var second: int = receive(ch4) ?? 0;
+    var third: int = receive(ch4) ?? 0;
+    println(fmt("Order: {}, {}, {} (expected 1, 2, 3)", first, second, third));
+    close(ch4);
+
+    // Test 5: Timer with captured variables
+    println("\n--- Test 5: Captured variables ---");
+    var ch5: channel<int> = open_channel(1);
+    var multiplier: int = 7;
+    var base: int = 6;
+    set_timeout(fn() {
+        send(ch5, multiplier * base);
+    }, 50);
+    var result5: int = receive(ch5) ?? 0;
+    println(fmt("Captured result: {} (expected 42)", result5));
+    close(ch5);
+
+    println("\n=== All timer tests complete ===");
+}

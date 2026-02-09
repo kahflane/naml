@@ -17,8 +17,16 @@ mod symbols;
 use tower_lsp::{LspService, Server};
 use backend::NamlBackend;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--version" || a == "-v") {
+        println!("naml-lsp {}", VERSION);
+        return;
+    }
+
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_ansi(false)

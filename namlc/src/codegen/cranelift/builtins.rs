@@ -716,6 +716,18 @@ pub enum BuiltinStrategy {
     SqliteChanges,
     /// (handle: int) -> int
     SqliteLastInsertId,
+
+    // ========================================
+    // Timers module strategies
+    // ========================================
+    /// (callback, ms) -> int handle — unpack 24-byte closure
+    TimerSetTimeout,
+    /// (handle) -> void
+    TimerCancelTimeout,
+    /// (callback, ms) -> int handle — unpack 24-byte closure
+    TimerSetInterval,
+    /// (handle) -> void
+    TimerCancelInterval,
 }
 
 /// Registry entry for a built-in function
@@ -2189,6 +2201,13 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "db::sqlite::finalize", strategy: BuiltinStrategy::SqliteFinalize },
         BuiltinFunction { name: "db::sqlite::changes", strategy: BuiltinStrategy::SqliteChanges },
         BuiltinFunction { name: "db::sqlite::last_insert_id", strategy: BuiltinStrategy::SqliteLastInsertId },
+        // ========================================
+        // Timers module
+        // ========================================
+        BuiltinFunction { name: "timers::set_timeout", strategy: BuiltinStrategy::TimerSetTimeout },
+        BuiltinFunction { name: "timers::cancel_timeout", strategy: BuiltinStrategy::TimerCancelTimeout },
+        BuiltinFunction { name: "timers::set_interval", strategy: BuiltinStrategy::TimerSetInterval },
+        BuiltinFunction { name: "timers::cancel_interval", strategy: BuiltinStrategy::TimerCancelInterval },
     ];
     REGISTRY
 }
@@ -4776,6 +4795,45 @@ pub fn compile_builtin_call(
         BuiltinStrategy::SqliteLastInsertId => {
             let handle = compile_expression(ctx, builder, &args[0])?;
             call_one_arg_int_runtime(ctx, builder, "naml_db_sqlite_last_insert_id", handle)
+        }
+
+        // ========================================
+        // Timers module
+        // ========================================
+        BuiltinStrategy::TimerSetTimeout => {
+            let closure = compile_expression(ctx, builder, &args[0])?;
+            let ms = compile_expression(ctx, builder, &args[1])?;
+            let func_ptr = builder.ins().load(types::I64, MemFlags::new(), closure, 0);
+            let data_ptr = builder.ins().load(types::I64, MemFlags::new(), closure, 8);
+            let data_size = builder.ins().load(types::I64, MemFlags::new(), closure, 16);
+            let func_ref = rt_func_ref(ctx, builder, "naml_timers_set_timeout")?;
+            let call = builder.ins().call(func_ref, &[func_ptr, data_ptr, data_size, ms]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::TimerCancelTimeout => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_timers_cancel_timeout")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::TimerSetInterval => {
+            let closure = compile_expression(ctx, builder, &args[0])?;
+            let ms = compile_expression(ctx, builder, &args[1])?;
+            let func_ptr = builder.ins().load(types::I64, MemFlags::new(), closure, 0);
+            let data_ptr = builder.ins().load(types::I64, MemFlags::new(), closure, 8);
+            let data_size = builder.ins().load(types::I64, MemFlags::new(), closure, 16);
+            let func_ref = rt_func_ref(ctx, builder, "naml_timers_set_interval")?;
+            let call = builder.ins().call(func_ref, &[func_ptr, data_ptr, data_size, ms]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::TimerCancelInterval => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_timers_cancel_interval")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
         }
     }
 }

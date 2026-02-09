@@ -558,6 +558,24 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_random_float as *const u8,
         );
 
+        // Timer operations
+        builder.symbol(
+            "naml_timers_set_timeout",
+            crate::runtime::naml_timers_set_timeout as *const u8,
+        );
+        builder.symbol(
+            "naml_timers_cancel_timeout",
+            crate::runtime::naml_timers_cancel_timeout as *const u8,
+        );
+        builder.symbol(
+            "naml_timers_set_interval",
+            crate::runtime::naml_timers_set_interval as *const u8,
+        );
+        builder.symbol(
+            "naml_timers_cancel_interval",
+            crate::runtime::naml_timers_cancel_interval as *const u8,
+        );
+
         // Diagnostic builtins
         builder.symbol("naml_warn", crate::runtime::naml_warn as *const u8);
         builder.symbol("naml_error", crate::runtime::naml_error as *const u8);
@@ -3600,6 +3618,35 @@ impl<'a> JitCompiler<'a> {
             &mut self.module,
             &mut self.runtime_funcs,
             "naml_sleep",
+            &[i64t],
+            &[],
+        )?;
+        // Timer functions
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timers_set_timeout",
+            &[i64t, i64t, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timers_cancel_timeout",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timers_set_interval",
+            &[i64t, i64t, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timers_cancel_interval",
             &[i64t],
             &[],
         )?;

@@ -100,12 +100,14 @@ impl ArenaState {
 
         let free_head = self.free_lists[class_idx];
         if !free_head.is_null() {
-            self.free_lists[class_idx] = (*free_head).next;
+            unsafe {
+                self.free_lists[class_idx] = (*free_head).next;
+            }
             return free_head as *mut u8;
         }
 
         let aligned_size = (class_size + 7) & !7;
-        let new_ptr = self.bump_ptr.add(aligned_size);
+        let new_ptr = unsafe { self.bump_ptr.add(aligned_size) };
 
         if new_ptr <= self.bump_end {
             let result = self.bump_ptr;
@@ -113,7 +115,7 @@ impl ArenaState {
             return result;
         }
 
-        self.alloc_slow(class_size)
+        unsafe { self.alloc_slow(class_size) }
     }
 
     #[cold]
@@ -121,26 +123,30 @@ impl ArenaState {
     unsafe fn alloc_slow(&mut self, size: usize) -> *mut u8 {
         let (data, end) = Self::alloc_block();
 
-        let block_layout = Layout::new::<ArenaBlock>();
-        let new_block = alloc(block_layout) as *mut ArenaBlock;
-        (*new_block).data = data;
-        (*new_block).next = self.blocks;
-        self.blocks = new_block;
+        unsafe {
+            let block_layout = Layout::new::<ArenaBlock>();
+            let new_block = alloc(block_layout) as *mut ArenaBlock;
+            (*new_block).data = data;
+            (*new_block).next = self.blocks;
+            self.blocks = new_block;
 
-        self.bump_ptr = data;
-        self.bump_end = end;
+            self.bump_ptr = data;
+            self.bump_end = end;
 
-        let aligned_size = (size + 7) & !7;
-        let result = self.bump_ptr;
-        self.bump_ptr = self.bump_ptr.add(aligned_size);
-        result
+            let aligned_size = (size + 7) & !7;
+            let result = self.bump_ptr;
+            self.bump_ptr = self.bump_ptr.add(aligned_size);
+            result
+        }
     }
 
     #[inline(always)]
     unsafe fn free(&mut self, ptr: *mut u8, size: usize) {
         let class_idx = size_class_index(size);
         let node = ptr as *mut FreeNode;
-        (*node).next = self.free_lists[class_idx];
+        unsafe {
+            (*node).next = self.free_lists[class_idx];
+        }
         self.free_lists[class_idx] = node;
     }
 }
@@ -200,7 +206,7 @@ pub fn arena_alloc(size: usize) -> *mut u8 {
 }
 
 #[inline(always)]
-pub fn arena_free(ptr: *mut u8, size: usize) {
+pub unsafe fn arena_free(ptr: *mut u8, size: usize) {
     if ptr.is_null() {
         return;
     }
