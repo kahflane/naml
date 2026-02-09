@@ -177,6 +177,12 @@ naml-std-testing = { path = "std/naml-std-testing" }
 naml-std-sqlite3 = { path = "std/naml-std-sqlite3" }
 naml-std-timers = { path = "std/naml-std-timers" }
 
+##
+## Cron expression parsing
+##
+croner = "3"
+chrono = "0.4"
+
 [profile.release]
 lto = true
 codegen-units = 1

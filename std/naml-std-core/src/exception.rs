@@ -33,6 +33,8 @@ pub const EXCEPTION_TYPE_ENV_ERROR: i64 = 7;
 pub const EXCEPTION_TYPE_OS_ERROR: i64 = 8;
 pub const EXCEPTION_TYPE_PROCESS_ERROR: i64 = 9;
 pub const EXCEPTION_TYPE_DB_ERROR: i64 = 10;
+pub const EXCEPTION_TYPE_ENCODE_ERROR: i64 = 11;
+pub const EXCEPTION_TYPE_SCHEDULE_ERROR: i64 = 12;
 
 /// Set the current exception (called by throw)
 #[unsafe(no_mangle)]

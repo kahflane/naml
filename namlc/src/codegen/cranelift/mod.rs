@@ -575,6 +575,18 @@ impl<'a> JitCompiler<'a> {
             "naml_timers_cancel_interval",
             crate::runtime::naml_timers_cancel_interval as *const u8,
         );
+        builder.symbol(
+            "naml_timers_schedule",
+            crate::runtime::naml_timers_schedule as *const u8,
+        );
+        builder.symbol(
+            "naml_timers_cancel_schedule",
+            crate::runtime::naml_timers_cancel_schedule as *const u8,
+        );
+        builder.symbol(
+            "naml_timers_next_run",
+            crate::runtime::naml_timers_next_run as *const u8,
+        );
 
         // Diagnostic builtins
         builder.symbol("naml_warn", crate::runtime::naml_warn as *const u8);
@@ -2215,6 +2227,26 @@ impl<'a> JitCompiler<'a> {
                 field_heap_types: vec![Some(HeapType::String)],
             },
         );
+
+        self.exception_names.insert("DBError".to_string());
+        self.struct_defs.insert(
+            "DBError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_000A,
+                fields: vec!["message".to_string(), "code".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None],
+            },
+        );
+
+        self.exception_names.insert("ScheduleError".to_string());
+        self.struct_defs.insert(
+            "ScheduleError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_000C,
+                fields: vec!["message".to_string()],
+                field_heap_types: vec![Some(HeapType::String)],
+            },
+        );
     }
 
     fn declare_runtime_functions(&mut self) -> Result<(), CodegenError> {
@@ -3649,6 +3681,27 @@ impl<'a> JitCompiler<'a> {
             "naml_timers_cancel_interval",
             &[i64t],
             &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timers_schedule",
+            &[i64t, i64t, i64t, i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timers_cancel_schedule",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_timers_next_run",
+            &[i64t],
+            &[i64t],
         )?;
         declare(
             &mut self.module,
@@ -6597,6 +6650,13 @@ impl<'a> JitCompiler<'a> {
             }
             Expression::ForceUnwrap(unwrap) => {
                 self.scan_expression_for_spawns(unwrap.expr)?;
+            }
+            Expression::Catch(catch_expr) => {
+                self.scan_expression_for_spawns(catch_expr.expr)?;
+                self.scan_for_spawn_blocks_expr(catch_expr.handler)?;
+            }
+            Expression::Try(try_expr) => {
+                self.scan_expression_for_spawns(try_expr.expr)?;
             }
             _ => {}
         }

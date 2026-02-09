@@ -317,6 +317,19 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let schedule_error_name = self.interner.get_or_intern("ScheduleError");
+        self.symbols.define_type(
+            schedule_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: schedule_error_name,
+                fields: vec![
+                    (msg_name, Type::String),
+                ],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -2563,6 +2576,25 @@ impl<'a> TypeChecker<'a> {
                     Type::Int,
                 ),
                 StdModuleFn::new("cancel_interval", vec![("handle", Type::Int)], Type::Unit),
+                StdModuleFn::throwing(
+                    "schedule",
+                    vec![
+                        (
+                            "callback",
+                            Type::Function(types::FunctionType {
+                                params: vec![],
+                                returns: Box::new(Type::Unit),
+                                throws: vec![],
+                                is_variadic: false,
+                            }),
+                        ),
+                        ("cron_expr", Type::String),
+                    ],
+                    Type::Int,
+                    vec!["ScheduleError"],
+                ),
+                StdModuleFn::new("cancel_schedule", vec![("handle", Type::Int)], Type::Unit),
+                StdModuleFn::new("next_run", vec![("handle", Type::Int)], Type::Int),
             ]),
             "strings" => Some(vec![
                 StdModuleFn::new("len", vec![("s", Type::String)], Type::Int),

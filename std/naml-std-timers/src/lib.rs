@@ -26,6 +26,9 @@
 /// an `AtomicU64` counter. The cancel set uses `HashSet<u64>`.
 ///
 
+pub mod schedule;
+pub use schedule::*;
+
 use std::alloc::{Layout, alloc};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};

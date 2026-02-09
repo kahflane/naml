@@ -278,6 +278,7 @@ pub fn compile_expression(
                         "ProcessError" => Some(9i64),
                         "DBError" => Some(10i64),
                         "EncodeError" => Some(11i64),
+                        "ScheduleError" => Some(12i64),
                         _ => None,
                     };
 

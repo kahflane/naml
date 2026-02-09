@@ -728,6 +728,12 @@ pub enum BuiltinStrategy {
     TimerSetInterval,
     /// (handle) -> void
     TimerCancelInterval,
+    /// (callback, cron_expr) -> int handle throws ScheduleError
+    TimerSchedule,
+    /// (handle) -> void
+    TimerCancelSchedule,
+    /// (handle) -> int (epoch ms)
+    TimerNextRun,
 }
 
 /// Registry entry for a built-in function
@@ -2208,6 +2214,9 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "timers::cancel_timeout", strategy: BuiltinStrategy::TimerCancelTimeout },
         BuiltinFunction { name: "timers::set_interval", strategy: BuiltinStrategy::TimerSetInterval },
         BuiltinFunction { name: "timers::cancel_interval", strategy: BuiltinStrategy::TimerCancelInterval },
+        BuiltinFunction { name: "timers::schedule", strategy: BuiltinStrategy::TimerSchedule },
+        BuiltinFunction { name: "timers::cancel_schedule", strategy: BuiltinStrategy::TimerCancelSchedule },
+        BuiltinFunction { name: "timers::next_run", strategy: BuiltinStrategy::TimerNextRun },
     ];
     REGISTRY
 }
@@ -4834,6 +4843,30 @@ pub fn compile_builtin_call(
             let func_ref = rt_func_ref(ctx, builder, "naml_timers_cancel_interval")?;
             builder.ins().call(func_ref, &[handle]);
             Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::TimerSchedule => {
+            let closure = compile_expression(ctx, builder, &args[0])?;
+            let cron_expr = compile_expression(ctx, builder, &args[1])?;
+            let cron_expr = ensure_naml_string(ctx, builder, cron_expr, &args[1])?;
+            let func_ptr = builder.ins().load(types::I64, MemFlags::new(), closure, 0);
+            let data_ptr = builder.ins().load(types::I64, MemFlags::new(), closure, 8);
+            let data_size = builder.ins().load(types::I64, MemFlags::new(), closure, 16);
+            let func_ref = rt_func_ref(ctx, builder, "naml_timers_schedule")?;
+            let call = builder.ins().call(func_ref, &[func_ptr, data_ptr, data_size, cron_expr]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::TimerCancelSchedule => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_timers_cancel_schedule")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::TimerNextRun => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_timers_next_run", handle)
         }
     }
 }

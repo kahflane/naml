@@ -1,0 +1,129 @@
+use std::timers::*;
+use std::threads::{open_channel, send, receive, close, join, sleep};
+use std::datetime::{now_ms};
+
+fn report_result(name: string, actual: int, expected: int) {
+    if (actual == expected) {
+        println(fmt("  PASS: {} = {} (expected {})", name, actual, expected));
+    } else {
+        println(fmt("  FAIL: {} = {} (expected {})", name, actual, expected));
+    }
+}
+
+fn make_message(p: string, n: int) -> string {
+    return fmt("{}-{}", p, n);
+}
+
+fn main() {
+    println("=== Cron Scheduler Demo ===");
+
+    // Test 1: Schedule a job and verify it fires
+    println("\n--- Test 1: Schedule fires callback ---");
+    var ch1: channel<int> = open_channel(5);
+    var job1: int = schedule(fn() {
+        send(ch1, 42);
+    }, "* * * * * *") catch e {
+        println(fmt("  ERROR: {}", e.message));
+    };
+
+    if (job1 > 0) {
+        println(fmt("  Scheduled job handle: {}", job1));
+        sleep(1500);
+        join();
+        close(ch1);
+
+        var val: int = receive(ch1) ?? -1;
+        if (val == 42) {
+            println("  PASS: Cron callback fired with correct value");
+        } else {
+            println(fmt("  FAIL: Expected 42, got {}", val));
+        }
+        cancel_schedule(job1);
+    } else {
+        println("  FAIL: Could not schedule job");
+        close(ch1);
+    }
+
+    // Test 2: next_run returns future timestamp
+    println("\n--- Test 2: next_run returns future ---");
+    var job2: int = schedule(fn() {}, "* * * * *") catch e {
+        println(fmt("  ERROR: {}", e.message));
+    };
+
+    if (job2 > 0) {
+        var next: int = next_run(job2);
+        var now: int = now_ms();
+        if (next > now) {
+            println(fmt("  PASS: next_run={} > now={}", next, now));
+        } else {
+            println(fmt("  FAIL: next_run={} should be > now={}", next, now));
+        }
+        cancel_schedule(job2);
+    } else {
+        println("  FAIL: Could not schedule job");
+    }
+
+    // Test 3: Cancel stops the job
+    println("\n--- Test 3: Cancel stops job ---");
+    var ch3: channel<int> = open_channel(10);
+    var job3: int = schedule(fn() {
+        send(ch3, 1);
+    }, "* * * * * *") catch e {
+        println(fmt("  ERROR: {}", e.message));
+    };
+
+    if (job3 > 0) {
+        cancel_schedule(job3);
+        sleep(2000);
+        join();
+        close(ch3);
+
+        var cancelled_val: int = receive(ch3) ?? -1;
+        report_result("cancelled job value", cancelled_val, -1);
+
+        var next_after: int = next_run(job3);
+        report_result("next_run after cancel", next_after, 0);
+    } else {
+        println("  FAIL: Could not schedule job");
+        close(ch3);
+    }
+
+    // Test 4: Invalid cron expression throws ScheduleError
+    println("\n--- Test 4: Invalid cron throws ScheduleError ---");
+    var bad_job: int = schedule(fn() {}, "this is not a cron expression") catch e {
+        println(fmt("  PASS: Caught ScheduleError: {}", e.message));
+    };
+    report_result("bad job handle", bad_job, 0);
+
+    // Test 5: Callback with captured variables and function call
+    println("\n--- Test 5: Captured vars + function call ---");
+    var ch5: channel<string> = open_channel(5);
+    var prefix: string = "cron";
+    var count: int = 7;
+
+    var job5: int = schedule(fn() {
+        var msg: string = make_message(prefix, count);
+        send(ch5, msg);
+    }, "* * * * * *") catch e {
+        println(fmt("  ERROR: {}", e.message));
+    };
+
+    if (job5 > 0) {
+        sleep(1500);
+        join();
+        close(ch5);
+
+        var result: string = receive(ch5) ?? "none";
+        if (result == "cron-7") {
+            println("  PASS: Captured vars and function call work");
+        } else {
+            println(fmt("  FAIL: Expected 'cron-7', got '{}'", result));
+        }
+        cancel_schedule(job5);
+    } else {
+        println("  FAIL: Could not schedule job");
+        close(ch5);
+    }
+
+    println("\n=== All scheduler tests complete ===");
+}
