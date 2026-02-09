@@ -1,0 +1,62 @@
+---
+title: naml
+description: A fast, cross-platform programming language
+template: splash
+hero:
+  tagline: A fast, cross-platform programming language with zero-allocation design, deterministic memory management, and a rich standard library.
+  actions:
+    - text: Get Started
+      link: /guide/1-installation/
+      icon: right-arrow
+      variant: primary
+    - text: Language Reference
+      link: /language/1-types/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="Fast" icon="rocket">
+    Cranelift JIT compilation for instant execution. Native binaries with LTO for production.
+  </Card>
+  <Card title="Cross-Platform" icon="laptop">
+    Target native binaries, server-side WASM, or browser WASM from the same codebase.
+  </Card>
+  <Card title="Explicit Types" icon="document">
+    Required type annotations make code self-documenting. No guessing, no inference surprises.
+  </Card>
+  <Card title="Rich Standard Library" icon="open-book">
+    18 modules covering I/O, networking, databases, encoding, concurrency, and more.
+  </Card>
+</CardGrid>
+
+## Quick Example
+
+```naml
+use std::threads::*;
+
+struct Person {
+    name: string,
+    age: int
+}
+
+pub fn (self: Person) greet() -> string {
+    return fmt("Hello, I am {} (age {})", self.name, self.age);
+}
+
+fn main() {
+    var alice: Person = Person { name: "Alice", age: 30 };
+    println(alice.greet());
+
+    var ch: channel<string> = open_channel(1);
+    spawn {
+        send(ch, "world");
+    };
+    join();
+
+    var msg: string = receive(ch) ?? "nobody";
+    println("Hello, {}!", msg);
+    close(ch);
+}
+```
