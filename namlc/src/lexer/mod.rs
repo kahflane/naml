@@ -413,7 +413,7 @@ pub enum Keyword {
     Rwlock,
     Platforms,
     Native,
-    Server,
+    Edge,
     Browser,
     Type,
     Locked,
@@ -950,6 +950,7 @@ impl<'a, 'r> Lexer<'a, 'r> {
             0x65757274 => TokenKind::Keyword(Keyword::True), // "true"
             0x746E6975 => TokenKind::Keyword(Keyword::Uint), // "uint"
             0x65707974 => TokenKind::Keyword(Keyword::Type), // "type"
+            0x65676465 => TokenKind::Keyword(Keyword::Edge), // "edge"
             _ => TokenKind::Ident,
         }
     }
@@ -985,7 +986,7 @@ impl<'a, 'r> Lexer<'a, 'r> {
             (0x6F726874, 0x7377) => TokenKind::Keyword(Keyword::Throws), // "throws"
             (0x69727473, 0x676E) => TokenKind::Keyword(Keyword::String), // "string"
             (0x6974616E, 0x6576) => TokenKind::Keyword(Keyword::Native), // "native"
-            (0x76726573, 0x7265) => TokenKind::Keyword(Keyword::Server), // "server"
+
             (0x6974706F, 0x6E6F) => TokenKind::Keyword(Keyword::Option), // "option"
             (0x6B636F6C, 0x6465) => TokenKind::Keyword(Keyword::Locked), // "locked"
             (0x6F6C7772, 0x6B63) => TokenKind::Keyword(Keyword::Rwlock), // "rwlock"

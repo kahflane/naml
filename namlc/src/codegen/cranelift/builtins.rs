@@ -636,6 +636,32 @@ pub enum BuiltinStrategy {
     NetHttpBody,
 
     // ========================================
+    // HTTP Server strategies
+    // ========================================
+    /// () -> int (router handle)
+    NetHttpServerOpenRouter,
+    /// (router: int, pattern: string, handler: fn_ptr) -> unit
+    NetHttpServerGet,
+    /// (router: int, pattern: string, handler: fn_ptr) -> unit
+    NetHttpServerPost,
+    /// (router: int, pattern: string, handler: fn_ptr) -> unit
+    NetHttpServerPut,
+    /// (router: int, pattern: string, handler: fn_ptr) -> unit
+    NetHttpServerPatch,
+    /// (router: int, pattern: string, handler: fn_ptr) -> unit
+    NetHttpServerDelete,
+    /// (router: int, middleware: int) -> unit
+    NetHttpServerWith,
+    /// (router: int, prefix: string) -> int (group handle)
+    NetHttpServerGroup,
+    /// (router: int, prefix: string, sub_router: int) -> unit
+    NetHttpServerMount,
+    /// (address: string, router: int) -> unit throws NetworkError
+    NetHttpServerServe,
+    /// (status: int, body: string) -> int (response handle)
+    NetHttpServerTextResponse,
+
+    // ========================================
     // SQLite database strategies
     // ========================================
     /// (path: string) -> int throws DBError
@@ -2120,6 +2146,20 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
             name: "net::http::client::body",
             strategy: BuiltinStrategy::NetHttpBody,
         },
+        // ========================================
+        // HTTP Server module
+        // ========================================
+        BuiltinFunction { name: "net::http::server::open_router", strategy: BuiltinStrategy::NetHttpServerOpenRouter },
+        BuiltinFunction { name: "net::http::server::get", strategy: BuiltinStrategy::NetHttpServerGet },
+        BuiltinFunction { name: "net::http::server::post", strategy: BuiltinStrategy::NetHttpServerPost },
+        BuiltinFunction { name: "net::http::server::put", strategy: BuiltinStrategy::NetHttpServerPut },
+        BuiltinFunction { name: "net::http::server::patch", strategy: BuiltinStrategy::NetHttpServerPatch },
+        BuiltinFunction { name: "net::http::server::delete", strategy: BuiltinStrategy::NetHttpServerDelete },
+        BuiltinFunction { name: "net::http::server::with", strategy: BuiltinStrategy::NetHttpServerWith },
+        BuiltinFunction { name: "net::http::server::group", strategy: BuiltinStrategy::NetHttpServerGroup },
+        BuiltinFunction { name: "net::http::server::mount", strategy: BuiltinStrategy::NetHttpServerMount },
+        BuiltinFunction { name: "net::http::server::serve", strategy: BuiltinStrategy::NetHttpServerServe },
+        BuiltinFunction { name: "net::http::server::text_response", strategy: BuiltinStrategy::NetHttpServerTextResponse },
         // ========================================
         // SQLite database module
         // ========================================
@@ -4450,6 +4490,93 @@ pub fn compile_builtin_call(
                 "naml_net_http_response_get_body_bytes",
                 response,
             )
+        }
+
+        // ========================================
+        // HTTP Server strategies
+        // ========================================
+        BuiltinStrategy::NetHttpServerOpenRouter => {
+            call_int_runtime(ctx, builder, "naml_net_http_server_open_router")
+        }
+
+        BuiltinStrategy::NetHttpServerGet => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let pattern = compile_expression(ctx, builder, &args[1])?;
+            let pattern = ensure_naml_string(ctx, builder, pattern, &args[1])?;
+            let handler_closure = compile_expression(ctx, builder, &args[2])?;
+            let handler = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), handler_closure, 0);
+            call_three_arg_void_runtime(ctx, builder, "naml_net_http_server_get", router, pattern, handler)
+        }
+
+        BuiltinStrategy::NetHttpServerPost => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let pattern = compile_expression(ctx, builder, &args[1])?;
+            let pattern = ensure_naml_string(ctx, builder, pattern, &args[1])?;
+            let handler_closure = compile_expression(ctx, builder, &args[2])?;
+            let handler = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), handler_closure, 0);
+            call_three_arg_void_runtime(ctx, builder, "naml_net_http_server_post", router, pattern, handler)
+        }
+
+        BuiltinStrategy::NetHttpServerPut => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let pattern = compile_expression(ctx, builder, &args[1])?;
+            let pattern = ensure_naml_string(ctx, builder, pattern, &args[1])?;
+            let handler_closure = compile_expression(ctx, builder, &args[2])?;
+            let handler = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), handler_closure, 0);
+            call_three_arg_void_runtime(ctx, builder, "naml_net_http_server_put", router, pattern, handler)
+        }
+
+        BuiltinStrategy::NetHttpServerPatch => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let pattern = compile_expression(ctx, builder, &args[1])?;
+            let pattern = ensure_naml_string(ctx, builder, pattern, &args[1])?;
+            let handler_closure = compile_expression(ctx, builder, &args[2])?;
+            let handler = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), handler_closure, 0);
+            call_three_arg_void_runtime(ctx, builder, "naml_net_http_server_patch", router, pattern, handler)
+        }
+
+        BuiltinStrategy::NetHttpServerDelete => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let pattern = compile_expression(ctx, builder, &args[1])?;
+            let pattern = ensure_naml_string(ctx, builder, pattern, &args[1])?;
+            let handler_closure = compile_expression(ctx, builder, &args[2])?;
+            let handler = builder.ins().load(cranelift::prelude::types::I64, MemFlags::new(), handler_closure, 0);
+            call_three_arg_void_runtime(ctx, builder, "naml_net_http_server_delete", router, pattern, handler)
+        }
+
+        BuiltinStrategy::NetHttpServerWith => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let middleware = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_runtime(ctx, builder, "naml_net_http_server_with", router, middleware)
+        }
+
+        BuiltinStrategy::NetHttpServerGroup => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let prefix = compile_expression(ctx, builder, &args[1])?;
+            let prefix = ensure_naml_string(ctx, builder, prefix, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_net_http_server_group", router, prefix)
+        }
+
+        BuiltinStrategy::NetHttpServerMount => {
+            let router = compile_expression(ctx, builder, &args[0])?;
+            let prefix = compile_expression(ctx, builder, &args[1])?;
+            let prefix = ensure_naml_string(ctx, builder, prefix, &args[1])?;
+            let sub_router = compile_expression(ctx, builder, &args[2])?;
+            call_three_arg_void_runtime(ctx, builder, "naml_net_http_server_mount", router, prefix, sub_router)
+        }
+
+        BuiltinStrategy::NetHttpServerServe => {
+            let addr = compile_expression(ctx, builder, &args[0])?;
+            let addr = ensure_naml_string(ctx, builder, addr, &args[0])?;
+            let router = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_runtime(ctx, builder, "naml_net_http_server_serve", addr, router)
+        }
+
+        BuiltinStrategy::NetHttpServerTextResponse => {
+            let status = compile_expression(ctx, builder, &args[0])?;
+            let body = compile_expression(ctx, builder, &args[1])?;
+            let body = ensure_naml_string(ctx, builder, body, &args[1])?;
+            call_two_arg_int_runtime(ctx, builder, "naml_net_http_server_text_response", status, body)
         }
 
         // ========================================

@@ -68,10 +68,10 @@ fn parse_platforms_attr<'a>(input: TokenStream<'a>) -> PResult<'a, Option<Platfo
             let (new_input, _) = keyword(Keyword::Native)(input)?;
             input = new_input;
             Platform::Native
-        } else if check_keyword(Keyword::Server)(input) {
-            let (new_input, _) = keyword(Keyword::Server)(input)?;
+        } else if check_keyword(Keyword::Edge)(input) {
+            let (new_input, _) = keyword(Keyword::Edge)(input)?;
             input = new_input;
-            Platform::Server
+            Platform::Edge
         } else if check_keyword(Keyword::Browser)(input) {
             let (new_input, _) = keyword(Keyword::Browser)(input)?;
             input = new_input;

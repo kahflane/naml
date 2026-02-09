@@ -15,7 +15,7 @@
 //! - ExternItem: External function declarations
 //!
 //! Platform annotations:
-//! - Functions can be marked with #[platforms(native, server, browser)]
+//! - Functions can be marked with #[platforms(native, edge, browser)]
 //! - Platform-specific implementations are handled at codegen time
 //!
 
@@ -63,7 +63,7 @@ pub struct TopLevelStmtItem<'ast> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
     Native,
-    Server,
+    Edge,
     Browser,
     All,
 }

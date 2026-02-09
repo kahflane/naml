@@ -2214,7 +2214,12 @@ impl<'a> TypeChecker<'a> {
                 vec![
                     ("router", Type::Int),
                     ("pattern", Type::String),
-                    ("handler", Type::Int),
+                    ("handler", Type::Function(types::FunctionType {
+                        params: vec![Type::Int],
+                        returns: Box::new(Type::Int),
+                        throws: vec![],
+                        is_variadic: false,
+                    })),
                 ],
                 Type::Unit,
             ),
@@ -2223,7 +2228,12 @@ impl<'a> TypeChecker<'a> {
                 vec![
                     ("router", Type::Int),
                     ("pattern", Type::String),
-                    ("handler", Type::Int),
+                    ("handler", Type::Function(types::FunctionType {
+                        params: vec![Type::Int],
+                        returns: Box::new(Type::Int),
+                        throws: vec![],
+                        is_variadic: false,
+                    })),
                 ],
                 Type::Unit,
             ),
@@ -2232,7 +2242,12 @@ impl<'a> TypeChecker<'a> {
                 vec![
                     ("router", Type::Int),
                     ("pattern", Type::String),
-                    ("handler", Type::Int),
+                    ("handler", Type::Function(types::FunctionType {
+                        params: vec![Type::Int],
+                        returns: Box::new(Type::Int),
+                        throws: vec![],
+                        is_variadic: false,
+                    })),
                 ],
                 Type::Unit,
             ),
@@ -2241,7 +2256,12 @@ impl<'a> TypeChecker<'a> {
                 vec![
                     ("router", Type::Int),
                     ("pattern", Type::String),
-                    ("handler", Type::Int),
+                    ("handler", Type::Function(types::FunctionType {
+                        params: vec![Type::Int],
+                        returns: Box::new(Type::Int),
+                        throws: vec![],
+                        is_variadic: false,
+                    })),
                 ],
                 Type::Unit,
             ),
@@ -2250,7 +2270,12 @@ impl<'a> TypeChecker<'a> {
                 vec![
                     ("router", Type::Int),
                     ("pattern", Type::String),
-                    ("handler", Type::Int),
+                    ("handler", Type::Function(types::FunctionType {
+                        params: vec![Type::Int],
+                        returns: Box::new(Type::Int),
+                        throws: vec![],
+                        is_variadic: false,
+                    })),
                 ],
                 Type::Unit,
             ),
@@ -2278,6 +2303,11 @@ impl<'a> TypeChecker<'a> {
                 vec![("address", Type::String), ("router", Type::Int)],
                 Type::Unit,
                 vec!["NetworkError"],
+            ),
+            StdModuleFn::new(
+                "text_response",
+                vec![("status", Type::Int), ("body", Type::String)],
+                Type::Int,
             ),
         ]
     }
@@ -2904,7 +2934,7 @@ impl<'a> TypeChecker<'a> {
             "net::tcp::listener" => Some(Self::get_net_tcp_server_functions()),
             "net::tcp::client" => Some(Self::get_net_tcp_client_functions()),
             "net::http::client" => Some(Self::get_net_http_client_functions()),
-            "net::http::serve" => Some(Self::get_net_http_server_functions()),
+            "net::http::server" => Some(Self::get_net_http_server_functions()),
             "net::http::middleware" => Some(Self::get_net_http_middleware_functions()),
             "db" => Some(vec![]),
             "db::sqlite" => Some(Self::get_db_sqlite_functions()),

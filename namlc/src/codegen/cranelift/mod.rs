@@ -2004,6 +2004,10 @@ impl<'a> JitCompiler<'a> {
             "naml_net_http_server_serve",
             crate::runtime::naml_net_http_server_serve as *const u8,
         );
+        builder.symbol(
+            "naml_net_http_server_text_response",
+            crate::runtime::naml_net_http_server_text_response as *const u8,
+        );
 
         // HTTP Middleware
         builder.symbol(
@@ -5435,6 +5439,13 @@ impl<'a> JitCompiler<'a> {
             "naml_net_http_server_serve",
             &[ptr, i64t],
             &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_text_response",
+            &[i64t, ptr],
+            &[ptr],
         )?;
 
         // HTTP Middleware

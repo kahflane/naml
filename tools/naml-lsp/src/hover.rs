@@ -59,8 +59,6 @@ impl DocumentAnalysis {
             "warn" => Some("fn warn(args: ...any)"),
             "error" => Some("fn error(args: ...any)"),
             "panic" => Some("fn panic(args: ...any)"),
-            "read_line" => Some("fn read_line() -> string"),
-            "sleep" => Some("fn sleep(ms: int)"),
             _ => None,
         };
 

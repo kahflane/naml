@@ -40,7 +40,7 @@ use naml_std_core::{NamlString, NamlStruct};
 
 use super::types::{
     naml_net_http_request_new, naml_net_http_request_set_body, naml_net_http_request_set_method,
-    naml_net_http_request_set_path, naml_net_http_response_get_body,
+    naml_net_http_request_set_path, naml_net_http_response_create, naml_net_http_response_get_body,
     naml_net_http_response_get_status, vec_to_array,
 };
 use crate::errors::{string_from_naml, throw_network_error};
@@ -533,6 +533,20 @@ unsafe fn create_naml_request(
         naml_net_http_request_set_body(request, body_arr);
 
         request
+    }
+}
+
+/// Create a text/JSON response from a status code and string body
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_net_http_server_text_response(
+    status: i64,
+    body: *const NamlString,
+) -> *mut NamlStruct {
+    unsafe {
+        let body_str = crate::errors::string_from_naml(body);
+        let body_bytes = body_str.as_bytes();
+        let body_arr = vec_to_array(body_bytes);
+        naml_net_http_response_create(status, 0, body_arr)
     }
 }
 
