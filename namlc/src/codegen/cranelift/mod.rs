@@ -5903,48 +5903,131 @@ impl<'a> JitCompiler<'a> {
                 builder.switch_to_block(decref_field_block);
                 builder.seal_block(decref_field_block);
 
-                let decref_func_name: String = match ht {
-                    HeapType::String => "naml_string_decref".to_string(),
-                    HeapType::Array(None) => "naml_array_decref".to_string(),
-                    HeapType::Array(Some(elem_type)) => match elem_type.as_ref() {
-                        HeapType::String => "naml_array_decref_strings".to_string(),
-                        HeapType::Array(_) => "naml_array_decref_arrays".to_string(),
-                        HeapType::Map(_) => "naml_array_decref_maps".to_string(),
-                        HeapType::Struct(_) => "naml_array_decref_structs".to_string(),
-                    },
-                    HeapType::Map(None) => "naml_map_decref".to_string(),
-                    HeapType::Map(Some(val_type)) => match val_type.as_ref() {
-                        HeapType::String => "naml_map_decref_strings".to_string(),
-                        HeapType::Array(_) => "naml_map_decref_arrays".to_string(),
-                        HeapType::Map(_) => "naml_map_decref_maps".to_string(),
-                        HeapType::Struct(_) => "naml_map_decref_structs".to_string(),
-                    },
-                    HeapType::Struct(None) => "naml_struct_decref".to_string(),
-                    HeapType::Struct(Some(field_struct_name)) => {
-                        if struct_has_heap_fields(&self.struct_defs, field_struct_name) {
-                            format!("naml_struct_decref_{}", field_struct_name)
-                        } else {
-                            "naml_struct_decref".to_string()
-                        }
-                    }
-                };
+                if let HeapType::OptionOf(inner) = ht {
+                    let tag = builder.ins().load(
+                        cranelift::prelude::types::I32,
+                        MemFlags::new(),
+                        field_val,
+                        0,
+                    );
+                    let is_some =
+                        builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
+                    let inner_decref_block = builder.create_block();
+                    builder.ins().brif(
+                        is_some,
+                        inner_decref_block,
+                        &[],
+                        next_field_block,
+                        &[],
+                    );
 
-                let decref_func_id = self
-                    .runtime_funcs
-                    .get(decref_func_name.as_str())
-                    .or_else(|| self.functions.get(decref_func_name.as_str()))
-                    .copied()
-                    .ok_or_else(|| {
-                        CodegenError::JitCompile(format!(
-                            "Unknown decref function: {}",
-                            decref_func_name
-                        ))
-                    })?;
-                let decref_func_ref = self
-                    .module
-                    .declare_func_in_func(decref_func_id, builder.func);
-                builder.ins().call(decref_func_ref, &[field_val]);
-                builder.ins().jump(next_field_block, &[]);
+                    builder.switch_to_block(inner_decref_block);
+                    builder.seal_block(inner_decref_block);
+
+                    let inner_val = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        field_val,
+                        8,
+                    );
+
+                    let inner_func_name: String = match inner.as_ref() {
+                        HeapType::String => "naml_string_decref".to_string(),
+                        HeapType::Array(_) => "naml_array_decref".to_string(),
+                        HeapType::Map(_) => "naml_map_decref".to_string(),
+                        HeapType::Struct(None) => "naml_struct_decref".to_string(),
+                        HeapType::Struct(Some(name)) => {
+                            if struct_has_heap_fields(&self.struct_defs, name) {
+                                format!("naml_struct_decref_{}", name)
+                            } else {
+                                "naml_struct_decref".to_string()
+                            }
+                        }
+                        HeapType::OptionOf(_) => "naml_struct_decref".to_string(),
+                    };
+
+                    let inner_func_id = self
+                        .runtime_funcs
+                        .get(inner_func_name.as_str())
+                        .or_else(|| self.functions.get(inner_func_name.as_str()))
+                        .copied()
+                        .ok_or_else(|| {
+                            CodegenError::JitCompile(format!(
+                                "Unknown decref function: {}",
+                                inner_func_name
+                            ))
+                        })?;
+
+                    let inner_zero = builder.ins().iconst(
+                        self.module.target_config().pointer_type(),
+                        0,
+                    );
+                    let inner_is_null =
+                        builder.ins().icmp(IntCC::Equal, inner_val, inner_zero);
+                    let call_inner_block = builder.create_block();
+                    builder.ins().brif(
+                        inner_is_null,
+                        next_field_block,
+                        &[],
+                        call_inner_block,
+                        &[],
+                    );
+
+                    builder.switch_to_block(call_inner_block);
+                    builder.seal_block(call_inner_block);
+
+                    let inner_func_ref = self
+                        .module
+                        .declare_func_in_func(inner_func_id, builder.func);
+                    builder.ins().call(inner_func_ref, &[inner_val]);
+                    builder.ins().jump(next_field_block, &[]);
+                } else {
+                    let decref_func_name: String = match ht {
+                        HeapType::String => "naml_string_decref".to_string(),
+                        HeapType::Array(None) => "naml_array_decref".to_string(),
+                        HeapType::Array(Some(elem_type)) => match elem_type.as_ref() {
+                            HeapType::String => "naml_array_decref_strings".to_string(),
+                            HeapType::Array(_) => "naml_array_decref_arrays".to_string(),
+                            HeapType::Map(_) => "naml_array_decref_maps".to_string(),
+                            HeapType::Struct(_) => "naml_array_decref_structs".to_string(),
+                            HeapType::OptionOf(_) => "naml_array_decref".to_string(),
+                        },
+                        HeapType::Map(None) => "naml_map_decref".to_string(),
+                        HeapType::Map(Some(val_type)) => match val_type.as_ref() {
+                            HeapType::String => "naml_map_decref_strings".to_string(),
+                            HeapType::Array(_) => "naml_map_decref_arrays".to_string(),
+                            HeapType::Map(_) => "naml_map_decref_maps".to_string(),
+                            HeapType::Struct(_) => "naml_map_decref_structs".to_string(),
+                            HeapType::OptionOf(_) => "naml_map_decref".to_string(),
+                        },
+                        HeapType::Struct(None) => "naml_struct_decref".to_string(),
+                        HeapType::Struct(Some(field_struct_name)) => {
+                            if struct_has_heap_fields(&self.struct_defs, field_struct_name) {
+                                format!("naml_struct_decref_{}", field_struct_name)
+                            } else {
+                                "naml_struct_decref".to_string()
+                            }
+                        }
+                        HeapType::OptionOf(_) => unreachable!("OptionOf handled above"),
+                    };
+
+                    let decref_func_id = self
+                        .runtime_funcs
+                        .get(decref_func_name.as_str())
+                        .or_else(|| self.functions.get(decref_func_name.as_str()))
+                        .copied()
+                        .ok_or_else(|| {
+                            CodegenError::JitCompile(format!(
+                                "Unknown decref function: {}",
+                                decref_func_name
+                            ))
+                        })?;
+                    let decref_func_ref = self
+                        .module
+                        .declare_func_in_func(decref_func_id, builder.func);
+                    builder.ins().call(decref_func_ref, &[field_val]);
+                    builder.ins().jump(next_field_block, &[]);
+                }
 
                 builder.switch_to_block(next_field_block);
                 builder.seal_block(next_field_block);

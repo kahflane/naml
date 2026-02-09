@@ -29,6 +29,42 @@ pub fn emit_incref(
     val: Value,
     heap_type: &HeapType,
 ) -> Result<(), CodegenError> {
+    if let HeapType::OptionOf(inner) = heap_type {
+        let tag = builder.ins().load(
+            cranelift::prelude::types::I32,
+            MemFlags::new(),
+            val,
+            0,
+        );
+        let is_some = builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
+
+        let some_block = builder.create_block();
+        let merge_block = builder.create_block();
+
+        builder
+            .ins()
+            .brif(is_some, some_block, &[], merge_block, &[]);
+
+        builder.switch_to_block(some_block);
+        builder.seal_block(some_block);
+
+        let inner_val = builder.ins().load(
+            cranelift::prelude::types::I64,
+            MemFlags::new(),
+            val,
+            8,
+        );
+
+        emit_incref(ctx, builder, inner_val, inner)?;
+
+        builder.ins().jump(merge_block, &[]);
+
+        builder.switch_to_block(merge_block);
+        builder.seal_block(merge_block);
+
+        return Ok(());
+    }
+
     if ctx.unsafe_mode && matches!(heap_type, HeapType::Struct(_)) {
         let zero = builder
             .ins()
@@ -64,6 +100,7 @@ pub fn emit_incref(
         HeapType::Array(_) => "naml_array_incref",
         HeapType::Map(_) => "naml_map_incref",
         HeapType::Struct(_) => "naml_struct_incref",
+        HeapType::OptionOf(_) => unreachable!("OptionOf handled above"),
     };
 
     let func_ref = rt_func_ref(ctx, builder, func_name)?;
@@ -96,6 +133,42 @@ pub fn emit_decref(
     val: Value,
     heap_type: &HeapType,
 ) -> Result<(), CodegenError> {
+    if let HeapType::OptionOf(inner) = heap_type {
+        let tag = builder.ins().load(
+            cranelift::prelude::types::I32,
+            MemFlags::new(),
+            val,
+            0,
+        );
+        let is_some = builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
+
+        let some_block = builder.create_block();
+        let merge_block = builder.create_block();
+
+        builder
+            .ins()
+            .brif(is_some, some_block, &[], merge_block, &[]);
+
+        builder.switch_to_block(some_block);
+        builder.seal_block(some_block);
+
+        let inner_val = builder.ins().load(
+            cranelift::prelude::types::I64,
+            MemFlags::new(),
+            val,
+            8,
+        );
+
+        emit_decref(ctx, builder, inner_val, inner)?;
+
+        builder.ins().jump(merge_block, &[]);
+
+        builder.switch_to_block(merge_block);
+        builder.seal_block(merge_block);
+
+        return Ok(());
+    }
+
     let func_name: String = match heap_type {
         HeapType::String => "naml_string_decref".to_string(),
         HeapType::Array(None) => "naml_array_decref".to_string(),
@@ -104,6 +177,7 @@ pub fn emit_decref(
             HeapType::Array(_) => "naml_array_decref_arrays".to_string(),
             HeapType::Map(_) => "naml_array_decref_maps".to_string(),
             HeapType::Struct(_) => "naml_array_decref_structs".to_string(),
+            HeapType::OptionOf(_) => "naml_array_decref".to_string(),
         },
         HeapType::Map(None) => "naml_map_decref".to_string(),
         HeapType::Map(Some(val_type)) => match val_type.as_ref() {
@@ -111,6 +185,7 @@ pub fn emit_decref(
             HeapType::Array(_) => "naml_map_decref_arrays".to_string(),
             HeapType::Map(_) => "naml_map_decref_maps".to_string(),
             HeapType::Struct(_) => "naml_map_decref_structs".to_string(),
+            HeapType::OptionOf(_) => "naml_map_decref".to_string(),
         },
         HeapType::Struct(None) => {
             if ctx.unsafe_mode {
@@ -128,6 +203,7 @@ pub fn emit_decref(
                 "naml_struct_decref".to_string()
             }
         }
+        HeapType::OptionOf(_) => unreachable!("OptionOf handled above"),
     };
 
     let has_heap_fields = match heap_type {

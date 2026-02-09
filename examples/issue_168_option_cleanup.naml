@@ -1,0 +1,39 @@
+struct Point {
+    x: int,
+    y: int,
+}
+
+fn main() {
+    println("=== option string some ===");
+    var s: option<string> = some("hello");
+    println(s!);
+
+    println("=== option string none ===");
+    var s2: option<string> = none;
+    println(s2 ?? "default");
+
+    println("=== option string reassign ===");
+    var s3: option<string> = some("first");
+    s3 = some("second");
+    println(s3!);
+
+    println("=== option int ===");
+    var n: option<int> = some(42);
+    println(n!);
+
+    println("=== option struct ===");
+    var p: Point = Point { x: 42, y: 99 };
+    var opt_p: option<Point> = some(p);
+    var unwrapped: Point = opt_p!;
+    println(fmt("point: ({}, {})", unwrapped.x, unwrapped.y));
+
+    println("=== option in loop ===");
+    var i: int = 0;
+    while (i < 3) {
+        var loop_opt: option<string> = some(fmt("iter {}", i));
+        println(loop_opt!);
+        i = i + 1;
+    }
+
+    println("=== all tests passed ===");
+}

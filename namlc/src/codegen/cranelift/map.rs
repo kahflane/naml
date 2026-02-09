@@ -69,6 +69,7 @@ pub fn call_map_set_typed(
         Some(HeapType::Array(_)) => "naml_map_set_array",
         Some(HeapType::Map(_)) => "naml_map_set_map",
         Some(HeapType::Struct(_)) => "naml_map_set_struct",
+        Some(HeapType::OptionOf(_)) => "naml_map_set",
         None => "naml_map_set",
     };
 

@@ -1137,7 +1137,17 @@ pub fn compile_expression(
         }
 
         Expression::Some(some_expr) => {
-            let inner_val = compile_expression(ctx, builder, some_expr.value)?;
+            let mut inner_val = compile_expression(ctx, builder, some_expr.value)?;
+
+            if matches!(
+                some_expr.value,
+                Expression::Literal(LiteralExpr {
+                    value: Literal::String(_),
+                    ..
+                })
+            ) {
+                inner_val = call_string_from_cstr(ctx, builder, inner_val)?;
+            }
 
             // Allocate option on stack
             let slot = builder.create_sized_stack_slot(StackSlotData::new(

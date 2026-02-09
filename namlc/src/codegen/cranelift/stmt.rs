@@ -154,7 +154,7 @@ pub fn compile_statement(
                 // function call) which already have refcount=1.
                 if ctx.inline_depth == 0 {
                     let is_fresh_value = matches!(init,
-                        Expression::StructLiteral(_) | Expression::Call(_)
+                        Expression::StructLiteral(_) | Expression::Call(_) | Expression::Some(_)
                     );
                     if !is_fresh_value {
                         let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
