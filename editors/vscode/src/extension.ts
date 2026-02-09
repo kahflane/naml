@@ -67,7 +67,7 @@ export function activate(context: ExtensionContext) {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', language: 'naml' }],
     synchronize: {
-      fileEvents: workspace.createFileSystemWatcher('**/*.naml')
+      fileEvents: workspace.createFileSystemWatcher('**/*.nm')
     },
     outputChannelName: 'naml Language Server'
   };

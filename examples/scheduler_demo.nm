@@ -14,14 +14,18 @@ fn make_message(p: string, n: int) -> string {
     return fmt("{}-{}", p, n);
 }
 
+fn handle(ch1: channel<int>, num: int) {
+    send(ch1, num);
+}
+
 fn main() {
     println("=== Cron Scheduler Demo ===");
 
     // Test 1: Schedule a job and verify it fires
     println("\n--- Test 1: Schedule fires callback ---");
     var ch1: channel<int> = open_channel(5);
-    var job1: int = schedule(fn() {
-        send(ch1, 42);
+    var job1: int = schedule(fn () {
+        handle(ch1, 42);
     }, "* * * * * *") catch e {
         println(fmt("  ERROR: {}", e.message));
     };

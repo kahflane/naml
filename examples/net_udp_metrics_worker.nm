@@ -9,7 +9,7 @@
 ///
 /// Protocol: worker_id|metric_value (e.g., "1|42")
 ///
-/// Usage: First start net_udp_metrics_server.naml, then run this worker
+/// Usage: First start net_udp_metrics_server.nm, then run this worker
 ///
 
 use std::threads::{join, with_mutex};

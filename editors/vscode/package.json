@@ -28,7 +28,7 @@
           "Naml"
         ],
         "extensions": [
-          ".naml"
+          ".nm"
         ],
         "configuration": "./language-configuration.json"
       }

@@ -191,7 +191,7 @@ fn check_directory(path: &std::path::Path) {
         .filter_map(|e| e.ok())
     {
         let file_path = entry.path();
-        if file_path.extension().map(|e| e == "naml").unwrap_or(false) {
+        if file_path.extension().map(|e| e == "nm").unwrap_or(false) {
             let source_text = match std::fs::read_to_string(file_path) {
                 Ok(s) => s,
                 Err(e) => {

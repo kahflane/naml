@@ -510,12 +510,12 @@ impl<'a> TypeChecker<'a> {
 
         let mut file_path = source_dir.clone();
         file_path.push(&name_str);
-        file_path.set_extension("naml");
+        file_path.set_extension("nm");
 
         if !file_path.exists() {
             file_path = source_dir;
             file_path.push(&name_str);
-            file_path.push("mod.naml");
+            file_path.push("mod.nm");
         }
 
         if !file_path.exists() {
@@ -3164,7 +3164,7 @@ impl<'a> TypeChecker<'a> {
         for segment in path {
             file_path.push(segment);
         }
-        file_path.set_extension("naml");
+        file_path.set_extension("nm");
 
         let source_text = match std::fs::read_to_string(&file_path) {
             Ok(s) => s,

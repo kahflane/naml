@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_source_file_line_col() {
         let source = "fn main() {\n    return 42;\n}";
-        let sf = SourceFile::new("test.naml", source);
+        let sf = SourceFile::new("test.nm", source);
 
         assert_eq!(sf.line_col(0), (1, 1));
         assert_eq!(sf.line_col(3), (1, 4));
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn test_source_file_line_text() {
         let source = "line one\nline two\nline three";
-        let sf = SourceFile::new("test.naml", source);
+        let sf = SourceFile::new("test.nm", source);
 
         assert_eq!(sf.line_text(1), Some("line one"));
         assert_eq!(sf.line_text(2), Some("line two"));
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn test_source_file_span_text() {
         let source = "fn main() { return 42; }";
-        let sf = SourceFile::new("test.naml", source);
+        let sf = SourceFile::new("test.nm", source);
         let span = Span::new(3, 7, 0);
         assert_eq!(sf.span_text(span), "main");
     }

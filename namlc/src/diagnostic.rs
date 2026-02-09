@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_diagnostic_from_parse_error() {
-        let source = SourceFile::new("test.naml", "fn main() { }");
+        let source = SourceFile::new("test.nm", "fn main() { }");
         let err = ParseError {
             message: "unexpected token".to_string(),
             span: Span::new(3, 7, 0),
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_diagnostic_from_type_error() {
-        let source = SourceFile::new("test.naml", "var x: int = true;");
+        let source = SourceFile::new("test.nm", "var x: int = true;");
         let err = TypeError::TypeMismatch {
             expected: "int".to_string(),
             found: "bool".to_string(),

@@ -46,7 +46,7 @@ use crate::ast::{Expression, FunctionItem, Item, SourceFile, Statement};
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::errors::convert_cranelift_error;
 use crate::codegen::cranelift::expr::compile_expression;
-use crate::codegen::cranelift::heap::{HeapType, get_heap_type, get_heap_type_resolved, heap_type_from_type};
+use crate::codegen::cranelift::heap::{HeapType, get_heap_type_resolved, heap_type_from_type};
 use crate::codegen::cranelift::structs::struct_has_heap_fields;
 use crate::codegen::cranelift::map::call_map_set;
 use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_stack_pop, emit_stack_push};
@@ -7525,7 +7525,7 @@ impl<'a> JitCompiler<'a> {
                 })
                 .collect();
 
-            for (var_name, data_id, cl_type, init_expr_ptr) in global_init_info {
+            for (var_name, data_id, _cl_type, init_expr_ptr) in global_init_info {
                 // SAFETY: the expression pointer is valid for the lifetime of compilation
                 let init_expr: &Expression<'_> = unsafe { &*init_expr_ptr };
 

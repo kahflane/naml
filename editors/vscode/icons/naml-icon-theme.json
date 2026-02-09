@@ -5,7 +5,7 @@
     }
   },
   "fileExtensions": {
-    "naml": "_naml_file"
+    "nm": "_naml_file"
   },
   "languageIds": {
     "naml": "_naml_file"

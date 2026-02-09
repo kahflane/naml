@@ -6,7 +6,7 @@
 /// - Receives and displays responses
 /// - Tests the full round-trip communication
 ///
-/// Usage: First start net_tcp_chat_server.naml, then run this client
+/// Usage: First start net_tcp_chat_server.nm, then run this client
 ///
 
 use std::threads::{join, with_mutex};

@@ -9,7 +9,7 @@
 ///
 /// Protocol: worker_id|metric_value (e.g., "1|42")
 ///
-/// Usage: Run this server, then run net_udp_metrics_worker.naml
+/// Usage: Run this server, then run net_udp_metrics_worker.nm
 ///
 
 use std::threads::{join, with_rwlock};
@@ -34,7 +34,7 @@ fn main() {
 
     var addr: string = local_addr(socket);
     println(fmt("Metrics server listening on {}", addr));
-    println("Waiting for metrics... (Run net_udp_metrics_worker.naml)");
+    println("Waiting for metrics... (Run net_udp_metrics_worker.nm)");
     println("");
 
     // Spawn stats printer thread
