@@ -276,6 +276,7 @@ pub fn compile_expression(
                         "EnvError" => Some(7i64),
                         "OSError" => Some(8i64),
                         "ProcessError" => Some(9i64),
+                        "EncodeError" => Some(11i64),
                         _ => None,
                     };
 
@@ -743,15 +744,19 @@ pub fn compile_expression(
             // Check if this is JSON indexing
             let base_type = ctx.annotations.get_type(index_expr.base.span());
             if matches!(base_type, Some(Type::Json)) {
-                // JSON indexing: data["key"] or data[0]
-                if let Expression::Literal(LiteralExpr {
-                    value: Literal::String(_),
-                    ..
-                }) = index_expr.index
-                {
-                    // String key access: json["key"]
-                    let cstr_ptr = compile_expression(ctx, builder, index_expr.index)?;
-                    let naml_str = call_string_from_cstr(ctx, builder, cstr_ptr)?;
+                let index_type = ctx.annotations.get_type(index_expr.index.span());
+                if matches!(index_type, Some(Type::String)) {
+                    // String key access: json["key"] or json[string_var]
+                    let index_val = compile_expression(ctx, builder, index_expr.index)?;
+                    let naml_str = if let Expression::Literal(LiteralExpr {
+                        value: Literal::String(_),
+                        ..
+                    }) = index_expr.index
+                    {
+                        call_string_from_cstr(ctx, builder, index_val)?
+                    } else {
+                        index_val
+                    };
                     let func_ref = rt_func_ref(ctx, builder, "naml_json_index_string")?;
                     let call = builder.ins().call(func_ref, &[base, naml_str]);
                     return Ok(builder.inst_results(call)[0]);

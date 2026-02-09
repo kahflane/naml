@@ -1810,6 +1810,34 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_path_error_new as *const u8,
         );
 
+        // TOML encoding operations (from naml-std-encoding)
+        builder.symbol(
+            "naml_encoding_toml_decode",
+            crate::runtime::naml_encoding_toml_decode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_toml_encode",
+            crate::runtime::naml_encoding_toml_encode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_toml_encode_pretty",
+            crate::runtime::naml_encoding_toml_encode_pretty as *const u8,
+        );
+        builder.symbol(
+            "naml_encode_error_new",
+            crate::runtime::naml_encode_error_new as *const u8,
+        );
+
+        // YAML encoding operations (from naml-std-encoding)
+        builder.symbol(
+            "naml_encoding_yaml_decode",
+            crate::runtime::naml_encoding_yaml_decode as *const u8,
+        );
+        builder.symbol(
+            "naml_encoding_yaml_encode",
+            crate::runtime::naml_encoding_yaml_encode as *const u8,
+        );
+
         // Networking operations (from naml-std-net)
         // Exception constructors
         builder.symbol(
@@ -2124,6 +2152,16 @@ impl<'a> JitCompiler<'a> {
                 type_id: 0xFFFF_0009,
                 fields: vec!["message".to_string(), "code".to_string()],
                 field_heap_types: vec![Some(HeapType::String), None],
+            },
+        );
+
+        self.exception_names.insert("EncodeError".to_string());
+        self.struct_defs.insert(
+            "EncodeError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_000B,
+                fields: vec!["message".to_string()],
+                field_heap_types: vec![Some(HeapType::String)],
             },
         );
     }
@@ -4903,6 +4941,52 @@ impl<'a> JitCompiler<'a> {
             "naml_path_error_new",
             &[ptr],
             &[ptr],
+        )?;
+
+        // TOML encoding operations
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_toml_decode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_toml_encode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_toml_encode_pretty",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encode_error_new",
+            &[ptr],
+            &[ptr],
+        )?;
+
+        // YAML encoding operations
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_yaml_decode",
+            &[ptr, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_encoding_yaml_encode",
+            &[ptr, ptr, ptr],
+            &[],
         )?;
 
         // Datetime operations

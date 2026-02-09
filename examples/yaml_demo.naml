@@ -1,0 +1,221 @@
+///
+/// YAML Demo - Complex test exercising decode, encode, error handling,
+/// interop with json query functions, roundtrip verification, and cross-format conversion.
+///
+/// Tests YAML-specific features: null handling, nested mappings, sequences,
+/// mixed types, and YAML → json → TOML conversion.
+///
+
+use std::encoding::*;
+use std::strings::*;
+use std::testing::*;
+
+fn get_nested_value(data: json, key1: string, key2: string) -> string {
+    var section: json = data[key1];
+    var value: json = section[key2];
+    if (value is json_string) {
+        return value as string;
+    }
+    if (value is json_number) {
+        return fmt("{}", value as int);
+    }
+    return "null";
+}
+
+fn count_sequence_items(data: json, key: string) -> int {
+    var seq: json = data[key];
+    return json::count(seq);
+}
+
+fn sum_scores(players: json) -> int {
+    var total: int = 0;
+    var count: int = json::count(players);
+    var i: int = 0;
+    while (i < count) {
+        var player: json = players[i];
+        var score: json = player["score"];
+        if (score is json_number) {
+            total = total + (score as int);
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+fn main() {
+    println("=== YAML Encoding Demo ===");
+    println("");
+
+    // Test 1: Basic YAML decode → json, then query
+    println("Test 1: Decode YAML and query with json functions");
+    var yaml_str: string = "name: my-service\nversion: 2.1.0\nport: 8080\ndebug: true\ntags:\n  - web\n  - api\n  - production\n";
+
+    var data: json = yaml::decode(yaml_str) catch e {
+        println("FAIL: yaml::decode failed");
+    };
+
+    var name: json = data["name"];
+    assert_true(name is json_string, "name should be string");
+    assert_eq_string(name as string, "my-service", "name should be my-service");
+    println(fmt("  Name: {}", name as string));
+
+    var port: json = data["port"];
+    assert_true(port is json_number, "port should be number");
+    assert_eq(port as int, 8080, "port should be 8080");
+    println(fmt("  Port: {}", port as int));
+
+    var debug_val: json = data["debug"];
+    assert_true(debug_val is json_bool, "debug should be bool");
+    println(fmt("  Debug: {}", json::type_name(debug_val)));
+
+    var tags: json = data["tags"];
+    assert_true(tags is json_array, "tags should be array");
+    assert_eq(json::count(tags), 3, "should have 3 tags");
+    assert_eq_string(tags[0] as string, "web", "first tag");
+    assert_eq_string(tags[2] as string, "production", "third tag");
+    println(fmt("  Tags count: {}", json::count(tags)));
+    println("  PASS");
+    println("");
+
+    // Test 2: User-defined functions with YAML data
+    println("Test 2: User-defined functions with YAML data");
+    var config_yaml: string = "database:\n  host: localhost\n  port: 5432\n  name: mydb\nredis:\n  host: redis.local\n  port: 6379\n";
+
+    var config: json = yaml::decode(config_yaml) catch e {
+        println("FAIL: config decode failed");
+    };
+
+    var db_host: string = get_nested_value(config, "database", "host");
+    assert_eq_string(db_host, "localhost", "db host should be localhost");
+    println(fmt("  DB host: {}", db_host));
+
+    var db_port: string = get_nested_value(config, "database", "port");
+    assert_eq_string(db_port, "5432", "db port should be 5432");
+    println(fmt("  DB port: {}", db_port));
+
+    var redis_host: string = get_nested_value(config, "redis", "host");
+    assert_eq_string(redis_host, "redis.local", "redis host");
+    println(fmt("  Redis host: {}", redis_host));
+
+    var missing: string = get_nested_value(config, "database", "nonexistent");
+    assert_eq_string(missing, "null", "missing key should return null");
+    println(fmt("  Missing key: {}", missing));
+    println("  PASS");
+    println("");
+
+    // Test 3: Sequences of objects (like a player leaderboard)
+    println("Test 3: Sequences of objects");
+    var players_yaml: string = "players:\n  - name: Alice\n    score: 100\n  - name: Bob\n    score: 85\n  - name: Charlie\n    score: 92\n";
+
+    var game: json = yaml::decode(players_yaml) catch e {
+        println("FAIL: players decode failed");
+    };
+
+    var players: json = game["players"];
+    assert_eq(json::count(players), 3, "should have 3 players");
+
+    var total: int = sum_scores(players);
+    assert_eq(total, 277, "total score should be 277 (100+85+92)");
+    println(fmt("  Total score: {} (expected 277)", total));
+
+    var first: json = players[0];
+    assert_eq_string(first["name"] as string, "Alice", "first player");
+    assert_eq(first["score"] as int, 100, "Alice score");
+    println(fmt("  First player: {} with score {}", first["name"] as string, first["score"] as int));
+    println("  PASS");
+    println("");
+
+    // Test 4: YAML encode → roundtrip
+    println("Test 4: Encode json → YAML string and roundtrip");
+    var encoded: string = yaml::encode(data) catch e {
+        "encode failed";
+    };
+    assert_true(len(encoded) > 0, "encoded should not be empty");
+    println(fmt("  Encoded length: {}", len(encoded)));
+    println("  YAML output:");
+    println(encoded);
+
+    // Roundtrip: decode the encoded YAML and verify
+    var roundtrip: json = yaml::decode(encoded) catch e {
+        println("FAIL: roundtrip decode failed");
+    };
+    var rt_name: json = roundtrip["name"];
+    assert_eq_string(rt_name as string, "my-service", "roundtrip name");
+    var rt_port: json = roundtrip["port"];
+    assert_eq(rt_port as int, 8080, "roundtrip port");
+    println("  Roundtrip verification PASS");
+    println("");
+
+    // Test 5: YAML null handling
+    println("Test 5: Null value handling");
+    var null_yaml: string = "present: hello\nmissing: null\nempty: ~\n";
+    var null_data: json = yaml::decode(null_yaml) catch e {
+        println("FAIL: null decode failed");
+    };
+
+    var present: json = null_data["present"];
+    assert_true(present is json_string, "present should be string");
+
+    var null_val: json = null_data["missing"];
+    assert_true(null_val is json_null, "missing should be null");
+
+    var tilde_val: json = null_data["empty"];
+    assert_true(tilde_val is json_null, "~ should be null");
+    println("  Null checks PASS");
+    println("");
+
+    // Test 6: Decode error handling — invalid YAML
+    println("Test 6: Decode error handling");
+    var bad_yaml: string = ":\n  - :\n    - : [\ninvalid: [unclosed";
+    var bad_result: json = yaml::decode(bad_yaml) catch e {
+        println("  Caught DecodeError on invalid YAML (expected)");
+    };
+    println("  PASS");
+    println("");
+
+    // Test 7: Cross-format conversion — YAML → json → TOML
+    println("Test 7: Cross-format conversion (YAML → JSON → TOML)");
+    var simple_yaml: string = "name: converter-test\nversion: 1.0.0\nenabled: true\ncount: 42\n";
+    var simple_data: json = yaml::decode(simple_yaml) catch e {
+        println("FAIL: simple yaml decode failed");
+    };
+
+    // Convert to JSON
+    var as_json: string = json::encode(simple_data);
+    println(fmt("  As JSON: {}", as_json));
+    assert_true(len(as_json) > 0, "json encode should work");
+
+    // Convert to TOML
+    var as_toml: string = toml::encode(simple_data) catch e {
+        "toml encode failed";
+    };
+    println(fmt("  As TOML: {}", as_toml));
+    assert_true(len(as_toml) > 0, "toml encode should work");
+
+    // Convert back from TOML to json and verify
+    var from_toml: json = toml::decode(as_toml) catch e {
+        println("FAIL: toml roundtrip decode failed");
+    };
+    assert_eq_string(from_toml["name"] as string, "converter-test", "cross-format name");
+    assert_eq(from_toml["count"] as int, 42, "cross-format count");
+    println("  Cross-format verification PASS");
+    println("");
+
+    // Test 8: Loop decode/encode cycles
+    println("Test 8: Loop with decode/encode");
+    var loop_yaml: string = "value: 99\n";
+    var i: int = 0;
+    while (i < 5) {
+        var loop_data: json = yaml::decode(loop_yaml) catch e {
+            println(fmt("FAIL: decode failed on iteration {}", i));
+        };
+        var v: json = loop_data["value"];
+        assert_eq(v as int, 99, "value should be 99 each iteration");
+        i = i + 1;
+    }
+    println(fmt("  Completed {} decode iterations", i));
+    println("  PASS");
+    println("");
+
+    println("=== All YAML tests completed ===");
+}

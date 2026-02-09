@@ -32,7 +32,8 @@
       "Bash(./target/release/naml run:*)",
       "Bash(echo:*)",
       "Bash(bash:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(./scripts/run_examples.sh:*)"
     ]
   },
   "hooks": {

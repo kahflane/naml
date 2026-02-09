@@ -16,12 +16,16 @@ pub mod hex;
 pub mod base64;
 pub mod url;
 pub mod json;
+pub mod toml;
+pub mod yaml;
 
 pub use utf8::*;
 pub use hex::*;
 pub use base64::*;
 pub use url::*;
 pub use json::*;
+pub use toml::*;
+pub use yaml::*;
 
 use naml_std_core::value::NamlString;
 

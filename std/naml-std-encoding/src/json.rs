@@ -52,7 +52,7 @@ impl NamlJson {
 }
 
 /// Create a new NamlJson from a serde_json::Value
-fn create_json(value: Value) -> *mut NamlJson {
+pub(crate) fn create_json(value: Value) -> *mut NamlJson {
     unsafe {
         let layout = Layout::new::<NamlJson>();
         let ptr = std::alloc::alloc(layout) as *mut NamlJson;
@@ -520,7 +520,7 @@ pub unsafe extern "C" fn naml_path_error_new(path: *const NamlString) -> *mut Na
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_encode_error_new(reason: *const NamlString) -> *mut NamlStruct {
     unsafe {
-        let exc = naml_std_core::naml_struct_new(0xFFFF_0005, 1);
+        let exc = naml_std_core::naml_struct_new(0xFFFF_000B, 1);
         naml_std_core::naml_struct_set_field(exc, 0, reason as i64);
         exc
     }

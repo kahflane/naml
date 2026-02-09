@@ -544,6 +544,22 @@ pub enum BuiltinStrategy {
     JsonIsNull,
 
     // ========================================
+    // TOML encoding strategies
+    // ========================================
+    /// (string) -> json throws DecodeError
+    TomlDecode,
+    /// (json) -> string throws EncodeError
+    TomlEncode(&'static str),
+
+    // ========================================
+    // YAML encoding strategies
+    // ========================================
+    /// (string) -> json throws DecodeError
+    YamlDecode,
+    /// (json) -> string throws EncodeError
+    YamlEncode,
+
+    // ========================================
     // Core I/O strategies (varargs/special handling)
     // ========================================
     /// Varargs print with newline flag
@@ -1915,6 +1931,32 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "encoding::json::is_null",
             strategy: BuiltinStrategy::JsonIsNull,
+        },
+        // ========================================
+        // TOML encoding module
+        // ========================================
+        BuiltinFunction {
+            name: "encoding::toml::decode",
+            strategy: BuiltinStrategy::TomlDecode,
+        },
+        BuiltinFunction {
+            name: "encoding::toml::encode",
+            strategy: BuiltinStrategy::TomlEncode("naml_encoding_toml_encode"),
+        },
+        BuiltinFunction {
+            name: "encoding::toml::encode_pretty",
+            strategy: BuiltinStrategy::TomlEncode("naml_encoding_toml_encode_pretty"),
+        },
+        // ========================================
+        // YAML encoding module
+        // ========================================
+        BuiltinFunction {
+            name: "encoding::yaml::decode",
+            strategy: BuiltinStrategy::YamlDecode,
+        },
+        BuiltinFunction {
+            name: "encoding::yaml::encode",
+            strategy: BuiltinStrategy::YamlEncode,
         },
         // ========================================
         // Networking module (strict hierarchy: net::tcp::listener, net::tcp::client, etc.)
@@ -3867,6 +3909,242 @@ pub fn compile_builtin_call(
             let result = builder.inst_results(inst)[0];
             // Truncate i64 to i8 for bool type
             Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+        }
+
+        // ========================================
+        // TOML strategies
+        // ========================================
+        BuiltinStrategy::TomlDecode => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let s = compile_expression(ctx, builder, &args[0])?;
+            let s = ensure_naml_string(ctx, builder, s, &args[0])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                4,
+                4,
+            ));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8,
+                8,
+            ));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, "naml_encoding_toml_decode")?;
+            builder.ins().call(func_ref, &[s, out_tag, out_value]);
+
+            let tag = builder
+                .ins()
+                .load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder
+                .ins()
+                .load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder
+                .ins()
+                .brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_decode_error;
+            throw_decode_error(ctx, builder, value)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        BuiltinStrategy::TomlEncode(runtime_fn) => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                4,
+                4,
+            ));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8,
+                8,
+            ));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            builder.ins().call(func_ref, &[json, out_tag, out_value]);
+
+            let tag = builder
+                .ins()
+                .load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder
+                .ins()
+                .load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder
+                .ins()
+                .brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_encode_error;
+            throw_encode_error(ctx, builder)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        // ========================================
+        // YAML strategies
+        // ========================================
+        BuiltinStrategy::YamlDecode => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let s = compile_expression(ctx, builder, &args[0])?;
+            let s = ensure_naml_string(ctx, builder, s, &args[0])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                4,
+                4,
+            ));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8,
+                8,
+            ));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, "naml_encoding_yaml_decode")?;
+            builder.ins().call(func_ref, &[s, out_tag, out_value]);
+
+            let tag = builder
+                .ins()
+                .load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder
+                .ins()
+                .load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder
+                .ins()
+                .brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_decode_error;
+            throw_decode_error(ctx, builder, value)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
+        }
+
+        BuiltinStrategy::YamlEncode => {
+            use super::runtime::rt_func_ref;
+            let ptr_type = ctx.module.target_config().pointer_type();
+
+            let json = compile_expression(ctx, builder, &args[0])?;
+
+            let slot_tag = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                4,
+                4,
+            ));
+            let slot_value = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                8,
+                8,
+            ));
+
+            let out_tag = builder.ins().stack_addr(ptr_type, slot_tag, 0);
+            let out_value = builder.ins().stack_addr(ptr_type, slot_value, 0);
+
+            let func_ref = rt_func_ref(ctx, builder, "naml_encoding_yaml_encode")?;
+            builder.ins().call(func_ref, &[json, out_tag, out_value]);
+
+            let tag = builder
+                .ins()
+                .load(types::I32, MemFlags::trusted(), out_tag, 0);
+            let value = builder
+                .ins()
+                .load(types::I64, MemFlags::trusted(), out_value, 0);
+
+            let success_block = builder.create_block();
+            let error_block = builder.create_block();
+            let merge_block = builder.create_block();
+            builder.append_block_param(merge_block, types::I64);
+
+            let tag_is_zero = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+            builder
+                .ins()
+                .brif(tag_is_zero, success_block, &[], error_block, &[]);
+
+            builder.switch_to_block(success_block);
+            builder.seal_block(success_block);
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(error_block);
+            builder.seal_block(error_block);
+            use super::exceptions::throw_encode_error;
+            throw_encode_error(ctx, builder)?;
+            builder.ins().jump(merge_block, &[value]);
+
+            builder.switch_to_block(merge_block);
+            builder.seal_block(merge_block);
+
+            let result = builder.block_params(merge_block)[0];
+            Ok(result)
         }
 
         // ========================================

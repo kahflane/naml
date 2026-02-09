@@ -1,0 +1,213 @@
+///
+/// TOML Demo - Complex test exercising decode, encode, encode_pretty,
+/// interop with json query functions, error handling, and roundtrip verification.
+///
+/// This is NOT the happy path — we test edge cases, errors, and cross-module usage.
+///
+
+use std::encoding::*;
+use std::strings::*;
+use std::testing::*;
+
+fn extract_dependency_version(data: json, dep_name: string) -> string throws PathError {
+    var deps: json = json::path(data, ".dependencies");
+    var dep: json = deps[dep_name];
+    if (dep is json_string) {
+        return dep as string;
+    }
+    return "not found";
+}
+
+fn count_array_entries(data: json, key: string) -> int {
+    var arr: json = data[key];
+    return json::count(arr);
+}
+
+fn build_config_summary(data: json) -> string throws PathError {
+    var name: json = json::path(data, ".package.name");
+    var version: json = json::path(data, ".package.version");
+    var edition: json = json::path(data, ".package.edition");
+
+    var name_str: string = "unknown";
+    var version_str: string = "0.0.0";
+    var edition_str: string = "unknown";
+
+    if (name is json_string) {
+        name_str = name as string;
+    }
+    if (version is json_string) {
+        version_str = version as string;
+    }
+    if (edition is json_string) {
+        edition_str = edition as string;
+    }
+
+    return fmt("{} v{} (edition {})", name_str, version_str, edition_str);
+}
+
+fn main() {
+    println("=== TOML Encoding Demo ===");
+    println("");
+
+    // Test 1: Basic TOML decode → json, then query with json functions
+    println("Test 1: Decode TOML and query with json functions");
+    var toml_str: string = "[package]\nname = \"my-app\"\nversion = \"1.2.3\"\nedition = \"2024\"\n\n[dependencies]\nserde = \"1.0\"\ntoml = \"0.8\"\nclap = \"4.5\"\n\n[[bin]]\nname = \"app\"\npath = \"src/main.rs\"\n\n[[bin]]\nname = \"helper\"\npath = \"src/helper.rs\"\n";
+
+    var data: json = toml::decode(toml_str) catch e {
+        println("FAIL: toml::decode failed on valid TOML");
+    };
+
+    var pkg_name: json = json::path(data, ".package.name") catch e {
+        println("FAIL: path navigation failed");
+    };
+    assert_true(pkg_name is json_string, "package name should be string");
+    assert_eq_string(pkg_name as string, "my-app", "package name should be my-app");
+    println(fmt("  Package name: {}", pkg_name as string));
+
+    var version: json = json::path(data, ".package.version") catch e {
+        println("FAIL: path navigation failed");
+    };
+    assert_eq_string(version as string, "1.2.3", "version should be 1.2.3");
+    println(fmt("  Version: {}", version as string));
+    println("  PASS");
+    println("");
+
+    // Test 2: User-defined function with TOML-decoded json
+    println("Test 2: User-defined functions with TOML data");
+    var serde_ver: string = extract_dependency_version(data, "serde") catch e {
+        "error";
+    };
+    assert_eq_string(serde_ver, "1.0", "serde version should be 1.0");
+    println(fmt("  serde version: {}", serde_ver));
+
+    var clap_ver: string = extract_dependency_version(data, "clap") catch e {
+        "error";
+    };
+    assert_eq_string(clap_ver, "4.5", "clap version should be 4.5");
+    println(fmt("  clap version: {}", clap_ver));
+
+    var missing_ver: string = extract_dependency_version(data, "nonexistent") catch e {
+        "error";
+    };
+    assert_eq_string(missing_ver, "not found", "nonexistent dep should return not found");
+    println(fmt("  nonexistent dep: {}", missing_ver));
+    println("  PASS");
+    println("");
+
+    // Test 3: Nested function building summary from TOML data
+    println("Test 3: Complex nested data processing");
+    var summary: string = build_config_summary(data) catch e {
+        "error building summary";
+    };
+    assert_eq_string(summary, "my-app v1.2.3 (edition 2024)", "summary should match");
+    println(fmt("  Summary: {}", summary));
+    println("  PASS");
+    println("");
+
+    // Test 4: TOML array of tables (the [[bin]] section)
+    println("Test 4: Array of tables access");
+    var bins: json = data["bin"];
+    var bin_count: int = json::count(bins);
+    assert_eq(bin_count, 2, "should have 2 bin entries");
+    println(fmt("  Bin count: {}", bin_count));
+
+    var first_bin: json = bins[0];
+    var first_name: json = first_bin["name"];
+    assert_eq_string(first_name as string, "app", "first bin should be app");
+    println(fmt("  First bin: {}", first_name as string));
+
+    var second_bin: json = bins[1];
+    var second_path: json = second_bin["path"];
+    assert_eq_string(second_path as string, "src/helper.rs", "second bin path should match");
+    println(fmt("  Second bin path: {}", second_path as string));
+    println("  PASS");
+    println("");
+
+    // Test 5: Encode json back to TOML string
+    println("Test 5: Encode json → TOML string");
+    var encoded: string = toml::encode(data) catch e {
+        "encode failed";
+    };
+    println(fmt("  Encoded length: {}", len(encoded)));
+    assert_true(len(encoded) > 0, "encoded string should not be empty");
+
+    // Verify roundtrip: decode the encoded TOML and check values still match
+    var roundtrip: json = toml::decode(encoded) catch e {
+        println("FAIL: roundtrip decode failed");
+    };
+    var rt_name: json = json::path(roundtrip, ".package.name") catch e {
+        println("FAIL: roundtrip path failed");
+    };
+    assert_eq_string(rt_name as string, "my-app", "roundtrip name should match");
+    println(fmt("  Roundtrip package name: {}", rt_name as string));
+    println("  PASS");
+    println("");
+
+    // Test 6: Encode pretty
+    println("Test 6: Pretty encode");
+    var pretty: string = toml::encode_pretty(data) catch e {
+        "encode_pretty failed";
+    };
+    println("  Pretty TOML output:");
+    println(pretty);
+    assert_true(len(pretty) > 0, "pretty output should not be empty");
+    println("  PASS");
+    println("");
+
+    // Test 7: Decode error handling — invalid TOML
+    println("Test 7: Decode error handling");
+    var bad_toml: string = "[invalid\nname = ";
+    var bad_result: json = toml::decode(bad_toml) catch e {
+        println("  Caught DecodeError on invalid TOML (expected)");
+    };
+    println("  PASS");
+    println("");
+
+    // Test 8: TOML with various data types
+    println("Test 8: TOML data types");
+    var types_toml: string = "title = \"Test\"\nenabled = true\ncount = 42\npi = 3.14159\ntags = [\"a\", \"b\", \"c\"]\n";
+
+    var types_data: json = toml::decode(types_toml) catch e {
+        println("FAIL: types decode failed");
+    };
+
+    var title: json = types_data["title"];
+    assert_true(title is json_string, "title should be string");
+    assert_eq_string(title as string, "Test", "title value");
+
+    var enabled: json = types_data["enabled"];
+    assert_true(enabled is json_bool, "enabled should be bool");
+
+    var count_val: json = types_data["count"];
+    assert_true(count_val is json_number, "count should be number");
+    assert_eq(count_val as int, 42, "count should be 42");
+
+    var pi_val: json = types_data["pi"];
+    assert_true(pi_val is json_number, "pi should be number");
+
+    var tags: json = types_data["tags"];
+    assert_true(tags is json_array, "tags should be array");
+    assert_eq(json::count(tags), 3, "tags should have 3 entries");
+    assert_eq_string(tags[0] as string, "a", "first tag should be a");
+    assert_eq_string(tags[2] as string, "c", "third tag should be c");
+    println("  All type checks PASS");
+    println("");
+
+    // Test 9: Multiple decode/encode cycles in a loop
+    println("Test 9: Loop with decode/encode");
+    var loop_toml: string = "value = 1\n";
+    var i: int = 0;
+    while (i < 5) {
+        var loop_data: json = toml::decode(loop_toml) catch e {
+            println(fmt("FAIL: decode failed on iteration {}", i));
+        };
+        var v: json = loop_data["value"];
+        assert_eq(v as int, 1, "value should be 1 each iteration");
+        i = i + 1;
+    }
+    println(fmt("  Completed {} decode iterations", i));
+    println("  PASS");
+    println("");
+
+    println("=== All TOML tests completed ===");
+}

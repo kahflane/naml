@@ -292,6 +292,17 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let encode_error_name = self.interner.get_or_intern("EncodeError");
+        self.symbols.define_type(
+            encode_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: encode_error_name,
+                fields: vec![(msg_name, Type::String)],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -318,6 +329,8 @@ impl<'a> TypeChecker<'a> {
             "encoding::base64",
             "encoding::url",
             "encoding::json",
+            "encoding::toml",
+            "encoding::yaml",
             "testing",
             "env",
             "os",
@@ -1997,6 +2010,46 @@ impl<'a> TypeChecker<'a> {
         ]
     }
 
+    fn get_encoding_toml_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing(
+                "decode",
+                vec![("s", Type::String)],
+                Type::Json,
+                vec!["DecodeError"],
+            ),
+            StdModuleFn::throwing(
+                "encode",
+                vec![("value", Type::Json)],
+                Type::String,
+                vec!["EncodeError"],
+            ),
+            StdModuleFn::throwing(
+                "encode_pretty",
+                vec![("value", Type::Json)],
+                Type::String,
+                vec!["EncodeError"],
+            ),
+        ]
+    }
+
+    fn get_encoding_yaml_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing(
+                "decode",
+                vec![("s", Type::String)],
+                Type::Json,
+                vec!["DecodeError"],
+            ),
+            StdModuleFn::throwing(
+                "encode",
+                vec![("value", Type::Json)],
+                Type::String,
+                vec!["EncodeError"],
+            ),
+        ]
+    }
+
     fn get_net_tcp_server_functions() -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
@@ -2823,6 +2876,8 @@ impl<'a> TypeChecker<'a> {
             "encoding::base64" => Some(Self::get_encoding_base64_functions()),
             "encoding::url" => Some(Self::get_encoding_url_functions()),
             "encoding::json" => Some(Self::get_encoding_json_functions()),
+            "encoding::toml" => Some(Self::get_encoding_toml_functions()),
+            "encoding::yaml" => Some(Self::get_encoding_yaml_functions()),
             // Net module hierarchy - strict: parent modules expose only submodules, not functions
             // Parent modules - no functions, only submodules
             "net" => Some(vec![]),

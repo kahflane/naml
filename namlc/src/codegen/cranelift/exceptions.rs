@@ -51,6 +51,25 @@ pub fn throw_path_error(
     Ok(())
 }
 
+/// Throw an EncodeError exception
+pub fn throw_encode_error(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+) -> Result<(), CodegenError> {
+    let cstr_ptr = compile_string_literal(ctx, builder, "value cannot be encoded in target format")?;
+
+    let from_cstr = rt_func_ref(ctx, builder, "naml_string_from_cstr")?;
+    let call = builder.ins().call(from_cstr, &[cstr_ptr]);
+    let message = builder.inst_results(call)[0];
+
+    let func_ref = rt_func_ref(ctx, builder, "naml_encode_error_new")?;
+    let call = builder.ins().call(func_ref, &[message]);
+    let exc_ptr = builder.inst_results(call)[0];
+
+    call_exception_set(ctx, builder, exc_ptr)?;
+    Ok(())
+}
+
 pub fn call_exception_get(
     ctx: &mut CompileContext<'_>,
     builder: &mut FunctionBuilder<'_>,
