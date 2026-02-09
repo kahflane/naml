@@ -121,6 +121,12 @@ naml-std-process.workspace = true
 naml-std-testing.workspace = true
 naml-std-sqlite3.workspace = true
 naml-std-timers.workspace = true
+naml-std-crypto.workspace = true
+
+##
+## Package manager
+##
+naml-pkg.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

@@ -9,7 +9,7 @@ naml is built with Rust. You need a recent Rust toolchain installed.
 
 ```bash
 # Clone the repository
-git clone https://github.com/aspect-build/naml.git
+git clone https://github.com/kahflane/naml.git
 cd naml
 
 # Build in release mode
@@ -34,6 +34,8 @@ naml --version
 | `naml build --target server` | Build server WASM (WIP) |
 | `naml build --target browser` | Build browser WASM (WIP) |
 | `naml check` | Type check only |
+| `naml pkg init [name]` | Create a new project |
+| `naml pkg get` | Download all dependencies |
 
 ## Project Structure
 

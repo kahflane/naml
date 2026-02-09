@@ -1,0 +1,4 @@
+[package]
+name = "mathlib"
+version = "0.1.0"
+description = "Simple math utilities library"

@@ -180,5 +180,6 @@ fn main() {
 
 - Read about [naml's philosophy](/guide/3-philosophy) to understand the design principles
 - Learn about [compilation targets](/guide/4-targets) for deploying your code
-- Explore the [language reference](/reference/types) for detailed syntax
-- Check out [examples](https://github.com/aspect-build/naml/tree/main/examples) for real-world code
+- Set up [packages and dependencies](/guide/5-packages) for multi-file projects
+- Explore the [language reference](/language/1-types) for detailed syntax
+- Check out [examples](/examples/) for real-world code

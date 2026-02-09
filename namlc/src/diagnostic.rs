@@ -251,6 +251,11 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "ambiguous".to_string(),
             Some(format!("use a qualified name like 'arrays::{}' or 'maps::{}'", name, name)),
         ),
+        TypeError::PackageError { package, reason, .. } => (
+            format!("package error '{}': {}", package, reason),
+            "package error".to_string(),
+            Some("run `naml pkg get` to download dependencies".to_string()),
+        ),
     }
 }
 

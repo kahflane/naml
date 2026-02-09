@@ -180,6 +180,13 @@ pub enum TypeError {
 
     #[error("ambiguous function '{name}': exists in multiple imported modules, use a qualified path")]
     AmbiguousFunction { name: String, span: Span },
+
+    #[error("package error '{package}': {reason}")]
+    PackageError {
+        package: String,
+        reason: String,
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -218,6 +225,7 @@ impl TypeError {
             TypeError::UncaughtException { span, .. } => *span,
             TypeError::TryWithCatch { span } => *span,
             TypeError::AmbiguousFunction { span, .. } => *span,
+            TypeError::PackageError { span, .. } => *span,
         }
     }
 

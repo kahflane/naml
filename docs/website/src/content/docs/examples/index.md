@@ -15,3 +15,4 @@ Curated examples from the naml repository, organized by topic. Each example demo
 | [File I/O](/examples/file-io/) | Reading, writing, directories, file handles |
 | [Networking](/examples/networking/) | HTTP client, TCP server, UDP |
 | [Database](/examples/database/) | SQLite queries, transactions, prepared statements |
+| [Packages](/examples/packages/) | Local dependencies, multi-package projects, Git deps |

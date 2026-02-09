@@ -27,7 +27,9 @@ members = [
     "std/naml-std-testing",
     "std/naml-std-sqlite3",
     "std/naml-std-timers",
+    "std/naml-std-crypto",
     "tools/naml-lsp",
+    "tools/naml-pkg",
 ]
 
 [workspace.package]
@@ -176,6 +178,22 @@ naml-std-process = { path = "std/naml-std-process" }
 naml-std-testing = { path = "std/naml-std-testing" }
 naml-std-sqlite3 = { path = "std/naml-std-sqlite3" }
 naml-std-timers = { path = "std/naml-std-timers" }
+naml-std-crypto = { path = "std/naml-std-crypto" }
+
+##
+## Package manager
+##
+naml-pkg = { path = "tools/naml-pkg" }
+
+##
+## Git operations for package manager
+##
+git2 = "0.19"
+
+##
+## Cross-platform directory paths
+##
+dirs = "6"
 
 ##
 ## Cron expression parsing

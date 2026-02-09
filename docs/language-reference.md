@@ -26,9 +26,10 @@ A comprehensive guide to the naml programming language syntax and features.
 18. [Concurrency](#concurrency)
 19. [Pattern Matching](#pattern-matching)
 20. [Modules and Imports](#modules-and-imports)
-21. [External Functions](#external-functions)
-22. [Comments](#comments)
-23. [Keywords](#keywords)
+21. [Package Manager](#package-manager)
+22. [External Functions](#external-functions)
+23. [Comments](#comments)
+24. [Keywords](#keywords)
 
 ---
 
@@ -1312,6 +1313,87 @@ use network::tcp::Client as TcpClient; // Alias support
 ```
 
 All public items (marked with `pub`) are eligible for import and cross-module usage.
+
+---
+
+## Package Manager
+
+naml includes a built-in package manager accessed via `naml pkg` subcommands.
+
+### Getting Started
+
+```bash
+naml pkg init my-project    # Create a new project
+cd my-project
+naml run main.nm             # Run the project
+```
+
+### naml.toml
+
+Every naml project has a `naml.toml` manifest file:
+
+```toml
+[package]
+name = "my-project"
+version = "0.1.0"
+description = "My naml project"
+authors = ["Your Name"]
+license = "MIT"
+
+[dependencies]
+json = { git = "https://github.com/naml-lang/json", tag = "v0.1.0" }
+utils = { path = "../shared/utils" }
+```
+
+### Dependency Sources
+
+**Git dependencies** — clone from a remote repository:
+```toml
+json = { git = "https://github.com/naml-lang/json", tag = "v0.1.0" }
+http = { git = "https://github.com/naml-lang/http", branch = "main" }
+crypto = { git = "https://github.com/naml-lang/crypto", rev = "abc123" }
+server = { git = "https://github.com/naml-lang/server" }  # default branch
+```
+
+**Local path dependencies** — reference a local directory:
+```toml
+utils = { path = "../shared/utils" }
+```
+
+### Using Packages
+
+After adding a dependency to `naml.toml`, use it in your code:
+
+```naml
+use json;
+
+fn main() {
+    var data = json::parse("{\"key\": \"value\"}");
+    println(data);
+}
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `naml pkg init [name]` | Create a new naml project |
+| `naml pkg get` | Download all dependencies |
+
+Dependencies are automatically downloaded when running `naml run` if a `naml.toml` is present.
+
+### Cache
+
+Downloaded packages are cached globally:
+- **macOS**: `~/Library/Caches/naml/packages/`
+- **Linux**: `~/.cache/naml/packages/`
+- **Windows**: `%LOCALAPPDATA%\naml\packages\`
+
+### Transitive Dependencies
+
+naml automatically resolves transitive dependencies. If package A depends on B, and B depends on C, all three are downloaded and made available.
+
+Circular dependencies are detected and reported as errors.
 
 ---
 

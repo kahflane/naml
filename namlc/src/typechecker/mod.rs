@@ -65,6 +65,7 @@ pub struct TypeChecker<'a> {
     next_var_id: u32,
     source_dir: Option<PathBuf>,
     imported_modules: Vec<ImportedModule>,
+    package_manager: Option<&'a naml_pkg::PackageManager>,
 }
 
 pub struct StdModuleFn {
@@ -126,7 +127,11 @@ pub fn get_std_module_functions(module: &str) -> Option<Vec<StdModuleFn>> {
 }
 
 impl<'a> TypeChecker<'a> {
-    pub fn new(interner: &'a mut Rodeo, source_dir: Option<PathBuf>) -> Self {
+    pub fn new(
+        interner: &'a mut Rodeo,
+        source_dir: Option<PathBuf>,
+        package_manager: Option<&'a naml_pkg::PackageManager>,
+    ) -> Self {
         let mut checker = Self {
             symbols: SymbolTable::new(),
             env: TypeEnv::new(),
@@ -136,6 +141,7 @@ impl<'a> TypeChecker<'a> {
             next_var_id: 0,
             source_dir,
             imported_modules: Vec::new(),
+            package_manager,
         };
         checker.register_builtins();
         checker
@@ -375,6 +381,7 @@ impl<'a> TypeChecker<'a> {
             "timers",
             "db",
             "db::sqlite",
+            "crypto",
         ];
 
         for module in modules {
@@ -670,7 +677,19 @@ impl<'a> TypeChecker<'a> {
                 span: use_item.span,
             });
         } else {
-            // Fallback to local module resolution (which might load files)
+            let first_segment = self.interner.resolve(&path_spurs[0]).to_string();
+
+            if let Some(pm) = self.package_manager {
+                if pm.is_package(&first_segment) {
+                    let path_strs: Vec<String> = path_spurs
+                        .iter()
+                        .map(|&s| self.interner.resolve(&s).to_string())
+                        .collect();
+                    self.resolve_package_module(&first_segment, &path_strs, &use_item.items, use_item.span);
+                    return;
+                }
+            }
+
             let path_strs: Vec<String> = path_spurs
                 .iter()
                 .map(|&s| self.interner.resolve(&s).to_string())
@@ -3066,6 +3085,8 @@ impl<'a> TypeChecker<'a> {
             "net::http::middleware" => Some(Self::get_net_http_middleware_functions()),
             "db" => Some(vec![]),
             "db::sqlite" => Some(Self::get_db_sqlite_functions()),
+            // Crypto module
+            "crypto" => Some(Self::get_crypto_functions()),
             _ => None,
         }
     }
@@ -3201,6 +3222,245 @@ impl<'a> TypeChecker<'a> {
         ]
     }
 
+    fn get_crypto_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::new("md5", vec![("data", Type::Bytes)], Type::Bytes),
+            StdModuleFn::new("md5_hex", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::new("sha1", vec![("data", Type::Bytes)], Type::Bytes),
+            StdModuleFn::new("sha1_hex", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::new("sha256", vec![("data", Type::Bytes)], Type::Bytes),
+            StdModuleFn::new("sha256_hex", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::new("sha512", vec![("data", Type::Bytes)], Type::Bytes),
+            StdModuleFn::new("sha512_hex", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::new(
+                "hmac_sha256",
+                vec![("key", Type::Bytes), ("data", Type::Bytes)],
+                Type::Bytes,
+            ),
+            StdModuleFn::new(
+                "hmac_sha256_hex",
+                vec![("key", Type::Bytes), ("data", Type::Bytes)],
+                Type::String,
+            ),
+            StdModuleFn::new(
+                "hmac_sha512",
+                vec![("key", Type::Bytes), ("data", Type::Bytes)],
+                Type::Bytes,
+            ),
+            StdModuleFn::new(
+                "hmac_sha512_hex",
+                vec![("key", Type::Bytes), ("data", Type::Bytes)],
+                Type::String,
+            ),
+            StdModuleFn::new(
+                "hmac_verify_sha256",
+                vec![("key", Type::Bytes), ("data", Type::Bytes), ("mac", Type::Bytes)],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "hmac_verify_sha512",
+                vec![("key", Type::Bytes), ("data", Type::Bytes), ("mac", Type::Bytes)],
+                Type::Bool,
+            ),
+            StdModuleFn::new(
+                "pbkdf2_sha256",
+                vec![
+                    ("password", Type::Bytes),
+                    ("salt", Type::Bytes),
+                    ("iterations", Type::Int),
+                    ("key_len", Type::Int),
+                ],
+                Type::Bytes,
+            ),
+            StdModuleFn::new("random_bytes", vec![("n", Type::Int)], Type::Bytes),
+        ]
+    }
+
+    fn resolve_package_module(
+        &mut self,
+        package_name: &str,
+        path: &[String],
+        items: &UseItems,
+        span: crate::source::Span,
+    ) {
+        let pm = match self.package_manager {
+            Some(pm) => pm,
+            None => return,
+        };
+
+        let pkg_dir = match pm.package_source_dir(package_name) {
+            Some(d) => d,
+            None => {
+                self.errors.push(TypeError::PackageError {
+                    package: package_name.to_string(),
+                    reason: "package not downloaded — run `naml pkg get`".to_string(),
+                    span,
+                });
+                return;
+            }
+        };
+
+        let mut file_path = pkg_dir;
+        for segment in &path[1..] {
+            file_path.push(segment);
+        }
+        file_path.set_extension("nm");
+
+        if !file_path.exists() {
+            let mut dir_path = file_path.clone();
+            dir_path.set_extension("");
+            let main_file = dir_path.join("main.nm");
+            if main_file.exists() {
+                file_path = main_file;
+            } else {
+                file_path.set_extension("");
+                file_path.set_extension("nm");
+            }
+        }
+
+        let source_text = match std::fs::read_to_string(&file_path) {
+            Ok(s) => s,
+            Err(e) => {
+                self.errors.push(TypeError::PackageError {
+                    package: package_name.to_string(),
+                    reason: format!("cannot read {}: {}", file_path.display(), e),
+                    span,
+                });
+                return;
+            }
+        };
+
+        let old_dir = self.source_dir.take();
+        self.source_dir = file_path.parent().map(|p| p.to_path_buf());
+
+        let tokens = crate::lexer::tokenize_with_interner(&source_text, self.interner);
+        let arena = crate::ast::AstArena::new();
+        let parse_result = crate::parser::parse(&tokens, &source_text, &arena);
+
+        if !parse_result.errors.is_empty() {
+            self.errors.push(TypeError::PackageError {
+                package: package_name.to_string(),
+                reason: format!("parse errors in {}", file_path.display()),
+                span,
+            });
+            self.source_dir = old_dir;
+            return;
+        }
+
+        let mut pub_functions: Vec<(String, Vec<(String, Type)>, Type, bool)> = Vec::new();
+
+        for item in &parse_result.ast.items {
+            match item {
+                Item::Function(func) if func.is_public && func.receiver.is_none() => {
+                    let name = self.interner.resolve(&func.name.symbol).to_string();
+                    let params: Vec<_> = func
+                        .params
+                        .iter()
+                        .map(|p| {
+                            let pname = self.interner.resolve(&p.name.symbol).to_string();
+                            let pty = self.convert_type(&p.ty);
+                            (pname, pty)
+                        })
+                        .collect();
+                    let return_ty = func
+                        .return_ty
+                        .as_ref()
+                        .map(|t| self.convert_type(t))
+                        .unwrap_or(Type::Unit);
+                    pub_functions.push((name, params, return_ty, false));
+                }
+                Item::Use(sub_use) => {
+                    self.resolve_use_item(sub_use);
+                }
+                _ => {
+                    self.collect_item_definition(item);
+                }
+            }
+        }
+
+        self.source_dir = old_dir;
+
+        let module_name = path.last().unwrap();
+        let module_spur = self.interner.get_or_intern(module_name.as_str());
+
+        match items {
+            UseItems::All => {
+                for (name, params, return_ty, is_variadic) in &pub_functions {
+                    let spur = self.interner.get_or_intern(name.as_str());
+                    let params: Vec<_> = params
+                        .iter()
+                        .map(|(pname, pty)| {
+                            let pspur = self.interner.get_or_intern(pname.as_str());
+                            (pspur, pty.clone())
+                        })
+                        .collect();
+                    let sig = FunctionSig {
+                        name: spur,
+                        type_params: vec![],
+                        params,
+                        return_ty: return_ty.clone(),
+                        throws: vec![],
+                        is_public: true,
+                        is_variadic: *is_variadic,
+                        span: crate::source::Span::dummy(),
+                        module: Some(path.join("::")),
+                    };
+                    self.symbols
+                        .register_module(module_spur)
+                        .add_function(sig.clone());
+                    self.symbols.import_function(sig);
+                }
+            }
+            UseItems::Specific(entries) => {
+                for entry in entries {
+                    let entry_name = self.interner.resolve(&entry.name.symbol).to_string();
+                    let found = pub_functions
+                        .iter()
+                        .find(|(name, _, _, _)| *name == entry_name);
+                    match found {
+                        Some((_, params, return_ty, is_variadic)) => {
+                            let spur = entry.name.symbol;
+                            let params: Vec<_> = params
+                                .iter()
+                                .map(|(pname, pty)| {
+                                    let pspur = self.interner.get_or_intern(pname.as_str());
+                                    (pspur, pty.clone())
+                                })
+                                .collect();
+                            let sig = FunctionSig {
+                                name: spur,
+                                type_params: vec![],
+                                params,
+                                return_ty: return_ty.clone(),
+                                throws: vec![],
+                                is_public: true,
+                                is_variadic: *is_variadic,
+                                span: crate::source::Span::dummy(),
+                                module: Some(path.join("::")),
+                            };
+                            self.symbols
+                                .register_module(module_spur)
+                                .add_function(sig.clone());
+                            self.symbols.import_function(sig);
+                        }
+                        None => {
+                            self.errors.push(TypeError::PrivateSymbol {
+                                module: path.join("::"),
+                                symbol: entry_name,
+                                span: entry.span,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        self.imported_modules.push(ImportedModule {
+            source_text,
+            file_path,
+        });
+    }
+
     fn resolve_local_module(
         &mut self,
         path: &[String],
@@ -3224,6 +3484,15 @@ impl<'a> TypeChecker<'a> {
             file_path.push(segment);
         }
         file_path.set_extension("nm");
+
+        if !file_path.exists() {
+            let mut dir_path = file_path.clone();
+            dir_path.set_extension("");
+            let main_file = dir_path.join("main.nm");
+            if main_file.exists() {
+                file_path = main_file;
+            }
+        }
 
         let source_text = match std::fs::read_to_string(&file_path) {
             Ok(s) => s,
@@ -3915,15 +4184,16 @@ impl<'a> TypeChecker<'a> {
 }
 
 pub fn check(file: &SourceFile, interner: &mut Rodeo) -> Vec<TypeError> {
-    check_with_types(file, interner, None).errors
+    check_with_types(file, interner, None, None).errors
 }
 
 pub fn check_with_types(
     file: &SourceFile,
     interner: &mut Rodeo,
     source_dir: Option<PathBuf>,
+    package_manager: Option<&naml_pkg::PackageManager>,
 ) -> TypeCheckResult {
-    let mut checker = TypeChecker::new(interner, source_dir);
+    let mut checker = TypeChecker::new(interner, source_dir, package_manager);
     checker.collect_definitions(file);
     checker.validate_interface_implementations();
     checker.check_items(file);

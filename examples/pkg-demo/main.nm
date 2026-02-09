@@ -1,0 +1,12 @@
+use mathlib::*;
+
+fn main() {
+    var result: int = add(10, 20);
+    println(fmt("10 + 20 = {}", result));
+
+    var product: int = multiply(6, 7);
+    println(fmt("6 * 7 = {}", product));
+
+    var factorial: int = factorial(5);
+    println(fmt("5! = {}", factorial));
+}

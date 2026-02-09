@@ -363,6 +363,23 @@ pub fn format_shape(name: string, area: float) -> string {
 }
 ```
 
+## External Packages
+
+For code that lives outside your project, naml provides a built-in package manager (`naml pkg`). Packages are declared in `naml.toml` and imported just like local modules:
+
+```toml
+[dependencies]
+mathlib = { path = "./libs/mathlib" }
+json = { git = "https://github.com/naml-lang/json", tag = "v0.1.0" }
+```
+
+```naml
+use mathlib::*;
+use json::{parse, stringify};
+```
+
+See the [Package Manager guide](/guide/5-packages/) for full details.
+
 ## Best Practices
 
 1. **Organize by feature** - Group related functionality in modules

@@ -107,7 +107,23 @@ impl DocumentAnalysis {
         }
 
         if parse_result.errors.is_empty() {
-            let type_result = check_with_types(&parse_result.ast, &mut interner, source_dir);
+            let pkg_manager = source_dir
+                .as_ref()
+                .and_then(|dir| naml_pkg::find_project_root(dir))
+                .and_then(|root| {
+                    let manifest_path = root.join("naml.toml");
+                    match naml_pkg::PackageManager::from_manifest_path(&manifest_path) {
+                        Ok(mut pm) => {
+                            if pm.has_dependencies() {
+                                if let Err(_e) = pm.ensure_all_downloaded() {}
+                            }
+                            Some(pm)
+                        }
+                        Err(_) => None,
+                    }
+                });
+
+            let type_result = check_with_types(&parse_result.ast, &mut interner, source_dir, pkg_manager.as_ref());
 
             for err in &type_result.errors {
                 let range = ctx.span_to_range(err.span());
@@ -131,7 +147,7 @@ impl DocumentAnalysis {
             symbols = Some(snapshot_symbols(&type_result.symbols, &interner));
         } else {
             let empty_ast = namlc::ast::SourceFile::empty();
-            let type_result = check_with_types(&empty_ast, &mut interner, None);
+            let type_result = check_with_types(&empty_ast, &mut interner, None, None);
             symbols = Some(snapshot_symbols(&type_result.symbols, &interner));
         }
 
