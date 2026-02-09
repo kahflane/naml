@@ -33,8 +33,11 @@ use super::options::{
     compile_option_from_map_remove, compile_option_from_minmax, compile_option_from_nullable_ptr,
     compile_option_from_remove_at,
 };
+use super::heap::heap_type_from_type;
+use super::runtime::emit_incref;
+use super::strings::call_string_from_cstr;
 use super::{ARRAY_LEN_OFFSET, CompileContext};
-use crate::ast::Expression;
+use crate::ast::{Expression, Literal, LiteralExpr};
 use crate::codegen::CodegenError;
 
 /// Describes how to compile a built-in function
@@ -2354,7 +2357,34 @@ pub fn compile_builtin_call(
 
         BuiltinStrategy::ChannelSend => {
             let channel = compile_expression(ctx, builder, &args[0])?;
-            let value = compile_expression(ctx, builder, &args[1])?;
+            let mut value = compile_expression(ctx, builder, &args[1])?;
+
+            let is_string_literal = matches!(
+                &args[1],
+                Expression::Literal(LiteralExpr { value: Literal::String(_), .. })
+            );
+            if is_string_literal {
+                value = call_string_from_cstr(ctx, builder, value)?;
+            }
+
+            if !is_string_literal {
+                let is_fresh = matches!(
+                    &args[1],
+                    Expression::Call(_) | Expression::StructLiteral(_)
+                );
+                if !is_fresh {
+                    use crate::source::Spanned;
+                    if let Some(ch_ty) = ctx.annotations.get_type(args[0].span()) {
+                        let resolved = ch_ty.resolve();
+                        if let crate::typechecker::types::Type::Channel(inner) = &resolved {
+                            if let Some(heap_type) = heap_type_from_type(inner, ctx.interner) {
+                                emit_incref(ctx, builder, value, &heap_type)?;
+                            }
+                        }
+                    }
+                }
+            }
+
             call_channel_send(ctx, builder, channel, value)
         }
 

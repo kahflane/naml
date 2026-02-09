@@ -1,0 +1,48 @@
+use std::threads::*;
+
+fn main() {
+    println("Test 1: String literal through channel from spawn");
+    var ch1: channel<string> = open_channel(1);
+    spawn {
+        send(ch1, "hello-from-spawn");
+    };
+    var r1: string = receive(ch1) ?? "";
+    println(r1);
+    join();
+
+    println("Test 2: String variable through channel");
+    var ch2: channel<string> = open_channel(10);
+    spawn {
+        var msg: string = "hello-variable";
+        send(ch2, msg);
+    };
+    join();
+    var r2: string = receive(ch2) ?? "";
+    println(r2);
+
+    println("Test 3: Multiple string messages");
+    var ch3: channel<string> = open_channel(10);
+    spawn {
+        send(ch3, "msg-1");
+        send(ch3, "msg-2");
+        send(ch3, "msg-3");
+    };
+    join();
+    var r3a: string = receive(ch3) ?? "";
+    var r3b: string = receive(ch3) ?? "";
+    var r3c: string = receive(ch3) ?? "";
+    println(r3a);
+    println(r3b);
+    println(r3c);
+
+    println("Test 4: Int channel still works");
+    var ch4: channel<int> = open_channel(1);
+    spawn {
+        send(ch4, 42);
+    };
+    var r4: int = receive(ch4) ?? 0;
+    println(fmt("{}", r4));
+    join();
+
+    println("All tests passed!");
+}

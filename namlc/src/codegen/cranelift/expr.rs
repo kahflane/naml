@@ -14,7 +14,7 @@ use crate::codegen::cranelift::method::compile_method_call;
 use crate::codegen::cranelift::options::{
     compile_option_from_array_get, compile_option_from_map_get,
 };
-use crate::codegen::cranelift::runtime::{call_alloc_closure_data, rt_func_ref};
+use crate::codegen::cranelift::runtime::{call_alloc_closure_data, emit_incref, rt_func_ref};
 use crate::codegen::cranelift::spawns::call_spawn_closure;
 use crate::codegen::cranelift::stmt::compile_statement;
 use crate::codegen::cranelift::strings::{
@@ -1116,6 +1116,9 @@ pub fn compile_expression(
                     let offset = builder.ins().iconst(ptr_type, (i * 8) as i64);
                     let addr = builder.ins().iadd(data_ptr, offset);
                     builder.ins().store(MemFlags::new(), val, addr, 0);
+                    if let Some(heap_type) = ctx.var_heap_types.get(var_name) {
+                        emit_incref(ctx, builder, val, &heap_type.clone())?;
+                    }
                 }
             }
 

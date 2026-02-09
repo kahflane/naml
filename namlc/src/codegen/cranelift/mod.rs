@@ -46,7 +46,7 @@ use crate::ast::{Expression, FunctionItem, Item, SourceFile, Statement};
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::errors::convert_cranelift_error;
 use crate::codegen::cranelift::expr::compile_expression;
-use crate::codegen::cranelift::heap::{HeapType, get_heap_type, get_heap_type_resolved};
+use crate::codegen::cranelift::heap::{HeapType, get_heap_type, get_heap_type_resolved, heap_type_from_type};
 use crate::codegen::cranelift::structs::struct_has_heap_fields;
 use crate::codegen::cranelift::map::call_map_set;
 use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_stack_pop, emit_stack_push};
@@ -87,6 +87,7 @@ pub struct SpawnBlockInfo {
     pub id: u32,
     pub func_name: String,
     pub captured_vars: Vec<String>,
+    pub(crate) captured_heap_types: HashMap<String, HeapType>,
     pub body_ptr: *const crate::ast::BlockExpr<'static>,
 }
 
@@ -6294,12 +6295,16 @@ impl<'a> JitCompiler<'a> {
                 let body_ptr = spawn_expr.body as *const crate::ast::BlockExpr<'_>
                     as *const crate::ast::BlockExpr<'static>;
 
+                let captured_heap_types =
+                    self.find_captured_var_heap_types(spawn_expr.body, &captured);
+
                 self.spawn_blocks.insert(
                     id,
                     SpawnBlockInfo {
                         id,
                         func_name,
                         captured_vars: captured,
+                        captured_heap_types,
                         body_ptr,
                     },
                 );
@@ -6623,6 +6628,141 @@ impl<'a> JitCompiler<'a> {
         }
     }
 
+    fn find_captured_var_heap_types(
+        &self,
+        block: &crate::ast::BlockExpr<'_>,
+        captured_vars: &[String],
+    ) -> HashMap<String, HeapType> {
+        let mut result = HashMap::new();
+        let targets: HashSet<&str> = captured_vars.iter().map(|s| s.as_str()).collect();
+        self.find_ident_types_in_block_expr(block, &targets, &mut result);
+        result
+    }
+
+    fn find_ident_types_in_block_expr(
+        &self,
+        block: &crate::ast::BlockExpr<'_>,
+        targets: &HashSet<&str>,
+        result: &mut HashMap<String, HeapType>,
+    ) {
+        for stmt in &block.statements {
+            self.find_ident_types_in_stmt(stmt, targets, result);
+            if result.len() == targets.len() {
+                return;
+            }
+        }
+    }
+
+    fn find_ident_types_in_stmt(
+        &self,
+        stmt: &Statement<'_>,
+        targets: &HashSet<&str>,
+        result: &mut HashMap<String, HeapType>,
+    ) {
+        match stmt {
+            Statement::Expression(expr_stmt) => {
+                self.find_ident_types_in_expr(&expr_stmt.expr, targets, result);
+            }
+            Statement::Var(var_stmt) => {
+                if let Some(init) = &var_stmt.init {
+                    self.find_ident_types_in_expr(init, targets, result);
+                }
+            }
+            Statement::Assign(assign) => {
+                self.find_ident_types_in_expr(&assign.target, targets, result);
+                self.find_ident_types_in_expr(&assign.value, targets, result);
+            }
+            Statement::If(if_stmt) => {
+                self.find_ident_types_in_expr(&if_stmt.condition, targets, result);
+                for s in &if_stmt.then_branch.statements {
+                    self.find_ident_types_in_stmt(s, targets, result);
+                }
+                if let Some(else_branch) = &if_stmt.else_branch {
+                    match else_branch {
+                        crate::ast::ElseBranch::ElseIf(elif) => {
+                            self.find_ident_types_in_stmt(
+                                &Statement::If(*elif.clone()),
+                                targets,
+                                result,
+                            );
+                        }
+                        crate::ast::ElseBranch::Else(block) => {
+                            for s in &block.statements {
+                                self.find_ident_types_in_stmt(s, targets, result);
+                            }
+                        }
+                    }
+                }
+            }
+            Statement::While(while_stmt) => {
+                self.find_ident_types_in_expr(&while_stmt.condition, targets, result);
+                for s in &while_stmt.body.statements {
+                    self.find_ident_types_in_stmt(s, targets, result);
+                }
+            }
+            Statement::For(for_stmt) => {
+                self.find_ident_types_in_expr(&for_stmt.iterable, targets, result);
+                for s in &for_stmt.body.statements {
+                    self.find_ident_types_in_stmt(s, targets, result);
+                }
+            }
+            Statement::Return(ret) => {
+                if let Some(val) = &ret.value {
+                    self.find_ident_types_in_expr(val, targets, result);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn find_ident_types_in_expr(
+        &self,
+        expr: &Expression<'_>,
+        targets: &HashSet<&str>,
+        result: &mut HashMap<String, HeapType>,
+    ) {
+        match expr {
+            Expression::Identifier(ident_expr) => {
+                let name = self.interner.resolve(&ident_expr.ident.symbol);
+                if targets.contains(name) && !result.contains_key(name) {
+                    if let Some(ty) = self.annotations.get_type(ident_expr.span) {
+                        let resolved = ty.resolve();
+                        if let Some(ht) = heap_type_from_type(&resolved, self.interner) {
+                            result.insert(name.to_string(), ht);
+                        }
+                    }
+                }
+            }
+            Expression::Call(call) => {
+                self.find_ident_types_in_expr(call.callee, targets, result);
+                for arg in &call.args {
+                    self.find_ident_types_in_expr(arg, targets, result);
+                }
+            }
+            Expression::MethodCall(mc) => {
+                self.find_ident_types_in_expr(mc.receiver, targets, result);
+                for arg in &mc.args {
+                    self.find_ident_types_in_expr(arg, targets, result);
+                }
+            }
+            Expression::Binary(bin) => {
+                self.find_ident_types_in_expr(bin.left, targets, result);
+                self.find_ident_types_in_expr(bin.right, targets, result);
+            }
+            Expression::Field(field) => {
+                self.find_ident_types_in_expr(field.base, targets, result);
+            }
+            Expression::Index(idx) => {
+                self.find_ident_types_in_expr(idx.base, targets, result);
+                self.find_ident_types_in_expr(idx.index, targets, result);
+            }
+            Expression::ForceUnwrap(unwrap) => {
+                self.find_ident_types_in_expr(unwrap.expr, targets, result);
+            }
+            _ => {}
+        }
+    }
+
     fn declare_spawn_trampoline(
         &mut self,
         _id: u32,
@@ -6719,6 +6859,9 @@ impl<'a> JitCompiler<'a> {
                 .load(cranelift::prelude::types::I64, MemFlags::new(), addr, 0);
             builder.def_var(var, val);
             ctx.variables.insert(var_name.clone(), var);
+            if let Some(heap_type) = info.captured_heap_types.get(var_name) {
+                ctx.var_heap_types.insert(var_name.clone(), heap_type.clone());
+            }
         }
         let body = unsafe { &*info.body_ptr };
         for stmt in &body.statements {
@@ -6729,6 +6872,7 @@ impl<'a> JitCompiler<'a> {
         }
 
         if !ctx.block_terminated {
+            emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
             builder.ins().return_(&[]);
         }
 
