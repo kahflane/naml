@@ -70,16 +70,29 @@ fn throw_os_error(message: &str, code: i32) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_os_hostname() -> *mut NamlString {
-    let mut buf = [0u8; 256];
-    let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
-    if rc != 0 {
-        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(-1);
-        throw_os_error("failed to get hostname", errno);
-        return unsafe { naml_from_string("") };
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 256];
+        let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+        if rc != 0 {
+            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(-1);
+            throw_os_error("failed to get hostname", errno);
+            return unsafe { naml_from_string("") };
+        }
+        let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        let name = std::str::from_utf8(&buf[..len]).unwrap_or("");
+        unsafe { naml_from_string(name) }
     }
-    let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-    let name = std::str::from_utf8(&buf[..len]).unwrap_or("");
-    unsafe { naml_from_string(name) }
+    #[cfg(windows)]
+    {
+        match std::env::var("COMPUTERNAME") {
+            Ok(name) => unsafe { naml_from_string(&name) },
+            Err(_) => {
+                throw_os_error("failed to get hostname", -1);
+                unsafe { naml_from_string("") }
+            }
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -91,10 +104,14 @@ pub extern "C" fn naml_os_temp_dir() -> *mut NamlString {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_os_home_dir() -> *mut NamlString {
-    match std::env::var("HOME") {
+    #[cfg(unix)]
+    let home_var = "HOME";
+    #[cfg(windows)]
+    let home_var = "USERPROFILE";
+    match std::env::var(home_var) {
         Ok(home) => unsafe { naml_from_string(&home) },
         Err(_) => {
-            throw_os_error("HOME environment variable not set", -1);
+            throw_os_error("home directory environment variable not set", -1);
             unsafe { naml_from_string("") }
         }
     }
@@ -219,7 +236,14 @@ pub extern "C" fn naml_os_executable() -> *mut NamlString {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_os_pagesize() -> i64 {
-    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as i64 }
+    #[cfg(unix)]
+    {
+        unsafe { libc::sysconf(libc::_SC_PAGESIZE) as i64 }
+    }
+    #[cfg(not(unix))]
+    {
+        4096
+    }
 }
 
 #[unsafe(no_mangle)]
