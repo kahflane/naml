@@ -14,14 +14,14 @@ Use the `mod` keyword to declare submodules.
 Declare a module that corresponds to a file or directory:
 
 ```naml
-// In main.naml
-mod math;        // Looks for math.naml or math/mod.naml
-mod network;     // Looks for network.naml or network/mod.naml
+// In main.nm
+mod math;        // Looks for math.nm or math/mod.nm
+mod network;     // Looks for network.nm or network/mod.nm
 ```
 
 The module system searches for:
-1. `math.naml` in the same directory
-2. `math/mod.naml` in a subdirectory
+1. `math.nm` in the same directory
+2. `math/mod.nm` in a subdirectory
 
 ### Inline Modules
 
@@ -160,12 +160,12 @@ struct PrivateStruct {
 
 ```
 project/
-├── main.naml
-├── math.naml
-└── utils.naml
+├── main.nm
+├── math.nm
+└── utils.nm
 ```
 
-**main.naml**:
+**main.nm**:
 ```naml
 mod math;
 mod utils;
@@ -179,7 +179,7 @@ fn main() {
 }
 ```
 
-**math.naml**:
+**math.nm**:
 ```naml
 pub fn add(a: int, b: int) -> int {
     return a + b;
@@ -190,7 +190,7 @@ pub fn subtract(a: int, b: int) -> int {
 }
 ```
 
-**utils.naml**:
+**utils.nm**:
 ```naml
 pub fn helper() {
     println("Helper function");
@@ -201,14 +201,14 @@ pub fn helper() {
 
 ```
 project/
-├── main.naml
+├── main.nm
 └── math/
-    ├── mod.naml
-    ├── basic.naml
-    └── advanced.naml
+    ├── mod.nm
+    ├── basic.nm
+    └── advanced.nm
 ```
 
-**main.naml**:
+**main.nm**:
 ```naml
 mod math;
 
@@ -221,13 +221,13 @@ fn main() {
 }
 ```
 
-**math/mod.naml**:
+**math/mod.nm**:
 ```naml
 pub mod basic;
 pub mod advanced;
 ```
 
-**math/basic.naml**:
+**math/basic.nm**:
 ```naml
 pub fn add(a: int, b: int) -> int {
     return a + b;
@@ -238,7 +238,7 @@ pub fn subtract(a: int, b: int) -> int {
 }
 ```
 
-**math/advanced.naml**:
+**math/advanced.nm**:
 ```naml
 pub fn power(base: int, exp: int) -> int {
     var result: int = 1;
@@ -309,7 +309,7 @@ var len: int = count(arr);
 
 ## Complete Module Example
 
-**main.naml**:
+**main.nm**:
 ```naml
 mod geometry;
 mod utils;
@@ -326,12 +326,12 @@ fn main() {
 }
 ```
 
-**geometry/mod.naml**:
+**geometry/mod.nm**:
 ```naml
 pub mod shapes;
 ```
 
-**geometry/shapes.naml**:
+**geometry/shapes.nm**:
 ```naml
 pub struct Circle {
     pub radius: float
@@ -351,12 +351,12 @@ pub fn (self: Rectangle) area() -> float {
 }
 ```
 
-**utils/mod.naml**:
+**utils/mod.nm**:
 ```naml
 pub mod format;
 ```
 
-**utils/format.naml**:
+**utils/format.nm**:
 ```naml
 pub fn format_shape(name: string, area: float) -> string {
     return fmt("{} area: {}", name, area);
@@ -387,5 +387,5 @@ See the [Package Manager guide](/guide/5-packages/) for full details.
 3. **Minimize wildcard imports** - Prefer specific imports for clarity
 4. **Keep module trees shallow** - Avoid deep nesting of modules
 5. **Export only public APIs** - Keep implementation details private
-6. **Use mod.naml for organization** - Re-export submodules in mod.naml
+6. **Use mod.nm for organization** - Re-export submodules in mod.nm
 7. **Consistent naming** - Use snake_case for module file names

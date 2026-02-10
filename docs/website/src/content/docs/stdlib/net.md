@@ -1,17 +1,18 @@
 ---
 title: "std::net"
-description: TCP, UDP, and HTTP client/server APIs
+description: TCP, UDP, HTTP, and TLS networking APIs
 ---
 
-Networking APIs for TCP, UDP, and HTTP communication.
+Networking APIs for TCP, UDP, HTTP, and TLS communication.
 
 ## Import
 
 ```naml
-use std::net::tcp::*;      // TCP client/server
-use std::net::udp::*;      // UDP sockets
+use std::net::tcp::*;           // TCP client/server
+use std::net::udp::*;           // UDP sockets
 use std::net::http::client::*;  // HTTP client
 use std::net::http::server::*;  // HTTP server
+use std::net::tls::*;           // TLS client/server
 ```
 
 ## TCP Server
@@ -575,5 +576,204 @@ fn main() {
     serve(router, "0.0.0.0", 8080) catch e {
         println(fmt("Error: {}", e.message));
     };
+}
+```
+
+## TLS Client
+
+TLS connections using rustls with Mozilla root CAs. HTTPS is also supported transparently via the HTTP client above.
+
+### connect
+
+Connect to a TLS server. Uses system root CAs for certificate verification.
+
+```naml
+fn connect(address: string) -> int throws TlsError, NetworkError
+```
+
+**Example:**
+
+```naml
+var socket: int = connect("example.com:443") catch e {
+    println(fmt("TLS connect failed: {}", e.message));
+    return;
+};
+```
+
+### read
+
+Read up to n bytes from TLS connection.
+
+```naml
+fn read(socket: int, size: int) -> bytes throws NetworkError
+```
+
+### read_all
+
+Read all data until EOF.
+
+```naml
+fn read_all(socket: int) -> bytes throws NetworkError
+```
+
+### write
+
+Write bytes over TLS connection.
+
+```naml
+fn write(socket: int, data: bytes) throws NetworkError
+```
+
+### close
+
+Close TLS connection.
+
+```naml
+fn close(socket: int)
+```
+
+### set_timeout
+
+Set read/write timeout in milliseconds.
+
+```naml
+fn set_timeout(socket: int, ms: int)
+```
+
+### peer_addr
+
+Get remote peer address.
+
+```naml
+fn peer_addr(socket: int) -> string
+```
+
+### TLS Client Example
+
+```naml
+use std::net::tls::{connect, read, write, close, set_timeout, peer_addr};
+
+fn main() {
+    var socket: int = connect("example.com:443") catch e {
+        println(fmt("TLS connect failed: {}", e.message));
+        return;
+    };
+
+    println(fmt("Connected to: {}", peer_addr(socket)));
+    set_timeout(socket, 10000);
+
+    var request: bytes = "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n" as bytes;
+    write(socket, request) catch e {
+        println(fmt("Write failed: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    var response: bytes = read(socket, 4096) catch e {
+        println(fmt("Read failed: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    println(response as string);
+    close(socket);
+}
+```
+
+## TLS Server
+
+Wrap a TCP listener with TLS using PEM certificate and key files.
+
+### wrap_listener
+
+Create a TLS listener from an existing TCP listener.
+
+```naml
+fn wrap_listener(listener: int, cert_path: string, key_path: string) -> int throws TlsError
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| listener | int | TCP listener handle from `tcp::listen()` |
+| cert_path | string | Path to PEM certificate file |
+| key_path | string | Path to PEM private key file |
+
+**Returns:** TLS listener handle.
+
+### accept
+
+Accept incoming TLS connection.
+
+```naml
+fn accept(tls_listener: int) -> int throws NetworkError, TlsError
+```
+
+**Returns:** TLS connection handle (use with TLS `read`/`write`/`close`).
+
+### close_listener
+
+Close TLS listener.
+
+```naml
+fn close_listener(tls_listener: int)
+```
+
+### TLS Server Example
+
+```naml
+use std::net::tcp::listen;
+use std::net::tls::{wrap_listener, accept, read, write, close, close_listener};
+
+fn main() {
+    var tcp: int = listen("0.0.0.0", 8443) catch e {
+        println(fmt("Listen failed: {}", e.message));
+        return;
+    };
+
+    var tls: int = wrap_listener(tcp, "cert.pem", "key.pem") catch e {
+        println(fmt("TLS setup failed: {}", e.message));
+        return;
+    };
+
+    println("TLS server listening on :8443");
+
+    while (true) {
+        var client: int = accept(tls) catch e {
+            println(fmt("Accept failed: {}", e.message));
+            continue;
+        };
+
+        var data: bytes = read(client, 4096) catch e {
+            close(client);
+            continue;
+        };
+
+        write(client, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK" as bytes) catch e {
+            close(client);
+            continue;
+        };
+
+        close(client);
+    }
+
+    close_listener(tls);
+}
+```
+
+## HTTPS
+
+The HTTP client supports HTTPS URLs transparently. No additional imports needed.
+
+```naml
+use std::net::http::client::{get, status, body};
+
+fn main() {
+    var response: int = get("https://example.com", none) catch e {
+        println(fmt("HTTPS request failed: {}", e.message));
+        return;
+    };
+
+    println(fmt("Status: {}", status(response)));
+    println(body(response) as string);
 }
 ```

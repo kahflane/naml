@@ -33,7 +33,9 @@
       "Bash(echo:*)",
       "Bash(bash:*)",
       "Bash(ls:*)",
-      "Bash(./scripts/run_examples.sh:*)"
+      "Bash(./scripts/run_examples.sh:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)"
     ]
   },
   "hooks": {

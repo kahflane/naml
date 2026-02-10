@@ -19,7 +19,10 @@ The naml standard library provides a comprehensive set of modules for common pro
 - **[std::path](/stdlib/path)** - Cross-platform path manipulation
 
 ### Networking
-- **[std::net](/stdlib/net)** - TCP, UDP, and HTTP client/server APIs
+- **[std::net](/stdlib/net)** - TCP, UDP, HTTP, and TLS client/server APIs
+
+### Cryptography
+- **[std::crypto](/stdlib/crypto)** - Hashing (MD5, SHA-1, SHA-256, SHA-512), HMAC, PBKDF2, and secure random bytes
 
 ### Database
 - **[std::db::sqlite](/stdlib/db-sqlite)** - SQLite3 database integration
