@@ -2227,6 +2227,60 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_net_http_middleware_request_id as *const u8,
         );
 
+        // TLS Client
+        builder.symbol(
+            "naml_net_tls_client_connect",
+            crate::runtime::naml_net_tls_client_connect as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_client_read",
+            crate::runtime::naml_net_tls_client_read as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_client_read_all",
+            crate::runtime::naml_net_tls_client_read_all as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_client_write",
+            crate::runtime::naml_net_tls_client_write as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_client_close",
+            crate::runtime::naml_net_tls_client_close as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_client_set_timeout",
+            crate::runtime::naml_net_tls_client_set_timeout as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_client_peer_addr",
+            crate::runtime::naml_net_tls_client_peer_addr as *const u8,
+        );
+
+        // TLS Server
+        builder.symbol(
+            "naml_net_tls_server_wrap_listener",
+            crate::runtime::naml_net_tls_server_wrap_listener as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_server_accept",
+            crate::runtime::naml_net_tls_server_accept as *const u8,
+        );
+        builder.symbol(
+            "naml_net_tls_server_close_listener",
+            crate::runtime::naml_net_tls_server_close_listener as *const u8,
+        );
+
+        // HTTP over TLS
+        builder.symbol(
+            "naml_net_http_server_serve_tls",
+            crate::runtime::naml_net_http_server_serve_tls as *const u8,
+        );
+        builder.symbol(
+            "naml_net_http_client_get_tls",
+            crate::runtime::naml_net_http_client_get_tls as *const u8,
+        );
+
         builder.symbol("naml_db_sqlite_error_new", crate::runtime::naml_db_sqlite_error_new as *const u8);
         builder.symbol("naml_db_sqlite_open", crate::runtime::naml_db_sqlite_open as *const u8);
         builder.symbol("naml_db_sqlite_open_memory", crate::runtime::naml_db_sqlite_open_memory as *const u8);
@@ -2446,6 +2500,16 @@ impl<'a> JitCompiler<'a> {
             s("PathError"),
             StructDef {
                 type_id: 0xFFFF_0004,
+                fields: vec![message],
+                field_heap_types: vec![Some(HeapType::String)],
+            },
+        );
+
+        self.exception_names.insert(s("TlsError"));
+        self.struct_defs.insert(
+            s("TlsError"),
+            StructDef {
+                type_id: 0xFFFF_000E,
                 fields: vec![message],
                 field_heap_types: vec![Some(HeapType::String)],
             },
@@ -5910,6 +5974,96 @@ impl<'a> JitCompiler<'a> {
             &mut self.runtime_funcs,
             "naml_net_http_middleware_request_id",
             &[],
+            &[ptr],
+        )?;
+
+        // TLS Client
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_client_connect",
+            &[ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_client_read",
+            &[i64t, i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_client_read_all",
+            &[i64t],
+            &[ptr],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_client_write",
+            &[i64t, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_client_close",
+            &[i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_client_set_timeout",
+            &[i64t, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_client_peer_addr",
+            &[i64t],
+            &[ptr],
+        )?;
+
+        // TLS Server
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_server_wrap_listener",
+            &[i64t, ptr, ptr],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_server_accept",
+            &[i64t],
+            &[i64t],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_tls_server_close_listener",
+            &[i64t],
+            &[],
+        )?;
+
+        // HTTP over TLS
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_server_serve_tls",
+            &[ptr, i64t, ptr, ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_net_http_client_get_tls",
+            &[ptr, ptr],
             &[ptr],
         )?;
 

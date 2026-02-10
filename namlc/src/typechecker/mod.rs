@@ -345,6 +345,17 @@ impl<'a> TypeChecker<'a> {
             }),
         );
 
+        let tls_error_name = self.interner.get_or_intern("TlsError");
+        self.symbols.define_type(
+            tls_error_name,
+            TypeDef::Exception(ExceptionDef {
+                name: tls_error_name,
+                fields: vec![(msg_name, Type::String)],
+                is_public: true,
+                span: Span::dummy(),
+            }),
+        );
+
         self.register_std_lib();
     }
 
@@ -387,6 +398,7 @@ impl<'a> TypeChecker<'a> {
             "net::http::client",
             "net::http::server",
             "net::http::middleware",
+            "net::tls",
             "timers",
             "db",
             "db::sqlite",
@@ -2300,6 +2312,12 @@ impl<'a> TypeChecker<'a> {
                 vec!["NetworkError", "TimeoutError"],
             ),
             StdModuleFn::new("set_timeout", vec![("ms", Type::Int)], Type::Unit),
+            StdModuleFn::throwing(
+                "get_tls",
+                vec![("url", Type::String), ("ca_path", Type::String)],
+                Type::Int,
+                vec!["NetworkError", "TlsError"],
+            ),
             // Response accessors
             StdModuleFn::new("status", vec![("response", Type::Int)], Type::Int),
             StdModuleFn::new("body", vec![("response", Type::Int)], Type::Bytes),
@@ -2409,6 +2427,17 @@ impl<'a> TypeChecker<'a> {
                 vec![("status", Type::Int), ("body", Type::String)],
                 Type::Int,
             ),
+            StdModuleFn::throwing(
+                "serve_tls",
+                vec![
+                    ("address", Type::String),
+                    ("router", Type::Int),
+                    ("cert_path", Type::String),
+                    ("key_path", Type::String),
+                ],
+                Type::Unit,
+                vec!["NetworkError", "TlsError"],
+            ),
         ]
     }
 
@@ -2429,6 +2458,59 @@ impl<'a> TypeChecker<'a> {
             ),
             StdModuleFn::new("compress", vec![], Type::Int),
             StdModuleFn::new("request_id", vec![], Type::Int),
+        ]
+    }
+
+    fn get_net_tls_functions() -> Vec<StdModuleFn> {
+        vec![
+            StdModuleFn::throwing(
+                "connect",
+                vec![("address", Type::String)],
+                Type::Int,
+                vec!["NetworkError", "TlsError"],
+            ),
+            StdModuleFn::throwing(
+                "read",
+                vec![("socket", Type::Int), ("size", Type::Int)],
+                Type::Bytes,
+                vec!["NetworkError", "TlsError"],
+            ),
+            StdModuleFn::throwing(
+                "read_all",
+                vec![("socket", Type::Int)],
+                Type::Bytes,
+                vec!["NetworkError", "TlsError"],
+            ),
+            StdModuleFn::throwing(
+                "write",
+                vec![("socket", Type::Int), ("data", Type::Bytes)],
+                Type::Unit,
+                vec!["NetworkError", "TlsError"],
+            ),
+            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
+            StdModuleFn::new(
+                "set_timeout",
+                vec![("socket", Type::Int), ("ms", Type::Int)],
+                Type::Unit,
+            ),
+            StdModuleFn::new("peer_addr", vec![("socket", Type::Int)], Type::String),
+            StdModuleFn::throwing(
+                "wrap_listener",
+                vec![
+                    ("listener", Type::Int),
+                    ("cert_path", Type::String),
+                    ("key_path", Type::String),
+                ],
+                Type::Int,
+                vec!["TlsError"],
+            ),
+            StdModuleFn::throwing(
+                "accept",
+                vec![("tls_listener", Type::Int)],
+                Type::Int,
+                vec!["NetworkError", "TlsError"],
+            ),
+            StdModuleFn::new("close_listener", vec![("tls_listener", Type::Int)], Type::Unit),
         ]
     }
 
@@ -3092,6 +3174,7 @@ impl<'a> TypeChecker<'a> {
             "net::http::client" => Some(Self::get_net_http_client_functions()),
             "net::http::server" => Some(Self::get_net_http_server_functions()),
             "net::http::middleware" => Some(Self::get_net_http_middleware_functions()),
+            "net::tls" => Some(Self::get_net_tls_functions()),
             "db" => Some(vec![]),
             "db::sqlite" => Some(Self::get_db_sqlite_functions()),
             // Crypto module

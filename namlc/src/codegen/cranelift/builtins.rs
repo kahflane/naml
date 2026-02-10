@@ -704,6 +704,34 @@ pub enum BuiltinStrategy {
     NetHttpServerTextResponse,
 
     // ========================================
+    // TLS strategies
+    // ========================================
+    /// (addr: string) -> int throws NetworkError
+    NetTlsConnect,
+    /// (socket: int, size: int) -> bytes throws NetworkError
+    NetTlsRead,
+    /// (socket: int) -> bytes throws NetworkError
+    NetTlsReadAll,
+    /// (socket: int, data: bytes) -> unit throws NetworkError
+    NetTlsWrite,
+    /// (socket: int) -> unit
+    NetTlsClientClose,
+    /// (socket: int, ms: int) -> unit
+    NetTlsSetTimeout,
+    /// (socket: int) -> string
+    NetTlsPeerAddr,
+    /// (listener: int, cert: string, key: string) -> int throws NetworkError
+    NetTlsWrapListener,
+    /// (handle: int) -> int throws NetworkError
+    NetTlsAccept,
+    /// (handle: int) -> unit
+    NetTlsCloseListener,
+    /// (addr: string, router: int, cert: string, key: string) -> unit throws NetworkError
+    NetHttpServeTls,
+    /// (url: string, ca_path: string) -> bytes throws NetworkError
+    NetHttpGetTls,
+
+    // ========================================
     // SQLite database strategies
     // ========================================
     /// (path: string) -> int throws DBError
@@ -2296,6 +2324,57 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "net::http::server::mount", strategy: BuiltinStrategy::NetHttpServerMount },
         BuiltinFunction { name: "net::http::server::serve", strategy: BuiltinStrategy::NetHttpServerServe },
         BuiltinFunction { name: "net::http::server::text_response", strategy: BuiltinStrategy::NetHttpServerTextResponse },
+        // ========================================
+        // TLS module
+        // ========================================
+        BuiltinFunction {
+            name: "net::tls::connect",
+            strategy: BuiltinStrategy::NetTlsConnect,
+        },
+        BuiltinFunction {
+            name: "net::tls::read",
+            strategy: BuiltinStrategy::NetTlsRead,
+        },
+        BuiltinFunction {
+            name: "net::tls::read_all",
+            strategy: BuiltinStrategy::NetTlsReadAll,
+        },
+        BuiltinFunction {
+            name: "net::tls::write",
+            strategy: BuiltinStrategy::NetTlsWrite,
+        },
+        BuiltinFunction {
+            name: "net::tls::close",
+            strategy: BuiltinStrategy::NetTlsClientClose,
+        },
+        BuiltinFunction {
+            name: "net::tls::set_timeout",
+            strategy: BuiltinStrategy::NetTlsSetTimeout,
+        },
+        BuiltinFunction {
+            name: "net::tls::peer_addr",
+            strategy: BuiltinStrategy::NetTlsPeerAddr,
+        },
+        BuiltinFunction {
+            name: "net::tls::wrap_listener",
+            strategy: BuiltinStrategy::NetTlsWrapListener,
+        },
+        BuiltinFunction {
+            name: "net::tls::accept",
+            strategy: BuiltinStrategy::NetTlsAccept,
+        },
+        BuiltinFunction {
+            name: "net::tls::close_listener",
+            strategy: BuiltinStrategy::NetTlsCloseListener,
+        },
+        BuiltinFunction {
+            name: "net::http::server::serve_tls",
+            strategy: BuiltinStrategy::NetHttpServeTls,
+        },
+        BuiltinFunction {
+            name: "net::http::client::get_tls",
+            strategy: BuiltinStrategy::NetHttpGetTls,
+        },
         // ========================================
         // SQLite database module
         // ========================================
@@ -4854,6 +4933,101 @@ pub fn compile_builtin_call(
             let body = compile_expression(ctx, builder, &args[1])?;
             let body = ensure_naml_string(ctx, builder, body, &args[1])?;
             call_two_arg_int_runtime(ctx, builder, "naml_net_http_server_text_response", status, body)
+        }
+
+        // ========================================
+        // TLS strategies
+        // ========================================
+        BuiltinStrategy::NetTlsConnect => {
+            let addr = compile_expression(ctx, builder, &args[0])?;
+            let addr = ensure_naml_string(ctx, builder, addr, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_tls_client_connect", addr)
+        }
+
+        BuiltinStrategy::NetTlsRead => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let size = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, "naml_net_tls_client_read", socket, size)
+        }
+
+        BuiltinStrategy::NetTlsReadAll => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_net_tls_client_read_all", socket)
+        }
+
+        BuiltinStrategy::NetTlsWrite => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let data = compile_expression(ctx, builder, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tls_client_write")?;
+            builder.ins().call(func_ref, &[socket, data]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetTlsClientClose => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tls_client_close")?;
+            builder.ins().call(func_ref, &[socket]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetTlsSetTimeout => {
+            use super::runtime::rt_func_ref;
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            let ms = compile_expression(ctx, builder, &args[1])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tls_client_set_timeout")?;
+            builder.ins().call(func_ref, &[socket, ms]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetTlsPeerAddr => {
+            let socket = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, "naml_net_tls_client_peer_addr", socket)
+        }
+
+        BuiltinStrategy::NetTlsWrapListener => {
+            let listener = compile_expression(ctx, builder, &args[0])?;
+            let cert = compile_expression(ctx, builder, &args[1])?;
+            let cert = ensure_naml_string(ctx, builder, cert, &args[1])?;
+            let key = compile_expression(ctx, builder, &args[2])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[2])?;
+            call_three_arg_int_runtime(ctx, builder, "naml_net_tls_server_wrap_listener", listener, cert, key)
+        }
+
+        BuiltinStrategy::NetTlsAccept => {
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_int_runtime(ctx, builder, "naml_net_tls_server_accept", handle)
+        }
+
+        BuiltinStrategy::NetTlsCloseListener => {
+            use super::runtime::rt_func_ref;
+            let handle = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_tls_server_close_listener")?;
+            builder.ins().call(func_ref, &[handle]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetHttpServeTls => {
+            use super::runtime::rt_func_ref;
+            let addr = compile_expression(ctx, builder, &args[0])?;
+            let addr = ensure_naml_string(ctx, builder, addr, &args[0])?;
+            let router = compile_expression(ctx, builder, &args[1])?;
+            let cert = compile_expression(ctx, builder, &args[2])?;
+            let cert = ensure_naml_string(ctx, builder, cert, &args[2])?;
+            let key = compile_expression(ctx, builder, &args[3])?;
+            let key = ensure_naml_string(ctx, builder, key, &args[3])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_net_http_server_serve_tls")?;
+            builder.ins().call(func_ref, &[addr, router, cert, key]);
+            Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::NetHttpGetTls => {
+            let url = compile_expression(ctx, builder, &args[0])?;
+            let url = ensure_naml_string(ctx, builder, url, &args[0])?;
+            let ca_path = compile_expression(ctx, builder, &args[1])?;
+            let ca_path = ensure_naml_string(ctx, builder, ca_path, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, "naml_net_http_client_get_tls", url, ca_path)
         }
 
         // ========================================

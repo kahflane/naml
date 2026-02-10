@@ -18,8 +18,8 @@
 //! - `set_timeout(socket: tcp_socket, ms: int)` - Set socket timeout
 //!
 
-mod client;
-mod server;
+pub(crate) mod client;
+pub(crate) mod server;
 
 pub use client::*;
 pub use server::*;

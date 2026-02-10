@@ -77,9 +77,11 @@
 mod errors;
 pub mod http;
 pub mod tcp;
+pub mod tls;
 pub mod udp;
 
 pub use errors::*;
 pub use http::*;
 pub use tcp::*;
+pub use tls::*;
 pub use udp::*;

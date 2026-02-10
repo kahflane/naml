@@ -32,7 +32,7 @@ static SOCKETS: OnceLock<Mutex<HashMap<i64, TcpStream>>> = OnceLock::new();
 /// Counter for generating unique handles
 static HANDLE_COUNTER: OnceLock<Mutex<i64>> = OnceLock::new();
 
-fn get_listeners() -> &'static Mutex<HashMap<i64, TcpListener>> {
+pub(crate) fn get_listeners() -> &'static Mutex<HashMap<i64, TcpListener>> {
     LISTENERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 

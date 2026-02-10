@@ -191,6 +191,23 @@ pub(crate) fn throw_timeout_error(message: &str, timeout_ms: i64) -> *mut u8 {
     std::ptr::null_mut()
 }
 
+/// Throw a TlsError
+///
+/// Sets the exception and returns null to indicate an exception was thrown.
+pub(crate) fn throw_tls_error(message: &str) -> *mut u8 {
+    unsafe {
+        let message_ptr = naml_string_new(message.as_ptr(), message.len());
+        let tls_error = naml_tls_error_new(message_ptr);
+
+        let stack = naml_stack_capture();
+        *(tls_error.add(8) as *mut *mut u8) = stack;
+
+        naml_exception_set(tls_error);
+    }
+
+    std::ptr::null_mut()
+}
+
 /// Throw a ConnectionRefused error
 ///
 /// Sets the exception and returns null to indicate an exception was thrown.

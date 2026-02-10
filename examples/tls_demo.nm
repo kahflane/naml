@@ -1,0 +1,98 @@
+///
+/// TLS Client Demo
+///
+/// Demonstrates TLS/SSL networking by:
+/// - Connecting to example.com:443 via raw TLS
+/// - Sending an HTTP GET request over the encrypted connection
+/// - Reading and displaying the response
+/// - Using set_timeout and peer_addr
+///
+/// Also tests HTTPS via the HTTP client (transparent TLS).
+///
+
+use std::net::tls::{connect, read, write, close, set_timeout, peer_addr};
+use std::net::http::client::{get, status, body};
+use std::strings::len;
+
+fn main() {
+    println("=== TLS/SSL Demo ===");
+    println("");
+
+    test_raw_tls();
+    println("");
+    test_https_client();
+
+    println("");
+    println("TLS demo finished.");
+}
+
+fn test_raw_tls() {
+    println("--- Raw TLS Connection ---");
+
+    var socket: int = connect("example.com:443") catch e {
+        println(fmt("TLS connect failed: {}", e.message));
+        return;
+    };
+
+    println("Connected to example.com:443 via TLS");
+
+    var addr: string = peer_addr(socket);
+    println(fmt("Peer address: {}", addr));
+
+    set_timeout(socket, 10000);
+
+    var request: string = "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n";
+    var request_bytes: bytes = request as bytes;
+
+    write(socket, request_bytes) catch e {
+        println(fmt("TLS write failed: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    println("Sent HTTP GET request over TLS");
+
+    var response: bytes = read(socket, 4096) catch e {
+        println(fmt("TLS read failed: {}", e.message));
+        close(socket);
+        return;
+    };
+
+    var response_str: string = response as string;
+    var response_len: int = len(response_str);
+    println(fmt("Received {} bytes", response_len));
+
+    if (response_len > 0) {
+        println("Response starts with:");
+        println(response_str);
+        println("SUCCESS: Raw TLS connection works");
+    } else {
+        println("FAILED: Empty response");
+    }
+
+    close(socket);
+    println("Connection closed");
+}
+
+fn test_https_client() {
+    println("--- HTTPS via HTTP Client ---");
+
+    var response: int = get("https://example.com", none) catch e {
+        println(fmt("HTTPS GET failed: {}", e.message));
+        return;
+    };
+
+    var status_code: int = status(response);
+    var body_data: bytes = body(response);
+    var body_str: string = body_data as string;
+    var body_len: int = len(body_str);
+
+    println(fmt("Status: {}", status_code));
+    println(fmt("Body length: {} bytes", body_len));
+
+    if (status_code == 200) {
+        println("SUCCESS: HTTPS client works");
+    } else {
+        println(fmt("FAILED: Unexpected status {}", status_code));
+    }
+}

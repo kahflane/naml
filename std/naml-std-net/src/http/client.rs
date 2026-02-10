@@ -17,7 +17,7 @@
 //!
 //! ## Note
 //!
-//! Currently supports HTTP only. HTTPS support requires additional TLS dependencies.
+//! Supports both HTTP and HTTPS URLs transparently via rustls.
 //!
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -170,8 +170,21 @@ fn do_request(
                 )
             })?;
 
-        // Create HTTP connector (no TLS)
-        let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let tls_config = rustls::ClientConfig::builder_with_provider(
+                rustls::crypto::ring::default_provider().into(),
+            )
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls_config)
+            .https_or_http()
+            .enable_http1()
+            .build();
+        let client = Client::builder(TokioExecutor::new()).build(connector);
 
         // Build request with default headers
         let body_bytes = body.unwrap_or_default();
@@ -199,7 +212,9 @@ fn do_request(
                     format!("Request timed out after {}ms", timeout_ms),
                 )
             })?
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e: hyper_util::client::legacy::Error| {
+                std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+            })?;
 
         // Extract status
         let status = response.status().as_u16() as i64;
@@ -209,7 +224,9 @@ fn do_request(
             .into_body()
             .collect()
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+            .map_err(|e: hyper::Error| {
+                std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+            })?
             .to_bytes()
             .to_vec();
 
@@ -295,6 +312,94 @@ pub unsafe extern "C" fn naml_net_http_client_delete(
     let url_str = unsafe { string_from_naml(url) };
     let headers = unsafe { extract_headers(headers_opt as *const NamlOption) };
     do_request("DELETE", &url_str, None, headers)
+}
+
+/// HTTP GET request with a custom CA certificate for TLS verification
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_net_http_client_get_tls(
+    url: *const NamlString,
+    ca_path: *const NamlString,
+) -> *mut NamlStruct {
+    let url_str = unsafe { string_from_naml(url) };
+    let ca_str = unsafe { string_from_naml(ca_path) };
+
+    let timeout_ms = DEFAULT_TIMEOUT_MS.load(Ordering::SeqCst);
+    let timeout = Duration::from_millis(timeout_ms);
+
+    let runtime = get_runtime();
+
+    let result: Result<(i64, Vec<u8>), String> = runtime.block_on(async move {
+        let ca_file = std::fs::File::open(&ca_str)
+            .map_err(|e| format!("failed to open CA file '{}': {}", ca_str, e))?;
+        let mut ca_reader = std::io::BufReader::new(ca_file);
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let custom_certs: Vec<_> = rustls_pemfile::certs(&mut ca_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("failed to parse CA certificate: {}", e))?;
+        for cert in custom_certs {
+            root_store
+                .add(cert)
+                .map_err(|e| format!("failed to add CA certificate: {}", e))?;
+        }
+
+        let tls_config = rustls::ClientConfig::builder_with_provider(
+                rustls::crypto::ring::default_provider().into(),
+            )
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls_config)
+            .https_or_http()
+            .enable_http1()
+            .build();
+        let client: Client<_, Full<Bytes>> =
+            Client::builder(TokioExecutor::new()).build(connector);
+
+        let uri: hyper::Uri = url_str
+            .parse()
+            .map_err(|e: hyper::http::uri::InvalidUri| format!("Invalid URL: {}", e))?;
+
+        let req = Request::builder()
+            .method("GET")
+            .uri(uri)
+            .header("User-Agent", "naml-http-client/0.1")
+            .header("Accept", "*/*")
+            .body(Full::new(Bytes::new()))
+            .map_err(|e| e.to_string())?;
+
+        let response = tokio::time::timeout(timeout, client.request(req))
+            .await
+            .map_err(|_| format!("Request timed out after {}ms", timeout_ms))?
+            .map_err(|e| e.to_string())?;
+
+        let status = response.status().as_u16() as i64;
+        let body_bytes = response
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| e.to_string())?
+            .to_bytes()
+            .to_vec();
+
+        Ok((status, body_bytes))
+    });
+
+    match result {
+        Ok((status, body_bytes)) => unsafe {
+            let response = naml_net_http_response_new();
+            naml_net_http_response_set_status(response, status);
+            let body_arr = vec_to_array(&body_bytes);
+            naml_net_http_response_set_body(response, body_arr);
+            response
+        },
+        Err(msg) => {
+            crate::errors::throw_tls_error(&msg);
+            std::ptr::null_mut()
+        }
+    }
 }
 
 #[cfg(test)]

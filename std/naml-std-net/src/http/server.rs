@@ -446,6 +446,142 @@ pub unsafe extern "C" fn naml_net_http_server_serve(
     }
 }
 
+/// Start HTTPS server with TLS
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_net_http_server_serve_tls(
+    address: *const NamlString,
+    router_handle: i64,
+    cert_path: *const NamlString,
+    key_path: *const NamlString,
+) {
+    let addr_str = unsafe { string_from_naml(address) };
+    let cert_str = unsafe { string_from_naml(cert_path) };
+    let key_str = unsafe { string_from_naml(key_path) };
+    let runtime = get_runtime();
+
+    let frozen = {
+        let routers = get_routers().read().unwrap();
+        let router_arc = match routers.get(&router_handle) {
+            Some(r) => Arc::clone(r),
+            None => {
+                drop(routers);
+                throw_network_error(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Router not found",
+                ));
+                return;
+            }
+        };
+        drop(routers);
+        let router_guard = router_arc.lock().unwrap();
+        Arc::new(FrozenRouter::from_router(&router_guard))
+    };
+
+    let tls_acceptor = {
+        let cert_file = match std::fs::File::open(&cert_str) {
+            Ok(f) => f,
+            Err(e) => {
+                crate::errors::throw_tls_error(&format!(
+                    "failed to open certificate file '{}': {}",
+                    cert_str, e
+                ));
+                return;
+            }
+        };
+        let mut cert_reader = std::io::BufReader::new(cert_file);
+        let certs: Vec<_> = match rustls_pemfile::certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                crate::errors::throw_tls_error(&format!("failed to parse certificates: {}", e));
+                return;
+            }
+        };
+
+        let key_file = match std::fs::File::open(&key_str) {
+            Ok(f) => f,
+            Err(e) => {
+                crate::errors::throw_tls_error(&format!(
+                    "failed to open key file '{}': {}",
+                    key_str, e
+                ));
+                return;
+            }
+        };
+        let mut key_reader = std::io::BufReader::new(key_file);
+        let key = match rustls_pemfile::private_key(&mut key_reader) {
+            Ok(Some(k)) => k,
+            Ok(None) => {
+                crate::errors::throw_tls_error("no private key found in key file");
+                return;
+            }
+            Err(e) => {
+                crate::errors::throw_tls_error(&format!("failed to parse private key: {}", e));
+                return;
+            }
+        };
+
+        let server_config = match rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+        {
+            Ok(c) => c,
+            Err(e) => {
+                crate::errors::throw_tls_error(&format!("invalid TLS server config: {}", e));
+                return;
+            }
+        };
+
+        tokio_rustls::TlsAcceptor::from(Arc::new(server_config))
+    };
+
+    let result = runtime.block_on(async move {
+        let addr: SocketAddr = if addr_str.starts_with(':') {
+            format!("0.0.0.0{}", addr_str).parse()
+        } else {
+            addr_str.parse()
+        }
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
+        let listener = TcpListener::bind(addr).await?;
+
+        loop {
+            let (stream, _) = listener.accept().await?;
+            let _ = stream.set_nodelay(true);
+            let acceptor = tls_acceptor.clone();
+            let frozen_clone = Arc::clone(&frozen);
+
+            tokio::spawn(async move {
+                let tls_stream = match acceptor.accept(stream).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("TLS handshake error: {}", e);
+                        return;
+                    }
+                };
+                let io = TokioIo::new(tls_stream);
+
+                let service = service_fn(move |req: Request<Incoming>| {
+                    let frozen = Arc::clone(&frozen_clone);
+                    async move { handle_request(req, &frozen).await }
+                });
+
+                if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
+                    eprintln!("Server error: {}", e);
+                }
+            });
+        }
+
+        #[allow(unreachable_code)]
+        Ok::<(), std::io::Error>(())
+    });
+
+    if let Err(e) = result {
+        throw_network_error(e);
+    }
+}
+
 /// Handle incoming HTTP request
 async fn handle_request(
     req: Request<Incoming>,
