@@ -588,6 +588,24 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_timers_next_run as *const u8,
         );
 
+        // Crypto operations (from naml-std-crypto)
+        builder.symbol("naml_crypto_md5", crate::runtime::naml_crypto_md5 as *const u8);
+        builder.symbol("naml_crypto_md5_hex", crate::runtime::naml_crypto_md5_hex as *const u8);
+        builder.symbol("naml_crypto_sha1", crate::runtime::naml_crypto_sha1 as *const u8);
+        builder.symbol("naml_crypto_sha1_hex", crate::runtime::naml_crypto_sha1_hex as *const u8);
+        builder.symbol("naml_crypto_sha256", crate::runtime::naml_crypto_sha256 as *const u8);
+        builder.symbol("naml_crypto_sha256_hex", crate::runtime::naml_crypto_sha256_hex as *const u8);
+        builder.symbol("naml_crypto_sha512", crate::runtime::naml_crypto_sha512 as *const u8);
+        builder.symbol("naml_crypto_sha512_hex", crate::runtime::naml_crypto_sha512_hex as *const u8);
+        builder.symbol("naml_crypto_hmac_sha256", crate::runtime::naml_crypto_hmac_sha256 as *const u8);
+        builder.symbol("naml_crypto_hmac_sha256_hex", crate::runtime::naml_crypto_hmac_sha256_hex as *const u8);
+        builder.symbol("naml_crypto_hmac_sha512", crate::runtime::naml_crypto_hmac_sha512 as *const u8);
+        builder.symbol("naml_crypto_hmac_sha512_hex", crate::runtime::naml_crypto_hmac_sha512_hex as *const u8);
+        builder.symbol("naml_crypto_hmac_verify_sha256", crate::runtime::naml_crypto_hmac_verify_sha256 as *const u8);
+        builder.symbol("naml_crypto_hmac_verify_sha512", crate::runtime::naml_crypto_hmac_verify_sha512 as *const u8);
+        builder.symbol("naml_crypto_pbkdf2_sha256", crate::runtime::naml_crypto_pbkdf2_sha256 as *const u8);
+        builder.symbol("naml_crypto_random_bytes", crate::runtime::naml_crypto_random_bytes as *const u8);
+
         // Diagnostic builtins
         builder.symbol("naml_warn", crate::runtime::naml_warn as *const u8);
         builder.symbol("naml_error", crate::runtime::naml_error as *const u8);
@@ -2301,6 +2319,56 @@ impl<'a> JitCompiler<'a> {
                 field_heap_types: vec![Some(HeapType::String)],
             },
         );
+
+        self.exception_names.insert("OSError".to_string());
+        self.struct_defs.insert(
+            "OSError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0008,
+                fields: vec!["message".to_string(), "code".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None],
+            },
+        );
+
+        self.exception_names.insert("NetworkError".to_string());
+        self.struct_defs.insert(
+            "NetworkError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0005,
+                fields: vec!["message".to_string(), "code".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None],
+            },
+        );
+
+        self.exception_names.insert("TimeoutError".to_string());
+        self.struct_defs.insert(
+            "TimeoutError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0006,
+                fields: vec!["message".to_string(), "timeout_ms".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None],
+            },
+        );
+
+        self.exception_names.insert("PermissionError".to_string());
+        self.struct_defs.insert(
+            "PermissionError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_000D,
+                fields: vec!["path".to_string(), "code".to_string()],
+                field_heap_types: vec![Some(HeapType::String), None],
+            },
+        );
+
+        self.exception_names.insert("PathError".to_string());
+        self.struct_defs.insert(
+            "PathError".to_string(),
+            StructDef {
+                type_id: 0xFFFF_0004,
+                fields: vec!["message".to_string()],
+                field_heap_types: vec![Some(HeapType::String)],
+            },
+        );
     }
 
     fn declare_runtime_functions(&mut self) -> Result<(), CodegenError> {
@@ -3757,6 +3825,39 @@ impl<'a> JitCompiler<'a> {
             &[i64t],
             &[i64t],
         )?;
+
+        // Crypto operations - hash: (ptr) -> ptr
+        for name in [
+            "naml_crypto_md5", "naml_crypto_sha1",
+            "naml_crypto_sha256", "naml_crypto_sha512",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr], &[ptr])?;
+        }
+        // Crypto operations - hash hex: (ptr) -> ptr
+        for name in [
+            "naml_crypto_md5_hex", "naml_crypto_sha1_hex",
+            "naml_crypto_sha256_hex", "naml_crypto_sha512_hex",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr], &[ptr])?;
+        }
+        // Crypto operations - HMAC: (ptr, ptr) -> ptr
+        for name in [
+            "naml_crypto_hmac_sha256", "naml_crypto_hmac_sha256_hex",
+            "naml_crypto_hmac_sha512", "naml_crypto_hmac_sha512_hex",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr, ptr], &[ptr])?;
+        }
+        // Crypto operations - HMAC verify: (ptr, ptr, ptr) -> i64 (bool)
+        for name in [
+            "naml_crypto_hmac_verify_sha256", "naml_crypto_hmac_verify_sha512",
+        ] {
+            declare(&mut self.module, &mut self.runtime_funcs, name, &[ptr, ptr, ptr], &[i64t])?;
+        }
+        // Crypto operations - PBKDF2: (ptr, ptr, i64, i64) -> ptr
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_crypto_pbkdf2_sha256", &[ptr, ptr, i64t, i64t], &[ptr])?;
+        // Crypto operations - random bytes: (i64) -> ptr
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_crypto_random_bytes", &[i64t], &[ptr])?;
+
         declare(
             &mut self.module,
             &mut self.runtime_funcs,
@@ -6007,7 +6108,7 @@ impl<'a> JitCompiler<'a> {
         }
 
         let type_result =
-            crate::typechecker::check_with_types(&parse_result.ast, &mut module_interner, None);
+            crate::typechecker::check_with_types(&parse_result.ast, &mut module_interner, None, None);
 
         let saved_interner = self.interner;
         let saved_annotations = self.annotations;
@@ -6182,33 +6283,6 @@ impl<'a> JitCompiler<'a> {
                 builder.seal_block(decref_field_block);
 
                 if let HeapType::OptionOf(inner) = ht {
-                    let tag = builder.ins().load(
-                        cranelift::prelude::types::I32,
-                        MemFlags::new(),
-                        field_val,
-                        0,
-                    );
-                    let is_some =
-                        builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
-                    let inner_decref_block = builder.create_block();
-                    builder.ins().brif(
-                        is_some,
-                        inner_decref_block,
-                        &[],
-                        next_field_block,
-                        &[],
-                    );
-
-                    builder.switch_to_block(inner_decref_block);
-                    builder.seal_block(inner_decref_block);
-
-                    let inner_val = builder.ins().load(
-                        cranelift::prelude::types::I64,
-                        MemFlags::new(),
-                        field_val,
-                        8,
-                    );
-
                     let inner_func_name: String = match inner.as_ref() {
                         HeapType::String => "naml_string_decref".to_string(),
                         HeapType::Array(_) => "naml_array_decref".to_string(),
@@ -6236,28 +6310,10 @@ impl<'a> JitCompiler<'a> {
                             ))
                         })?;
 
-                    let inner_zero = builder.ins().iconst(
-                        self.module.target_config().pointer_type(),
-                        0,
-                    );
-                    let inner_is_null =
-                        builder.ins().icmp(IntCC::Equal, inner_val, inner_zero);
-                    let call_inner_block = builder.create_block();
-                    builder.ins().brif(
-                        inner_is_null,
-                        next_field_block,
-                        &[],
-                        call_inner_block,
-                        &[],
-                    );
-
-                    builder.switch_to_block(call_inner_block);
-                    builder.seal_block(call_inner_block);
-
                     let inner_func_ref = self
                         .module
                         .declare_func_in_func(inner_func_id, builder.func);
-                    builder.ins().call(inner_func_ref, &[inner_val]);
+                    builder.ins().call(inner_func_ref, &[field_val]);
                     builder.ins().jump(next_field_block, &[]);
                 } else {
                     let decref_func_name: String = match ht {

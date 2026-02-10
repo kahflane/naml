@@ -9,7 +9,7 @@
 /// Usage: First start net_tcp_chat_server.nm, then run this client
 ///
 
-use std::threads::{join, with_mutex};
+use std::threads::{join, with_mutex, sleep};
 use std::net::tcp::client::{connect, read, write, close, peer_addr};
 use std::strings::{len, rtrim};
 

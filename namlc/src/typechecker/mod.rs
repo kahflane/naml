@@ -3078,7 +3078,7 @@ impl<'a> TypeChecker<'a> {
             "net::http" => Some(vec![]),
             // Leaf modules - specific functions only
             "net::udp" => Some(Self::get_net_udp_functions()),
-            "net::tcp::listener" => Some(Self::get_net_tcp_server_functions()),
+            "net::tcp::server" => Some(Self::get_net_tcp_server_functions()),
             "net::tcp::client" => Some(Self::get_net_tcp_client_functions()),
             "net::http::client" => Some(Self::get_net_http_client_functions()),
             "net::http::server" => Some(Self::get_net_http_server_functions()),

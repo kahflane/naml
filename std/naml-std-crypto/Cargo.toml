@@ -1,0 +1,34 @@
+##
+## naml-std-crypto - Cryptographic Operations
+##
+## Provides cryptographic primitives for naml programs:
+## - Hashing: MD5, SHA-1, SHA-256, SHA-512 (digest + hex)
+## - HMAC: SHA-256 and SHA-512 with constant-time verification
+## - KDF: PBKDF2-SHA-256 key derivation
+## - Random: Cryptographically secure random bytes
+##
+## Uses the RustCrypto family of crates.
+## Platform: native only (browser should use WebCrypto in future)
+##
+
+[package]
+name = "naml-std-crypto"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cryptographic operations for the naml programming language"
+
+[lib]
+name = "naml_std_crypto"
+path = "src/lib.rs"
+
+[dependencies]
+naml-std-core.workspace = true
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+pbkdf2 = "0.12"
+rand = "0.8"
+hex = "0.4"

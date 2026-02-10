@@ -141,7 +141,6 @@ Some:  tag = 1, payload = T value
 | struct | Pointer or Inline | Small structs inline |
 | enum | Struct | Tag + max payload |
 | fn(...) → T | Pointer | Function pointer |
-| promise<T> | Pointer | Future/continuation |
 
 ## Compilation Phases
 
@@ -259,7 +258,6 @@ identity("hello");   // generates identity_string
 1. Each async function gets its own stack
 2. `await` saves state and yields to executor
 3. Executor manages ready queue
-4. Promise<T> wraps coroutine handle
 
 Alternative: CPS transformation (more complex).
 

@@ -923,30 +923,35 @@ pub fn compile_expression(
             {
                 if let crate::typechecker::Type::Exception(exc_name) = type_ann {
                     let exc_name_str = ctx.interner.resolve(exc_name).to_string();
-                    if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
-                        // Exception layout: message at 0, stack at 8, user fields at 16+
-                        let offset = if field_name == "message" {
-                            0
-                        } else if field_name == "stack" {
-                            8
-                        } else if let Some(idx) =
+                    // Exception layout: message at 0, stack at 8, user fields at 16+
+                    let offset = if field_name == "message" {
+                        0
+                    } else if field_name == "stack" {
+                        8
+                    } else if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
+                        if let Some(idx) =
                             struct_def.fields.iter().position(|f| f == &field_name)
                         {
                             16 + (idx * 8) as i32
                         } else {
                             return Err(CodegenError::JitCompile(format!(
-                                "Unknown field: {}",
+                                "Unknown exception field: {}",
                                 field_name
                             )));
-                        };
-                        let value = builder.ins().load(
-                            cranelift::prelude::types::I64,
-                            MemFlags::new(),
-                            struct_ptr,
-                            offset,
-                        );
-                        return Ok(value);
-                    }
+                        }
+                    } else {
+                        return Err(CodegenError::JitCompile(format!(
+                            "Unknown exception field: {}",
+                            field_name
+                        )));
+                    };
+                    let value = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        struct_ptr,
+                        offset,
+                    );
+                    return Ok(value);
                 } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
                     let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
                     if let Some(struct_def) = ctx.struct_defs.get(&struct_name)

@@ -511,6 +511,24 @@ pub enum BuiltinStrategy {
     TestingAssertEndsWith,
 
     // ========================================
+    // Crypto module strategies
+    // ========================================
+    /// (bytes) -> bytes (hash digest)
+    CryptoHashBytes(&'static str),
+    /// (bytes) -> string (hash hex)
+    CryptoHashHex(&'static str),
+    /// (bytes, bytes) -> bytes (HMAC digest)
+    CryptoHmacBytes(&'static str),
+    /// (bytes, bytes) -> string (HMAC hex)
+    CryptoHmacHex(&'static str),
+    /// (bytes, bytes, bytes) -> bool (HMAC verify)
+    CryptoHmacVerify(&'static str),
+    /// (bytes, bytes, int, int) -> bytes (PBKDF2)
+    CryptoPbkdf2(&'static str),
+    /// (int) -> bytes (random bytes)
+    CryptoRandomBytes(&'static str),
+
+    // ========================================
     // Encoding module strategies
     // ========================================
     /// (bytes) -> string (encode bytes to string)
@@ -2141,23 +2159,42 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "encoding::binary::ends_with", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_ends_with") },
         BuiltinFunction { name: "encoding::binary::equals", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_equals") },
         // ========================================
-        // Networking module (strict hierarchy: net::tcp::listener, net::tcp::client, etc.)
+        // Crypto module
         // ========================================
-        // TCP Listener (was server, renamed to avoid keyword conflict)
+        BuiltinFunction { name: "crypto::md5", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_md5") },
+        BuiltinFunction { name: "crypto::md5_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_md5_hex") },
+        BuiltinFunction { name: "crypto::sha1", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha1") },
+        BuiltinFunction { name: "crypto::sha1_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha1_hex") },
+        BuiltinFunction { name: "crypto::sha256", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha256") },
+        BuiltinFunction { name: "crypto::sha256_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha256_hex") },
+        BuiltinFunction { name: "crypto::sha512", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha512") },
+        BuiltinFunction { name: "crypto::sha512_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha512_hex") },
+        BuiltinFunction { name: "crypto::hmac_sha256", strategy: BuiltinStrategy::CryptoHmacBytes("naml_crypto_hmac_sha256") },
+        BuiltinFunction { name: "crypto::hmac_sha256_hex", strategy: BuiltinStrategy::CryptoHmacHex("naml_crypto_hmac_sha256_hex") },
+        BuiltinFunction { name: "crypto::hmac_sha512", strategy: BuiltinStrategy::CryptoHmacBytes("naml_crypto_hmac_sha512") },
+        BuiltinFunction { name: "crypto::hmac_sha512_hex", strategy: BuiltinStrategy::CryptoHmacHex("naml_crypto_hmac_sha512_hex") },
+        BuiltinFunction { name: "crypto::hmac_verify_sha256", strategy: BuiltinStrategy::CryptoHmacVerify("naml_crypto_hmac_verify_sha256") },
+        BuiltinFunction { name: "crypto::hmac_verify_sha512", strategy: BuiltinStrategy::CryptoHmacVerify("naml_crypto_hmac_verify_sha512") },
+        BuiltinFunction { name: "crypto::pbkdf2_sha256", strategy: BuiltinStrategy::CryptoPbkdf2("naml_crypto_pbkdf2_sha256") },
+        BuiltinFunction { name: "crypto::random_bytes", strategy: BuiltinStrategy::CryptoRandomBytes("naml_crypto_random_bytes") },
+        // ========================================
+        // Networking module (strict hierarchy: net::tcp::server, net::tcp::client, etc.)
+        // ========================================
+        // TCP Server
         BuiltinFunction {
-            name: "net::tcp::listener::listen",
+            name: "net::tcp::server::listen",
             strategy: BuiltinStrategy::NetTcpListen,
         },
         BuiltinFunction {
-            name: "net::tcp::listener::accept",
+            name: "net::tcp::server::accept",
             strategy: BuiltinStrategy::NetTcpAccept,
         },
         BuiltinFunction {
-            name: "net::tcp::listener::close",
+            name: "net::tcp::server::close",
             strategy: BuiltinStrategy::NetTcpServerClose,
         },
         BuiltinFunction {
-            name: "net::tcp::listener::local_addr",
+            name: "net::tcp::server::local_addr",
             strategy: BuiltinStrategy::NetTcpServerLocalAddr,
         },
         // TCP Client
@@ -3853,6 +3890,58 @@ pub fn compile_builtin_call(
             let msg = compile_expression(ctx, builder, &args[2])?;
             let msg = ensure_naml_string(ctx, builder, msg, &args[2])?;
             call_three_arg_void_runtime(ctx, builder, "naml_testing_assert_ends_with", value, suffix, msg)
+        }
+
+        // ========================================
+        // Crypto strategies
+        // ========================================
+        BuiltinStrategy::CryptoHashBytes(runtime_fn) => {
+            let data = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, data)
+        }
+
+        BuiltinStrategy::CryptoHashHex(runtime_fn) => {
+            let data = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, data)
+        }
+
+        BuiltinStrategy::CryptoHmacBytes(runtime_fn) => {
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let data = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, runtime_fn, key, data)
+        }
+
+        BuiltinStrategy::CryptoHmacHex(runtime_fn) => {
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let data = compile_expression(ctx, builder, &args[1])?;
+            call_two_arg_ptr_runtime(ctx, builder, runtime_fn, key, data)
+        }
+
+        BuiltinStrategy::CryptoHmacVerify(runtime_fn) => {
+            use super::runtime::rt_func_ref;
+            let key = compile_expression(ctx, builder, &args[0])?;
+            let data = compile_expression(ctx, builder, &args[1])?;
+            let mac = compile_expression(ctx, builder, &args[2])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            let call = builder.ins().call(func_ref, &[key, data, mac]);
+            let result = builder.inst_results(call)[0];
+            Ok(builder.ins().ireduce(cranelift::prelude::types::I8, result))
+        }
+
+        BuiltinStrategy::CryptoPbkdf2(runtime_fn) => {
+            use super::runtime::rt_func_ref;
+            let password = compile_expression(ctx, builder, &args[0])?;
+            let salt = compile_expression(ctx, builder, &args[1])?;
+            let iterations = compile_expression(ctx, builder, &args[2])?;
+            let key_len = compile_expression(ctx, builder, &args[3])?;
+            let func_ref = rt_func_ref(ctx, builder, runtime_fn)?;
+            let call = builder.ins().call(func_ref, &[password, salt, iterations, key_len]);
+            Ok(builder.inst_results(call)[0])
+        }
+
+        BuiltinStrategy::CryptoRandomBytes(runtime_fn) => {
+            let n = compile_expression(ctx, builder, &args[0])?;
+            call_one_arg_ptr_runtime(ctx, builder, runtime_fn, n)
         }
 
         // ========================================

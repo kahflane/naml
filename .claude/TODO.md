@@ -17,9 +17,7 @@ Error Categories (109 total)
 ├────────────────────────────────────┼───────┼────────────────────────────────────────────────┤                                                                                                        
 │ Exception struct literals          │ ~2    │ Exceptions not handled in infer_struct_literal │                                                                                                        
 ├────────────────────────────────────┼───────┼────────────────────────────────────────────────┤                                                                                                        
-│ Async/promise return types         │ ~15   │ Async functions not wrapped in promise<T>      │                                                                                                        
-├────────────────────────────────────┼───────┼────────────────────────────────────────────────┤                                                                                                        
-│ Spawn block return type            │ ~5    │ Always returns promise<unit>                   │                                                                                                        
+│ Spawn block return type            │ ~5    │ Always returns                  │                                                                                                        
 ├────────────────────────────────────┼───────┼────────────────────────────────────────────────┤                                                                                                        
 │ Generic type parameter issues      │ ~35   │ Various T substitution failures                │                                                                                                        
 └────────────────────────────────────┴───────┴────────────────────────────────────────────────┘
@@ -52,20 +50,7 @@ Change: In infer_struct_literal(), handle TypeDef::Exception same as TypeDef::St
 
 File: namlc/src/typechecker/types.rs
 
-Optional: Add Type::Exception(ExceptionType) variant for semantic clarity.
-                                                                                                                                                                                                        
----                                                                                                                                                                                                    
-Phase 3: Async Function Promise Wrapping
-
-File: namlc/src/typechecker/mod.rs
-
-Change: In collect_function(), if func.is_async, wrap return type in Type::Promise:                                                                                                                    
-let return_ty = if func.is_async {                                                                                                                                                                     
-Type::Promise(Box::new(return_ty))                                                                                                                                                                 
-} else {                                                                                                                                                                                               
-return_ty                                                                                                                                                                                          
-};
-                                                                                                                                                                                                        
+Optional: Add Type::Exception(ExceptionType) variant for semantic clarity.                                                                                                                                                                                               
 ---                                                                                                                                                                                                    
 Phase 4: Spawn Block Return Type Inference
 

@@ -33,7 +33,6 @@
 | naml | Rust | Notes |
 |------|------|-------|
 | `channel<T>` | `mpsc::Sender<T>` / `mpsc::Receiver<T>` | tokio channels |
-| `promise<T>` | `impl Future<Output = T>` | Async future |
 
 ## Function Types
 

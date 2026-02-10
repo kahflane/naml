@@ -437,7 +437,6 @@ Composite Types
 option<T>             // Optional value
 map<K, V>             // Key-value map
 channel<T>            // Channel (native/node)
-promise<T>            // Async promise
 
 Functions
 

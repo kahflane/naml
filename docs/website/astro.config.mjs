@@ -12,7 +12,7 @@ export default defineConfig({
       title: 'naml',
       description: 'A fast, cross-platform programming language',
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/aspect-build/naml' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/kahflane/naml' },
       ],
       customCss: ['./src/styles/custom.css'],
       sidebar: [

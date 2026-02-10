@@ -225,8 +225,6 @@ Type Mappings (naml → Rust)
 │ map<K, V>  │ std::collections::HashMap<K, V> │                                                                                                                                                       
 ├────────────┼─────────────────────────────────┤                                                                                                                                                       
 │ channel<T> │ tokio::sync::mpsc::Sender<T>    │                                                                                                                                                       
-├────────────┼─────────────────────────────────┤                                                                                                                                                       
-│ promise<T> │ impl Future<Output = T>         │                                                                                                                                                       
 └────────────┴─────────────────────────────────┘
  ---                                                                                                                                                                                                    
 Concurrency Model (Go-like)

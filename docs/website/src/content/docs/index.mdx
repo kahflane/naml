@@ -3,60 +3,205 @@ title: naml
 description: A fast, cross-platform programming language
 template: splash
 hero:
-  tagline: A fast, cross-platform programming language with zero-allocation design, deterministic memory management, and a rich standard library.
+  tagline: A fast, cross-platform programming language with Cranelift JIT, deterministic memory, and a rich standard library.
+  image:
+    html: |
+      <div class="hero-ant">
+        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+          <ellipse cx="140" cy="115" rx="38" ry="32" fill="#ff5722"/>
+          <ellipse cx="132" cy="104" rx="10" ry="8" fill="#ff8a65" opacity="0.2"/>
+          <circle cx="96" cy="98" r="17" fill="#ff6e40"/>
+          <circle cx="56" cy="74" r="34" fill="#ff5722"/>
+          <ellipse cx="43" cy="66" rx="11" ry="12" fill="#fff"/>
+          <circle cx="41" cy="65" r="6.5" fill="#2d1b0e"/>
+          <circle cx="38" cy="62" r="2.5" fill="#fff"/>
+          <ellipse cx="66" cy="66" rx="11" ry="12" fill="#fff"/>
+          <circle cx="64" cy="65" r="6.5" fill="#2d1b0e"/>
+          <circle cx="61" cy="62" r="2.5" fill="#fff"/>
+          <path d="M37 86Q48 94 59 86" stroke="#d84315" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+          <path d="M38 45Q22 18 14 10" stroke="#ff8a65" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+          <path d="M53 42Q52 14 60 5" stroke="#ff8a65" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+          <circle cx="14" cy="10" r="5" fill="#ffab91"/>
+          <circle cx="60" cy="5" r="5" fill="#ffab91"/>
+          <path d="M72 104L56 138L42 133" stroke="#ff8a65" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M82 108L74 142L60 139" stroke="#e65100" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M100 112L97 148L84 145" stroke="#ff8a65" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M110 112L120 146L132 140" stroke="#e65100" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M132 128L128 162L116 158" stroke="#ff8a65" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M152 124L164 156L174 148" stroke="#e65100" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
   actions:
     - text: Get Started
       link: /guide/1-installation/
       icon: right-arrow
       variant: primary
-    - text: Language Reference
-      link: /language/1-types/
+    - text: View on GitHub
+      link: https://github.com/kahflane/naml
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+<div class="landing-stats">
+  <div class="stat-item">
+    <span class="stat-value">299</span>
+    <span class="stat-label">Stdlib Functions</span>
+    <span class="stat-detail">HTTP, SQLite, JSON, TOML &mdash; no packages needed</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-value">0</span>
+    <span class="stat-label">GC Pauses</span>
+    <span class="stat-detail">Deterministic refcounting, predictable latency</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-value">45x</span>
+    <span class="stat-label">Faster than Node.js</span>
+    <span class="stat-detail">Binary tree benchmark &mdash; 1M node insert &amp; search</span>
+  </div>
+</div>
 
-<CardGrid stagger>
-  <Card title="Fast" icon="rocket">
-    Cranelift JIT compilation for instant execution. Native binaries with LTO for production.
-  </Card>
-  <Card title="Cross-Platform" icon="laptop">
-    Target native binaries, server-side WASM, or browser WASM from the same codebase.
-  </Card>
-  <Card title="Explicit Types" icon="document">
-    Required type annotations make code self-documenting. No guessing, no inference surprises.
-  </Card>
-  <Card title="Rich Standard Library" icon="open-book">
-    18 modules covering I/O, networking, databases, encoding, concurrency, and more.
-  </Card>
-</CardGrid>
+<p class="section-label">Why naml?</p>
+<p class="section-heading">Built for speed and clarity</p>
 
-## Quick Example
+<div class="features-grid">
+  <div class="feature-card">
+    <h3>Cranelift JIT</h3>
+    <p>JIT compilation with Cranelift for fast development cycles. Native binary output with LTO for production deployments.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Cross-Platform</h3>
+    <p>One codebase, three targets. Compile to native binaries, server-side WASM, or browser WASM.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Type Safe</h3>
+    <p>Required type annotations make code self-documenting. No guessing, no inference surprises, no runtime type errors.</p>
+  </div>
+  <div class="feature-card">
+    <h3>Rich Standard Library</h3>
+    <p>18 modules covering I/O, networking, databases, encoding, concurrency, timers, and more. Batteries included.</p>
+  </div>
+</div>
 
-```naml
+<p class="section-label">Performance</p>
+<p class="section-heading">Benchmarks</p>
+
+<p style="text-align:center;color:var(--sl-color-gray-3);font-size:0.85rem;margin-bottom:1.5rem;">
+Measured on Apple M1 Pro. Average of 2 runs, warmup excluded. Lower is better.
+</p>
+
+<div class="bench-section">
+  <h3>Binary Tree &mdash; 1M nodes insert, search, traversal</h3>
+  <div class="bench-bars">
+    <div class="bench-row">
+      <span class="bench-lang">naml</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar naml" style="width:2.2%"><span class="bench-ms">337 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Bun</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:38.4%"><span class="bench-ms">5,886 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Go</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:92.3%"><span class="bench-ms">14,126 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Node.js</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:100%"><span class="bench-ms">15,297 ms</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bench-section">
+  <h3>Spectral Norm &mdash; N=5500, floating-point, nested loops</h3>
+  <div class="bench-bars">
+    <div class="bench-row">
+      <span class="bench-lang">naml</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar naml" style="width:62%"><span class="bench-ms">1,250 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Go</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:80%"><span class="bench-ms">1,612 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Node.js</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:85.3%"><span class="bench-ms">1,720 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Bun</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:100%"><span class="bench-ms">2,016 ms</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="section-label">See it in action</p>
+<p class="section-heading">Concurrency made simple</p>
+
+```naml title="main.nm"
 use std::threads::*;
 
-struct Person {
-    name: string,
-    age: int
+struct Task {
+    id: int,
+    name: string
 }
 
-pub fn (self: Person) greet() -> string {
-    return fmt("Hello, I am {} (age {})", self.name, self.age);
+pub fn (self: Task) run(out: channel<string>) {
+    var result: string = fmt("done: {} (id={})", self.name, self.id);
+    send(out, result);
 }
 
 fn main() {
-    var alice: Person = Person { name: "Alice", age: 30 };
-    println(alice.greet());
+    var ch: channel<string> = open_channel(10);
+    var tasks: [Task] = [
+        Task { id: 1, name: "compile" },
+        Task { id: 2, name: "optimize" },
+        Task { id: 3, name: "deploy" }
+    ];
 
-    var ch: channel<string> = open_channel(1);
-    spawn {
-        send(ch, "world");
-    };
+    for (i: int, task: Task in tasks) {
+        spawn { task.run(ch); };
+    }
     join();
 
-    var msg: string = receive(ch) ?? "nobody";
-    println("Hello, {}!", msg);
+    for (i: int, _: int in [0, 1, 2]) {
+        println(receive(ch) ?? "error");
+    }
     close(ch);
 }
 ```
+
+<p class="section-label">Explore</p>
+<p class="section-heading">Dive into the docs</p>
+
+<div class="quick-links">
+  <a class="quick-link" href="/guide/1-installation/">
+    Guide
+    <span class="arrow">&rarr;</span>
+  </a>
+  <a class="quick-link" href="/language/1-types/">
+    Language
+    <span class="arrow">&rarr;</span>
+  </a>
+  <a class="quick-link" href="/stdlib/">
+    Standard Library
+    <span class="arrow">&rarr;</span>
+  </a>
+  <a class="quick-link" href="/examples/">
+    Examples
+    <span class="arrow">&rarr;</span>
+  </a>
+</div>

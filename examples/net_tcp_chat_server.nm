@@ -10,8 +10,9 @@
 /// Usage: Run this server, then connect with: nc localhost 8888
 ///
 
-use std::threads::{join, open_channel, send, receive, with_mutex};
-use std::net::tcp::listener::{listen, accept, close, local_addr};
+use std::threads::{join, open_channel, send, receive, with_mutex, sleep};
+use std::net::tcp::*;
+use std::net::tcp::server::{listen, accept, local_addr};
 use std::net::tcp::client::{read, write, peer_addr};
 use std::strings::{len, ltrim, rtrim};
 
@@ -70,7 +71,7 @@ fn main() {
 
     println("Maximum clients reached. Waiting for handlers to finish...");
     join();
-    close(listener);
+    server::close(listener);
     println("Server stopped.");
 }
 
@@ -137,7 +138,7 @@ fn handle_client(
         println(fmt("Client disconnected. Active clients: {}", cnt));
     }
 
-    close(socket);
+    client::close(socket);
     println(fmt("Handler for {} finished", peer_address));
 }
 

@@ -208,6 +208,7 @@ impl DocumentAnalysis {
                         &parse_result.ast,
                         &mut imp_interner,
                         imported.file_path.parent().map(|p| p.to_path_buf()),
+                        None,
                     );
 
                     if let Some(imp_spur) = imp_interner.get(&word) {

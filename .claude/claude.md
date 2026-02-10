@@ -191,7 +191,6 @@ int, uint, float, bool, string, bytes
 option<T>        # Optional
 map<K, V>        # Map
 channel<T>       # Channel (native/server only)
-promise<T>       # Promise
 ```
 
 ### Function Syntax

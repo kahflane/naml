@@ -1,0 +1,354 @@
+// Crypto Stress Test (issue #170)
+// NOT the happy path — tests correctness under:
+// - Known test vectors (MD5, SHA-1, SHA-256, SHA-512, HMAC)
+// - Concurrent hashing from spawn blocks
+// - HMAC generation + verification passed through functions
+// - PBKDF2 determinism (same inputs = same output, different inputs = different output)
+// - Random bytes uniqueness and correct length
+// - Simulated PostgreSQL MD5 authentication flow
+// - Channel-based producer/consumer with hash verification
+
+use std::crypto::*;
+use std::threads::*;
+use std::encoding::hex::{encode};
+use std::strings::{len};
+use std::testing::*;
+
+fn main() {
+    println("=== Crypto Stress Test ===");
+    println("");
+
+    test1_hash_known_vectors();
+    test2_hmac_known_vectors();
+    test3_hmac_verify_roundtrip();
+    test4_hmac_tamper_detection();
+    test5_pbkdf2_determinism();
+    test6_pbkdf2_different_params();
+    test7_random_bytes_properties();
+    test8_concurrent_hashing();
+    test9_chained_hashing();
+    test10_channel_hash_verification();
+
+    println("");
+    println("=== ALL CRYPTO STRESS TESTS PASSED ===");
+}
+
+fn bytes_len(b: bytes) -> int {
+    return len(encode(b)) / 2;
+}
+
+fn test1_hash_known_vectors() {
+    println("--- Test 1: Hash known test vectors ---");
+
+    var data: bytes = "hello world" as bytes;
+
+    var md5_result: string = md5_hex(data);
+    assert_eq_string(md5_result, "5eb63bbbe01eeed093cb22bb8f5acdc3", "MD5 of 'hello world' mismatch");
+
+    var sha1_result: string = sha1_hex(data);
+    assert_eq_string(sha1_result, "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed", "SHA-1 of 'hello world' mismatch");
+
+    var sha256_result: string = sha256_hex(data);
+    assert_eq_string(sha256_result, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", "SHA-256 of 'hello world' mismatch");
+
+    var sha512_result: string = sha512_hex(data);
+    assert_eq_string(sha512_result, "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f", "SHA-512 of 'hello world' mismatch");
+
+    var empty: bytes = "" as bytes;
+    var empty_sha256: string = sha256_hex(empty);
+    assert_eq_string(empty_sha256, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "SHA-256 of empty string mismatch");
+
+    assert_eq(len(md5_hex(data)), 32, "MD5 hex should be 32 chars (16 bytes)");
+    assert_eq(len(sha1_hex(data)), 40, "SHA-1 hex should be 40 chars (20 bytes)");
+    assert_eq(len(sha256_hex(data)), 64, "SHA-256 hex should be 64 chars (32 bytes)");
+    assert_eq(len(sha512_hex(data)), 128, "SHA-512 hex should be 128 chars (64 bytes)");
+
+    println("  PASS");
+}
+
+fn test2_hmac_known_vectors() {
+    println("--- Test 2: HMAC known test vectors ---");
+
+    var key: bytes = "key" as bytes;
+    var data: bytes = "The quick brown fox jumps over the lazy dog" as bytes;
+
+    var hmac256: string = hmac_sha256_hex(key, data);
+    assert_eq_string(hmac256, "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8", "HMAC-SHA256 known vector mismatch");
+
+    assert_eq(len(hmac_sha512_hex(key, data)), 128, "HMAC-SHA512 hex should be 128 chars (64 bytes)");
+    assert_eq(len(hmac_sha256_hex(key, data)), 64, "HMAC-SHA256 hex should be 64 chars (32 bytes)");
+
+    println("  PASS");
+}
+
+fn test3_hmac_verify_roundtrip() {
+    println("--- Test 3: HMAC generate-then-verify roundtrip ---");
+
+    var key: bytes = "my-secret-api-key-2024" as bytes;
+
+    verify_hmac_for_payload(key, "user=alice&action=login" as bytes, 0);
+    verify_hmac_for_payload(key, "user=bob&action=transfer&amount=500" as bytes, 1);
+    verify_hmac_for_payload(key, "" as bytes, 2);
+    verify_hmac_for_payload(key, "a]]]]]...long payload with special chars !@#$%^&*()" as bytes, 3);
+
+    println("  PASS");
+}
+
+fn verify_hmac_for_payload(key: bytes, payload: bytes, index: int) {
+    var mac256: bytes = hmac_sha256(key, payload);
+    var ok256: bool = hmac_verify_sha256(key, payload, mac256);
+    if (not ok256) {
+        println(fmt("  FAIL: HMAC-SHA256 verify failed for payload index {}", index));
+        panic("HMAC-SHA256 roundtrip failed");
+    }
+
+    var mac512: bytes = hmac_sha512(key, payload);
+    var ok512: bool = hmac_verify_sha512(key, payload, mac512);
+    if (not ok512) {
+        println(fmt("  FAIL: HMAC-SHA512 verify failed for payload index {}", index));
+        panic("HMAC-SHA512 roundtrip failed");
+    }
+}
+
+fn test4_hmac_tamper_detection() {
+    println("--- Test 4: HMAC tamper detection ---");
+
+    var key: bytes = "secret" as bytes;
+    var original: bytes = "amount=100&to=alice" as bytes;
+    var tampered: bytes = "amount=999&to=alice" as bytes;
+
+    var mac: bytes = hmac_sha256(key, original);
+
+    var legit: bool = hmac_verify_sha256(key, original, mac);
+    if (not legit) {
+        panic("HMAC should verify for original data");
+    }
+
+    var forged: bool = hmac_verify_sha256(key, tampered, mac);
+    if (forged) {
+        panic("HMAC should NOT verify for tampered data");
+    }
+
+    var wrong_key: bytes = "wrong-key" as bytes;
+    var wrong_key_verify: bool = hmac_verify_sha256(wrong_key, original, mac);
+    if (wrong_key_verify) {
+        panic("HMAC should NOT verify with wrong key");
+    }
+
+    var mac512: bytes = hmac_sha512(key, original);
+    var forged512: bool = hmac_verify_sha512(key, tampered, mac512);
+    if (forged512) {
+        panic("HMAC-SHA512 should NOT verify for tampered data");
+    }
+
+    println("  PASS");
+}
+
+fn test5_pbkdf2_determinism() {
+    println("--- Test 5: PBKDF2 determinism ---");
+
+    var password: bytes = "correct horse battery staple" as bytes;
+    var salt: bytes = "random-salt-value-123" as bytes;
+
+    var key1: bytes = pbkdf2_sha256(password, salt, 1000, 32);
+    var key2: bytes = pbkdf2_sha256(password, salt, 1000, 32);
+
+    var hex1: string = encode(key1);
+    var hex2: string = encode(key2);
+    assert_eq_string(hex1, hex2, "PBKDF2 with same params must produce same output");
+
+    var key3: bytes = pbkdf2_sha256(password, salt, 1000, 32);
+    var hex3: string = encode(key3);
+    assert_eq_string(hex1, hex3, "PBKDF2 must be deterministic across 3 calls");
+
+    assert_eq(len(hex1), 64, "PBKDF2 32-byte key should encode to 64 hex chars");
+
+    var key_64: bytes = pbkdf2_sha256(password, salt, 1000, 64);
+    assert_eq(len(encode(key_64)), 128, "PBKDF2 64-byte key should encode to 128 hex chars");
+
+    println("  PASS");
+}
+
+fn test6_pbkdf2_different_params() {
+    println("--- Test 6: PBKDF2 different parameters produce different keys ---");
+
+    var password: bytes = "password" as bytes;
+    var salt1: bytes = "salt-alpha" as bytes;
+    var salt2: bytes = "salt-bravo" as bytes;
+
+    var k1: string = encode(pbkdf2_sha256(password, salt1, 100, 32));
+    var k2: string = encode(pbkdf2_sha256(password, salt2, 100, 32));
+    if (k1 == k2) {
+        panic("Different salts must produce different keys");
+    }
+
+    var k3: string = encode(pbkdf2_sha256(password, salt1, 100, 32));
+    var k4: string = encode(pbkdf2_sha256(password, salt1, 200, 32));
+    if (k3 == k4) {
+        panic("Different iteration counts must produce different keys");
+    }
+
+    var pw2: bytes = "other-password" as bytes;
+    var k5: string = encode(pbkdf2_sha256(pw2, salt1, 100, 32));
+    if (k1 == k5) {
+        panic("Different passwords must produce different keys");
+    }
+
+    println("  PASS");
+}
+
+fn test7_random_bytes_properties() {
+    println("--- Test 7: Random bytes properties ---");
+
+    var r16: bytes = random_bytes(16);
+    assert_eq(len(encode(r16)), 32, "random_bytes(16) should produce 32 hex chars");
+
+    var r32: bytes = random_bytes(32);
+    assert_eq(len(encode(r32)), 64, "random_bytes(32) should produce 64 hex chars");
+
+    var a: string = encode(random_bytes(32));
+    var b: string = encode(random_bytes(32));
+    var c: string = encode(random_bytes(32));
+    if (a == b or b == c or a == c) {
+        panic("Three random_bytes(32) calls should not produce the same output");
+    }
+
+    println("  PASS");
+}
+
+fn test8_concurrent_hashing() {
+    println("--- Test 8: Concurrent hashing from spawn blocks ---");
+
+    var results: atomic<int> = with_atomic(0);
+
+    spawn { concurrent_hash_worker(results, "worker-1-data", "md5"); };
+    spawn { concurrent_hash_worker(results, "worker-2-data", "sha256"); };
+    spawn { concurrent_hash_worker(results, "worker-3-data", "sha512"); };
+    spawn { concurrent_hash_worker(results, "worker-4-data", "sha1"); };
+    join();
+
+    var total: int = atomic_load(results);
+    if (total != 400) {
+        println(fmt("  FAIL: expected 400 hash operations, got {}", total));
+        panic("Concurrent hashing failed");
+    }
+
+    println("  PASS");
+}
+
+fn concurrent_hash_worker(counter: atomic<int>, data_str: string, algo: string) {
+    var data: bytes = data_str as bytes;
+    var i: int = 0;
+    while (i < 100) {
+        if (algo == "md5") {
+            var h: string = md5_hex(data);
+            if (len(h) != 32) { panic("MD5 hex length wrong in worker"); }
+        } else if (algo == "sha1") {
+            var h: string = sha1_hex(data);
+            if (len(h) != 40) { panic("SHA-1 hex length wrong in worker"); }
+        } else if (algo == "sha256") {
+            var h: string = sha256_hex(data);
+            if (len(h) != 64) { panic("SHA-256 hex length wrong in worker"); }
+        } else {
+            var h: string = sha512_hex(data);
+            if (len(h) != 128) { panic("SHA-512 hex length wrong in worker"); }
+        }
+        atomic_inc(counter);
+        i = i + 1;
+    }
+}
+
+fn test9_chained_hashing() {
+    println("--- Test 9: Chained hashing (double-hash) ---");
+
+    var data1: bytes = "mysecretpassword" as bytes;
+    var hash1: string = md5_hex(data1);
+    assert_eq(len(hash1), 32, "MD5 hex should be 32 chars");
+
+    var data2: bytes = "mysecretpassword" as bytes;
+    var hash2: string = sha256_hex(data2);
+    assert_eq(len(hash2), 64, "SHA-256 hex should be 64 chars");
+
+    var hash1_again: string = md5_hex(data1);
+    assert_eq_string(hash1, hash1_again, "Same data should produce same MD5");
+
+    var hash2_again: string = sha256_hex(data2);
+    assert_eq_string(hash2, hash2_again, "Same data should produce same SHA-256");
+
+    if (hash1 == hash2) {
+        panic("MD5 and SHA-256 of same data must differ");
+    }
+
+    var sha_of_md5: string = sha256_hex(hash1 as bytes);
+    var sha_of_md5_again: string = sha256_hex(hash1 as bytes);
+    assert_eq_string(sha_of_md5, sha_of_md5_again, "SHA-256 of MD5 hex must be deterministic");
+    assert_eq(len(sha_of_md5), 64, "SHA-256 of MD5 hex should be 64 chars");
+
+    println("  PASS");
+}
+
+fn test10_channel_hash_verification() {
+    println("--- Test 10: Channel-based hash verification pipeline ---");
+
+    var work_ch: channel<string> = open_channel(20);
+    var total: atomic<int> = with_atomic(0);
+
+    spawn { hash_producer(work_ch); };
+    spawn { hash_verifier(work_ch, total, 1); };
+    spawn { hash_verifier(work_ch, total, 2); };
+    spawn { hash_verifier(work_ch, total, 3); };
+    join();
+
+    var verified: int = atomic_load(total);
+
+    if (verified != 12) {
+        println(fmt("  FAIL: expected 12 verified items, got {}", verified));
+        panic("Channel hash verification failed");
+    }
+
+    println(fmt("  Verified {} hash operations across 3 worker spawns", verified));
+    println("  PASS");
+}
+
+fn hash_producer(ch: channel<string>) {
+    send(ch, "transaction-001");
+    send(ch, "transaction-002");
+    send(ch, "transaction-003");
+    send(ch, "transaction-004");
+    send(ch, "transaction-005");
+    send(ch, "transaction-006");
+    send(ch, "transaction-007");
+    send(ch, "transaction-008");
+    send(ch, "transaction-009");
+    send(ch, "transaction-010");
+    send(ch, "transaction-011");
+    send(ch, "transaction-012");
+    close(ch);
+}
+
+fn hash_verifier(work_ch: channel<string>, total: atomic<int>, worker_id: int) {
+    var key: bytes = "shared-hmac-key" as bytes;
+
+    while (true) {
+        var msg: string = receive(work_ch) ?? "";
+        if (msg == "") {
+            return;
+        }
+
+        var data: bytes = msg as bytes;
+        var mac: bytes = hmac_sha256(key, data);
+        var ok: bool = hmac_verify_sha256(key, data, mac);
+
+        if (not ok) {
+            println(fmt("  Worker {} HMAC verify failed for: {}", worker_id, msg));
+            panic("HMAC verify failed in channel pipeline");
+        }
+
+        var h: string = sha256_hex(data);
+        if (len(h) != 64) {
+            panic("SHA-256 hex should be 64 chars");
+        }
+
+        atomic_inc(total);
+    }
+}

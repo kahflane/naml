@@ -558,55 +558,6 @@ struct NamlMap {
 
 ---
 
-## Phase 10: Async/Await
-
-### 10.1 Promise Type
-```rust
-struct Promise<T> {
-    state: PromiseState,
-    value: Option<T>,
-    continuation: Option<Box<dyn FnOnce(T)>>,
-}
-
-enum PromiseState {
-    Pending,
-    Fulfilled,
-    Rejected,
-}
-```
-
-### 10.2 Async Function Compilation
-Transform to state machine or use stackful coroutines.
-
-**State Machine approach**:
-```naml
-async fn foo() -> int {
-    var x = await bar();
-    return x + 1;
-}
-```
-
-Becomes:
-```rust
-fn foo_state_machine(state: &mut FooState) -> Poll<int> {
-    match state.step {
-        0 => {
-            state.promise = bar();
-            state.step = 1;
-            Poll::Pending
-        }
-        1 => {
-            if state.promise.is_ready() {
-                state.x = state.promise.take();
-                state.step = 2;
-            }
-            Poll::Pending
-        }
-        2 => Poll::Ready(state.x + 1)
-    }
-}
-```
-
 ### 10.3 Spawn
 Create new task/coroutine, add to executor queue.
 
