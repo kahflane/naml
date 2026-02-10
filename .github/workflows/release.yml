@@ -60,7 +60,8 @@ jobs:
       - name: Build (cross)
         if: matrix.cross
         env:
-          CROSS_CONTAINER_OPTS: "--env OPENSSL_STATIC=1 --env OPENSSL_NO_PKG_CONFIG=1"
+          OPENSSL_STATIC: "1"
+          OPENSSL_NO_PKG_CONFIG: "1"
         run: cross build --release --target ${{ matrix.target }}
 
       - name: Build (native)

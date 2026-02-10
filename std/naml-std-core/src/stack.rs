@@ -117,14 +117,14 @@ pub extern "C" fn naml_stack_format(stack_ptr: *mut u8) -> *mut NamlString {
             let frame_ptr = *(*array).data.add(i) as *const StackFrame;
             if !frame_ptr.is_null() {
                 let func = if !(*frame_ptr).function.is_null() {
-                    let c_str = std::ffi::CStr::from_ptr((*frame_ptr).function as *const i8);
+                    let c_str = std::ffi::CStr::from_ptr((*frame_ptr).function as *const std::ffi::c_char);
                     c_str.to_string_lossy()
                 } else {
                     std::borrow::Cow::Borrowed("<unknown>")
                 };
 
                 let file = if !(*frame_ptr).file.is_null() {
-                    let c_str = std::ffi::CStr::from_ptr((*frame_ptr).file as *const i8);
+                    let c_str = std::ffi::CStr::from_ptr((*frame_ptr).file as *const std::ffi::c_char);
                     c_str.to_string_lossy()
                 } else {
                     std::borrow::Cow::Borrowed("<unknown>")

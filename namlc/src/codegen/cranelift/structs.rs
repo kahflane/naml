@@ -53,43 +53,6 @@ pub fn call_struct_new(
     Ok(ptr)
 }
 
-pub fn call_struct_get_field(
-    _ctx: &mut CompileContext<'_>,
-    builder: &mut FunctionBuilder<'_>,
-    struct_ptr: Value,
-    field_index: Value,
-) -> Result<Value, CodegenError> {
-    let idx_i64 = ensure_i64(builder, field_index);
-    let offset = builder.ins().imul_imm(idx_i64, 8);
-    let offset_with_base = builder.ins().iadd_imm(offset, 24);
-    let field_addr = builder.ins().iadd(struct_ptr, offset_with_base);
-    let val = builder.ins().load(
-        cranelift::prelude::types::I64,
-        MemFlags::new(),
-        field_addr,
-        0,
-    );
-    Ok(val)
-}
-
-pub fn call_struct_set_field(
-    _ctx: &mut CompileContext<'_>,
-    builder: &mut FunctionBuilder<'_>,
-    struct_ptr: Value,
-    field_index: Value,
-    value: Value,
-) -> Result<(), CodegenError> {
-    let value = ensure_i64(builder, value);
-    let idx_i64 = ensure_i64(builder, field_index);
-    let offset = builder.ins().imul_imm(idx_i64, 8);
-    let offset_with_base = builder.ins().iadd_imm(offset, 24);
-    let field_addr = builder.ins().iadd(struct_ptr, offset_with_base);
-    builder
-        .ins()
-        .store(MemFlags::new(), value, field_addr, 0);
-    Ok(())
-}
-
 pub fn struct_has_heap_fields(struct_defs: &HashMap<lasso::Spur, StructDef>, struct_name: &lasso::Spur) -> bool {
     if let Some(def) = struct_defs.get(struct_name) {
         def.field_heap_types.iter().any(|ht| ht.is_some())

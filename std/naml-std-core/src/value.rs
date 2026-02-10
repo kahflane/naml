@@ -224,7 +224,7 @@ pub unsafe extern "C" fn naml_string_print(s: *const NamlString) {
 
 /// Create a NamlString from a null-terminated C string pointer
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_string_from_cstr(cstr: *const i8) -> *mut NamlString {
+pub unsafe extern "C" fn naml_string_from_cstr(cstr: *const std::ffi::c_char) -> *mut NamlString {
     if cstr.is_null() {
         return unsafe { naml_string_new(std::ptr::null(), 0) };
     }
