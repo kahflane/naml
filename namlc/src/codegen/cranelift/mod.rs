@@ -8430,7 +8430,7 @@ extern "C" fn naml_print_bool(val: i64) {
     }
 }
 
-extern "C" fn naml_print_str(ptr: *const i8) {
+extern "C" fn naml_print_str(ptr: *const std::ffi::c_char) {
     if !ptr.is_null() {
         let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
         if let Ok(s) = c_str.to_str() {
