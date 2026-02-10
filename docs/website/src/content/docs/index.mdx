@@ -41,21 +41,100 @@ hero:
       variant: minimal
 ---
 
-<div class="landing-stats">
-  <div class="stat-item">
-    <span class="stat-value">299</span>
-    <span class="stat-label">Stdlib Functions</span>
-    <span class="stat-detail">HTTP, SQLite, JSON, TOML &mdash; no packages needed</span>
+<p class="section-label">Performance</p>
+<p class="section-heading">Benchmarks</p>
+
+<p style="text-align:center;color:var(--sl-color-gray-3);font-size:0.85rem;margin-bottom:1.5rem;">
+Apple M1 Pro. Warmup excluded.
+</p>
+
+<div class="bench-section">
+  <h3>HTTP Server &mdash; GET &#x2192; JSON response <span style="font-weight:400;color:var(--sl-color-gray-3);font-size:0.8rem;">(higher is better)</span></h3>
+  <div class="bench-bars">
+    <div class="bench-row">
+      <span class="bench-lang">naml</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar naml" style="width:100%"><span class="bench-ms">183,055 req/s</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Bun</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:88.7%"><span class="bench-ms">162,401 req/s</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Go</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:75%"><span class="bench-ms">137,219 req/s</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Node.js</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:46.7%"><span class="bench-ms">85,552 req/s</span></div>
+      </div>
+    </div>
   </div>
-  <div class="stat-item">
-    <span class="stat-value">0</span>
-    <span class="stat-label">GC Pauses</span>
-    <span class="stat-detail">Deterministic refcounting, predictable latency</span>
+</div>
+
+<div class="bench-section">
+  <h3>Spectral Norm &mdash; N=5500, floating-point, nested loops <span style="font-weight:400;color:var(--sl-color-gray-3);font-size:0.8rem;">(lower is better)</span></h3>
+  <div class="bench-bars">
+    <div class="bench-row">
+      <span class="bench-lang">naml</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar naml" style="width:60.9%"><span class="bench-ms">1,213 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Go</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:80.9%"><span class="bench-ms">1,612 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Node.js</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:85.5%"><span class="bench-ms">1,704 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Bun</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:100%"><span class="bench-ms">1,992 ms</span></div>
+      </div>
+    </div>
   </div>
-  <div class="stat-item">
-    <span class="stat-value">45x</span>
-    <span class="stat-label">Faster than Node.js</span>
-    <span class="stat-detail">Binary tree benchmark &mdash; 1M node insert &amp; search</span>
+</div>
+
+<div class="bench-section">
+  <h3>SQLite &mdash; 100K inserts, 50K selects, 50K updates <span style="font-weight:400;color:var(--sl-color-gray-3);font-size:0.8rem;">(lower is better)</span></h3>
+  <div class="bench-bars">
+    <div class="bench-row">
+      <span class="bench-lang">naml</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar naml" style="width:39.7%"><span class="bench-ms">180 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Bun</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:40%"><span class="bench-ms">181 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Node.js</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:47.2%"><span class="bench-ms">214 ms</span></div>
+      </div>
+    </div>
+    <div class="bench-row">
+      <span class="bench-lang">Go</span>
+      <div class="bench-bar-track">
+        <div class="bench-bar other" style="width:100%"><span class="bench-ms">453 ms</span></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -76,76 +155,45 @@ hero:
     <p>Required type annotations make code self-documenting. No guessing, no inference surprises, no runtime type errors.</p>
   </div>
   <div class="feature-card">
-    <h3>Rich Standard Library</h3>
-    <p>18 modules covering I/O, networking, databases, encoding, concurrency, timers, and more. Batteries included.</p>
+    <h3>Zero GC</h3>
+    <p>Deterministic memory via reference counting. No garbage collector, no pauses, no unpredictable latency spikes.</p>
   </div>
 </div>
 
-<p class="section-label">Performance</p>
-<p class="section-heading">Benchmarks</p>
+<p class="section-label">Batteries included</p>
+<p class="section-heading">What others need packages for, naml ships built-in</p>
 
-<p style="text-align:center;color:var(--sl-color-gray-3);font-size:0.85rem;margin-bottom:1.5rem;">
-Measured on Apple M1 Pro. Average of 2 runs, warmup excluded. Lower is better.
-</p>
-
-<div class="bench-section">
-  <h3>Binary Tree &mdash; 1M nodes insert, search, traversal</h3>
-  <div class="bench-bars">
-    <div class="bench-row">
-      <span class="bench-lang">naml</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar naml" style="width:2.2%"><span class="bench-ms">337 ms</span></div>
-      </div>
-    </div>
-    <div class="bench-row">
-      <span class="bench-lang">Bun</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar other" style="width:38.4%"><span class="bench-ms">5,886 ms</span></div>
-      </div>
-    </div>
-    <div class="bench-row">
-      <span class="bench-lang">Go</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar other" style="width:92.3%"><span class="bench-ms">14,126 ms</span></div>
-      </div>
-    </div>
-    <div class="bench-row">
-      <span class="bench-lang">Node.js</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar other" style="width:100%"><span class="bench-ms">15,297 ms</span></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="bench-section">
-  <h3>Spectral Norm &mdash; N=5500, floating-point, nested loops</h3>
-  <div class="bench-bars">
-    <div class="bench-row">
-      <span class="bench-lang">naml</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar naml" style="width:62%"><span class="bench-ms">1,250 ms</span></div>
-      </div>
-    </div>
-    <div class="bench-row">
-      <span class="bench-lang">Go</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar other" style="width:80%"><span class="bench-ms">1,612 ms</span></div>
-      </div>
-    </div>
-    <div class="bench-row">
-      <span class="bench-lang">Node.js</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar other" style="width:85.3%"><span class="bench-ms">1,720 ms</span></div>
-      </div>
-    </div>
-    <div class="bench-row">
-      <span class="bench-lang">Bun</span>
-      <div class="bench-bar-track">
-        <div class="bench-bar other" style="width:100%"><span class="bench-ms">2,016 ms</span></div>
-      </div>
-    </div>
-  </div>
+<div class="builtin-grid">
+  <a class="builtin-pill" href="/stdlib/net/">HTTP Server</a>
+  <a class="builtin-pill" href="/stdlib/net/">HTTP Client</a>
+  <a class="builtin-pill" href="/stdlib/net/">TCP Sockets</a>
+  <a class="builtin-pill" href="/stdlib/net/">UDP Sockets</a>
+  <a class="builtin-pill" href="/stdlib/db-sqlite/">SQLite</a>
+  <a class="builtin-pill" href="/stdlib/encoding/">JSON</a>
+  <a class="builtin-pill" href="/stdlib/encoding/">TOML</a>
+  <a class="builtin-pill" href="/stdlib/encoding/">YAML</a>
+  <a class="builtin-pill" href="/stdlib/encoding/">Base64</a>
+  <a class="builtin-pill" href="/stdlib/encoding/">Hex</a>
+  <a class="builtin-pill" href="/stdlib/encoding/">URL Encoding</a>
+  <a class="builtin-pill" href="/stdlib/threads/">Channels</a>
+  <a class="builtin-pill" href="/stdlib/threads/">Mutex</a>
+  <a class="builtin-pill" href="/stdlib/threads/">RWLock</a>
+  <a class="builtin-pill" href="/stdlib/threads/">Atomics</a>
+  <a class="builtin-pill" href="/stdlib/threads/">Spawn</a>
+  <a class="builtin-pill" href="/stdlib/fs/">File System</a>
+  <a class="builtin-pill" href="/stdlib/fs/">Memory Map</a>
+  <a class="builtin-pill" href="/stdlib/fs/">Symlinks</a>
+  <a class="builtin-pill" href="/stdlib/path/">Path Utils</a>
+  <a class="builtin-pill" href="/stdlib/testing/">Test Runner</a>
+  <a class="builtin-pill" href="/stdlib/testing/">Assertions</a>
+  <a class="builtin-pill" href="/stdlib/datetime/">Date/Time</a>
+  <a class="builtin-pill" href="/stdlib/timers/">Cron Jobs</a>
+  <a class="builtin-pill" href="/stdlib/timers/">Timers</a>
+  <a class="builtin-pill" href="/stdlib/env/">Environment</a>
+  <a class="builtin-pill" href="/stdlib/process/">Processes</a>
+  <a class="builtin-pill" href="/stdlib/os/">OS Info</a>
+  <a class="builtin-pill" href="/stdlib/random/">Random</a>
+  <a class="builtin-pill" href="/stdlib/metrics/">Perf Metrics</a>
 </div>
 
 <p class="section-label">See it in action</p>

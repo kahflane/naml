@@ -78,7 +78,6 @@ impl ConnRegistry {
 }
 
 struct MaterializedRow {
-    columns: Vec<String>,
     values: Vec<SqlValue>,
 }
 
@@ -221,7 +220,7 @@ pub unsafe extern "C" fn naml_db_sqlite_query(
 
     let reg = CONN_REGISTRY.lock().unwrap();
     if let Some(conn) = reg.connections.get(&handle) {
-        let result = conn.prepare(&sql_str);
+        let result = conn.prepare_cached(&sql_str);
         match result {
             Ok(mut stmt) => {
                 let col_count = stmt.column_count();
@@ -241,7 +240,6 @@ pub unsafe extern "C" fn naml_db_sqlite_query(
                         values.push(val);
                     }
                     Ok(MaterializedRow {
-                        columns: columns.clone(),
                         values,
                     })
                 });
@@ -314,8 +312,8 @@ fn get_column_value<'a>(
     let (rows_id, index) = decode_row_handle(row_handle);
     let col_name = string_from_naml(col);
     let rows = reg.results.get(&rows_id)?;
+    let col_idx = rows.columns.iter().position(|c| c == &col_name)?;
     let row = rows.rows.get(index)?;
-    let col_idx = row.columns.iter().position(|c| c == &col_name)?;
     row.values.get(col_idx)
 }
 
@@ -573,6 +571,47 @@ pub unsafe extern "C" fn naml_db_sqlite_step(stmt_handle: i64) {
         }
     } else {
         throw_db_error("Invalid statement handle", -1);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_db_sqlite_step_query(stmt_handle: i64) -> i64 {
+    let reg = STMT_REGISTRY.lock().unwrap();
+    if let Some(entry) = reg.stmts.get(&stmt_handle) {
+        let stmt = unsafe { &mut *entry.stmt };
+        let col_count = stmt.column_count();
+        let columns: Vec<String> = (0..col_count)
+            .map(|i| stmt.column_name(i).unwrap_or("").to_string())
+            .collect();
+
+        let mut raw_rows = stmt.raw_query();
+        let mut rows_vec = Vec::new();
+        loop {
+            match raw_rows.next() {
+                Ok(Some(row)) => {
+                    let mut values = Vec::with_capacity(col_count);
+                    for i in 0..col_count {
+                        let val: SqlValue = row.get_unwrap(i);
+                        values.push(val);
+                    }
+                    rows_vec.push(MaterializedRow { values });
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    drop(raw_rows);
+                    throw_db_error(&e.to_string(), -1);
+                    return -1;
+                }
+            }
+        }
+        drop(raw_rows);
+
+        let materialized = MaterializedRows { columns, rows: rows_vec };
+        let mut rows_reg = ROWS_REGISTRY.lock().unwrap();
+        rows_reg.insert(materialized)
+    } else {
+        throw_db_error("Invalid statement handle", -1);
+        -1
     }
 }
 

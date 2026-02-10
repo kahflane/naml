@@ -40,7 +40,7 @@ use cranelift::prelude::*;
 use cranelift_codegen::ir::AtomicRmwOp;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
-use lasso::Rodeo;
+use lasso::{Rodeo, Spur};
 
 use crate::ast::{Expression, FunctionItem, Item, SourceFile, Statement};
 use crate::codegen::CodegenError;
@@ -56,7 +56,7 @@ use crate::typechecker::{Type, TypeAnnotations};
 #[derive(Clone)]
 pub struct StructDef {
     pub type_id: u32,
-    pub fields: Vec<String>,
+    pub fields: Vec<Spur>,
     pub(crate) field_heap_types: Vec<Option<HeapType>>,
 }
 
@@ -118,9 +118,9 @@ pub struct CompileContext<'a> {
     module: &'a mut JITModule,
     functions: &'a HashMap<String, FuncId>,
     runtime_funcs: &'a HashMap<String, FuncId>,
-    struct_defs: &'a HashMap<String, StructDef>,
+    struct_defs: &'a HashMap<Spur, StructDef>,
     enum_defs: &'a HashMap<String, EnumDef>,
-    exception_names: &'a HashSet<String>,
+    exception_names: &'a HashSet<Spur>,
     extern_fns: &'a HashMap<String, ExternFn>,
     global_vars: &'a IndexMap<String, GlobalVarDef>,
     variables: HashMap<String, Variable>,
@@ -143,9 +143,83 @@ pub struct CompileContext<'a> {
     inline_exit_block: Option<Block>,
     inline_result_var: Option<Variable>,
     borrowed_vars: HashSet<String>,
+    reassigned_vars: HashSet<String>,
 }
 
 unsafe impl Send for LambdaInfo {}
+
+fn collect_reassigned_vars(
+    stmts: &[Statement<'_>],
+    interner: &Rodeo,
+    out: &mut HashSet<String>,
+) {
+    for stmt in stmts {
+        scan_reassignments(stmt, interner, out);
+    }
+}
+
+fn scan_reassignments(
+    stmt: &Statement<'_>,
+    interner: &Rodeo,
+    out: &mut HashSet<String>,
+) {
+    match stmt {
+        Statement::Assign(assign) => {
+            if let Expression::Identifier(ident) = &assign.target {
+                out.insert(interner.resolve(&ident.ident.symbol).to_string());
+            }
+        }
+        Statement::If(if_stmt) => {
+            collect_reassigned_vars(&if_stmt.then_branch.statements, interner, out);
+            if let Some(ref else_branch) = if_stmt.else_branch {
+                match else_branch {
+                    crate::ast::ElseBranch::ElseIf(else_if) => {
+                        collect_reassigned_vars(&else_if.then_branch.statements, interner, out);
+                    }
+                    crate::ast::ElseBranch::Else(else_block) => {
+                        collect_reassigned_vars(&else_block.statements, interner, out);
+                    }
+                }
+            }
+        }
+        Statement::While(w) => collect_reassigned_vars(&w.body.statements, interner, out),
+        Statement::For(f) => collect_reassigned_vars(&f.body.statements, interner, out),
+        Statement::Loop(l) => collect_reassigned_vars(&l.body.statements, interner, out),
+        Statement::Switch(s) => {
+            for case in &s.cases {
+                collect_reassigned_vars(&case.body.statements, interner, out);
+            }
+            if let Some(ref default) = s.default {
+                collect_reassigned_vars(&default.statements, interner, out);
+            }
+        }
+        Statement::Block(b) => collect_reassigned_vars(&b.statements, interner, out),
+        Statement::Locked(l) => collect_reassigned_vars(&l.body.statements, interner, out),
+        Statement::Var(v) => {
+            if let Some(ref else_block) = v.else_block {
+                collect_reassigned_vars(&else_block.statements, interner, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn get_field_access_base_var<'a>(
+    expr: &'a Expression<'_>,
+    interner: &Rodeo,
+) -> Option<String> {
+    match expr {
+        Expression::Field(f) => {
+            if let Expression::Identifier(ident) = f.base {
+                Some(interner.resolve(&ident.ident.symbol).to_string())
+            } else {
+                None
+            }
+        }
+        Expression::ForceUnwrap(uw) => get_field_access_base_var(uw.expr, interner),
+        _ => None,
+    }
+}
 
 // NamlArray struct layout offsets (must match runtime/array.rs)
 // NamlArray: header(16) + len(8) + capacity(8) + data(8)
@@ -171,9 +245,9 @@ pub struct JitCompiler<'a> {
     ctx: codegen::Context,
     functions: HashMap<String, FuncId>,
     runtime_funcs: HashMap<String, FuncId>,
-    struct_defs: HashMap<String, StructDef>,
+    struct_defs: HashMap<Spur, StructDef>,
     enum_defs: HashMap<String, EnumDef>,
-    exception_names: HashSet<String>,
+    exception_names: HashSet<Spur>,
     extern_fns: HashMap<String, ExternFn>,
     global_vars: IndexMap<String, GlobalVarDef>,
     next_type_id: u32,
@@ -505,6 +579,14 @@ impl<'a> JitCompiler<'a> {
             "naml_arena_alloc",
             crate::runtime::naml_arena_alloc as *const u8,
         );
+        builder.symbol(
+            "naml_arena_free_sized",
+            crate::runtime::naml_arena_free_sized as *const u8,
+        );
+        builder.symbol(
+            "naml_arena_get_tls_ptr",
+            crate::runtime::naml_arena_get_tls_ptr as *const u8,
+        );
 
         // Struct operations
         builder.symbol(
@@ -522,6 +604,10 @@ impl<'a> JitCompiler<'a> {
         builder.symbol(
             "naml_struct_free",
             crate::runtime::naml_struct_free as *const u8,
+        );
+        builder.symbol(
+            "naml_struct_decref_iterative",
+            crate::runtime::naml_struct_decref_iterative as *const u8,
         );
         builder.symbol(
             "naml_struct_incref_fast",
@@ -2164,6 +2250,7 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_db_sqlite_bind_int", crate::runtime::naml_db_sqlite_bind_int as *const u8);
         builder.symbol("naml_db_sqlite_bind_float", crate::runtime::naml_db_sqlite_bind_float as *const u8);
         builder.symbol("naml_db_sqlite_step", crate::runtime::naml_db_sqlite_step as *const u8);
+        builder.symbol("naml_db_sqlite_step_query", crate::runtime::naml_db_sqlite_step_query as *const u8);
         builder.symbol("naml_db_sqlite_reset", crate::runtime::naml_db_sqlite_reset as *const u8);
         builder.symbol("naml_db_sqlite_finalize", crate::runtime::naml_db_sqlite_finalize as *const u8);
         builder.symbol("naml_db_sqlite_changes", crate::runtime::naml_db_sqlite_changes as *const u8);
@@ -2228,144 +2315,138 @@ impl<'a> JitCompiler<'a> {
 
     /// Register built-in exception types and struct types
     fn register_builtin_exceptions(&mut self) {
-        // IOError exception from std::fs module
-        // Fields: path (string), code (int)
-        // Note: message is implicit at offset 0 for all exceptions
-        self.exception_names.insert("IOError".to_string());
+        let s = |name: &str| -> Spur { self.interner.get(name).unwrap() };
+
+        let message = s("message");
+        let code = s("code");
+        let path = s("path");
+        let key = s("key");
+
+        self.exception_names.insert(s("IOError"));
         self.struct_defs.insert(
-            "IOError".to_string(),
+            s("IOError"),
             StructDef {
-                type_id: 0xFFFF_0001, // Reserved type ID for IOError
-                fields: vec!["path".to_string(), "code".to_string()],
-                field_heap_types: vec![Some(HeapType::String), None], // path is string, code is int
+                type_id: 0xFFFF_0001,
+                fields: vec![path, code],
+                field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        // stack_frame built-in type for exception stack traces
-        // Fields: function (string), file (string), line (int)
         self.struct_defs.insert(
-            "stack_frame".to_string(),
+            s("stack_frame"),
             StructDef {
-                type_id: 0xFFFF_0002, // Reserved type ID for stack_frame
-                fields: vec![
-                    "function".to_string(),
-                    "file".to_string(),
-                    "line".to_string(),
-                ],
+                type_id: 0xFFFF_0002,
+                fields: vec![s("function"), s("file"), s("line")],
                 field_heap_types: vec![Some(HeapType::String), Some(HeapType::String), None],
             },
         );
 
-        // DecodeError exception from std::encoding module
-        // Fields: message (string at implicit offset 0), position (int)
-        self.exception_names.insert("DecodeError".to_string());
+        self.exception_names.insert(s("DecodeError"));
         self.struct_defs.insert(
-            "DecodeError".to_string(),
+            s("DecodeError"),
             StructDef {
-                type_id: 0xFFFF_0003, // Reserved type ID for DecodeError
-                fields: vec!["message".to_string(), "position".to_string()],
-                field_heap_types: vec![Some(HeapType::String), None], // message is string, position is int
+                type_id: 0xFFFF_0003,
+                fields: vec![message, s("position")],
+                field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        // EnvError exception from std::env module
-        // Fields: message (string), key (string)
-        self.exception_names.insert("EnvError".to_string());
+        self.exception_names.insert(s("EnvError"));
         self.struct_defs.insert(
-            "EnvError".to_string(),
+            s("EnvError"),
             StructDef {
-                type_id: 0xFFFF_0007, // Reserved type ID for EnvError
-                fields: vec!["message".to_string(), "key".to_string()],
+                type_id: 0xFFFF_0007,
+                fields: vec![message, key],
                 field_heap_types: vec![Some(HeapType::String), Some(HeapType::String)],
             },
         );
 
-        self.exception_names.insert("ProcessError".to_string());
+        self.exception_names.insert(s("ProcessError"));
         self.struct_defs.insert(
-            "ProcessError".to_string(),
+            s("ProcessError"),
             StructDef {
                 type_id: 0xFFFF_0009,
-                fields: vec!["message".to_string(), "code".to_string()],
+                fields: vec![message, code],
                 field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        self.exception_names.insert("EncodeError".to_string());
+        self.exception_names.insert(s("EncodeError"));
         self.struct_defs.insert(
-            "EncodeError".to_string(),
+            s("EncodeError"),
             StructDef {
                 type_id: 0xFFFF_000B,
-                fields: vec!["message".to_string()],
+                fields: vec![message],
                 field_heap_types: vec![Some(HeapType::String)],
             },
         );
 
-        self.exception_names.insert("DBError".to_string());
+        self.exception_names.insert(s("DBError"));
         self.struct_defs.insert(
-            "DBError".to_string(),
+            s("DBError"),
             StructDef {
                 type_id: 0xFFFF_000A,
-                fields: vec!["message".to_string(), "code".to_string()],
+                fields: vec![message, code],
                 field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        self.exception_names.insert("ScheduleError".to_string());
+        self.exception_names.insert(s("ScheduleError"));
         self.struct_defs.insert(
-            "ScheduleError".to_string(),
+            s("ScheduleError"),
             StructDef {
                 type_id: 0xFFFF_000C,
-                fields: vec!["message".to_string()],
+                fields: vec![message],
                 field_heap_types: vec![Some(HeapType::String)],
             },
         );
 
-        self.exception_names.insert("OSError".to_string());
+        self.exception_names.insert(s("OSError"));
         self.struct_defs.insert(
-            "OSError".to_string(),
+            s("OSError"),
             StructDef {
                 type_id: 0xFFFF_0008,
-                fields: vec!["message".to_string(), "code".to_string()],
+                fields: vec![message, code],
                 field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        self.exception_names.insert("NetworkError".to_string());
+        self.exception_names.insert(s("NetworkError"));
         self.struct_defs.insert(
-            "NetworkError".to_string(),
+            s("NetworkError"),
             StructDef {
                 type_id: 0xFFFF_0005,
-                fields: vec!["message".to_string(), "code".to_string()],
+                fields: vec![message, code],
                 field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        self.exception_names.insert("TimeoutError".to_string());
+        self.exception_names.insert(s("TimeoutError"));
         self.struct_defs.insert(
-            "TimeoutError".to_string(),
+            s("TimeoutError"),
             StructDef {
                 type_id: 0xFFFF_0006,
-                fields: vec!["message".to_string(), "timeout_ms".to_string()],
+                fields: vec![message, s("timeout_ms")],
                 field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        self.exception_names.insert("PermissionError".to_string());
+        self.exception_names.insert(s("PermissionError"));
         self.struct_defs.insert(
-            "PermissionError".to_string(),
+            s("PermissionError"),
             StructDef {
                 type_id: 0xFFFF_000D,
-                fields: vec!["path".to_string(), "code".to_string()],
+                fields: vec![path, code],
                 field_heap_types: vec![Some(HeapType::String), None],
             },
         );
 
-        self.exception_names.insert("PathError".to_string());
+        self.exception_names.insert(s("PathError"));
         self.struct_defs.insert(
-            "PathError".to_string(),
+            s("PathError"),
             StructDef {
                 type_id: 0xFFFF_0004,
-                fields: vec!["message".to_string()],
+                fields: vec![message],
                 field_heap_types: vec![Some(HeapType::String)],
             },
         );
@@ -3500,6 +3581,13 @@ impl<'a> JitCompiler<'a> {
             &[i64t],
             &[ptr],
         )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_arena_get_tls_ptr",
+            &[],
+            &[ptr],
+        )?;
 
         // Struct functions
         declare(
@@ -3542,6 +3630,20 @@ impl<'a> JitCompiler<'a> {
             &mut self.runtime_funcs,
             "naml_struct_free",
             &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_arena_free_sized",
+            &[ptr, i64t],
+            &[],
+        )?;
+        declare(
+            &mut self.module,
+            &mut self.runtime_funcs,
+            "naml_struct_decref_iterative",
+            &[ptr, ptr, i32t],
             &[],
         )?;
         declare(
@@ -5834,6 +5936,7 @@ impl<'a> JitCompiler<'a> {
         declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_bind_int", &[i64t, i64t, i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_bind_float", &[i64t, i64t, f64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_step", &[i64t], &[])?;
+        declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_step_query", &[i64t], &[i64t])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_reset", &[i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_finalize", &[i64t], &[])?;
         declare(&mut self.module, &mut self.runtime_funcs, "naml_db_sqlite_changes", &[i64t], &[i64t])?;
@@ -5845,12 +5948,12 @@ impl<'a> JitCompiler<'a> {
     pub fn compile(&mut self, ast: &'a SourceFile<'a>) -> Result<(), CodegenError> {
         for item in &ast.items {
             if let crate::ast::Item::Struct(struct_item) = item {
-                let name = self.interner.resolve(&struct_item.name.symbol).to_string();
+                let name_spur = struct_item.name.symbol;
                 let mut fields = Vec::new();
                 let mut field_heap_types = Vec::new();
 
                 for f in &struct_item.fields {
-                    fields.push(self.interner.resolve(&f.name.symbol).to_string());
+                    fields.push(f.name.symbol);
                     field_heap_types.push(get_heap_type_resolved(&f.ty, self.interner));
                 }
 
@@ -5858,7 +5961,7 @@ impl<'a> JitCompiler<'a> {
                 self.next_type_id += 1;
 
                 self.struct_defs.insert(
-                    name,
+                    name_spur,
                     StructDef {
                         type_id,
                         fields,
@@ -5871,15 +5974,12 @@ impl<'a> JitCompiler<'a> {
         // Collect exception definitions (treated like structs for codegen)
         for item in &ast.items {
             if let crate::ast::Item::Exception(exception_item) = item {
-                let name = self
-                    .interner
-                    .resolve(&exception_item.name.symbol)
-                    .to_string();
+                let name_spur = exception_item.name.symbol;
                 let mut fields = Vec::new();
                 let mut field_heap_types = Vec::new();
 
                 for f in &exception_item.fields {
-                    fields.push(self.interner.resolve(&f.name.symbol).to_string());
+                    fields.push(f.name.symbol);
                     field_heap_types.push(get_heap_type_resolved(&f.ty, self.interner));
                 }
 
@@ -5887,9 +5987,9 @@ impl<'a> JitCompiler<'a> {
                 self.next_type_id += 1;
 
                 // Exception treated as a struct with its fields
-                self.exception_names.insert(name.clone());
+                self.exception_names.insert(name_spur);
                 self.struct_defs.insert(
-                    name,
+                    name_spur,
                     StructDef {
                         type_id,
                         fields,
@@ -6142,14 +6242,15 @@ impl<'a> JitCompiler<'a> {
     fn generate_struct_decref_functions(&mut self) -> Result<(), CodegenError> {
         let ptr_type = self.module.target_config().pointer_type();
 
-        let structs_with_heap_fields: Vec<(String, StructDef)> = self
+        let structs_with_heap_fields: Vec<(Spur, StructDef)> = self
             .struct_defs
             .iter()
             .filter(|(_, def)| def.field_heap_types.iter().any(|ht| ht.is_some()))
-            .map(|(name, def)| (name.clone(), def.clone()))
+            .map(|(name, def)| (*name, def.clone()))
             .collect();
 
-        for (struct_name, _) in &structs_with_heap_fields {
+        for (struct_name_spur, _) in &structs_with_heap_fields {
+            let struct_name = self.interner.resolve(struct_name_spur);
             let func_name = format!("naml_struct_decref_{}", struct_name);
             let mut sig = self.module.make_signature();
             sig.params.push(AbiParam::new(ptr_type));
@@ -6162,11 +6263,264 @@ impl<'a> JitCompiler<'a> {
             self.functions.insert(func_name, func_id);
         }
 
-        for (struct_name, struct_def) in structs_with_heap_fields {
+        for (struct_name_spur, struct_def) in structs_with_heap_fields {
+            let struct_name = self.interner.resolve(&struct_name_spur).to_string();
             self.generate_struct_decref(&struct_name, &struct_def)?;
         }
 
         Ok(())
+    }
+
+    fn generate_struct_decref_iterative_wrapper(
+        &mut self,
+        func_name: &str,
+        func_id: cranelift_module::FuncId,
+        heap_field_indices: &[usize],
+    ) -> Result<(), CodegenError> {
+        use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
+
+        let ptr_type = self.module.target_config().pointer_type();
+
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(ptr_type));
+        self.ctx.func.signature = sig;
+
+        let mut builder_ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
+
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        builder.seal_block(entry_block);
+
+        let struct_ptr = builder.block_params(entry_block)[0];
+
+        let num_fields = heap_field_indices.len();
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            (num_fields * 4) as u32,
+            4,
+        ));
+
+        for (i, &field_idx) in heap_field_indices.iter().enumerate() {
+            let val = builder
+                .ins()
+                .iconst(cranelift::prelude::types::I32, field_idx as i64);
+            builder.ins().stack_store(val, slot, (i * 4) as i32);
+        }
+
+        let indices_ptr = builder.ins().stack_addr(ptr_type, slot, 0);
+        let num_fields_val = builder
+            .ins()
+            .iconst(cranelift::prelude::types::I32, num_fields as i64);
+
+        let iter_func_id =
+            *self
+                .runtime_funcs
+                .get("naml_struct_decref_iterative")
+                .ok_or_else(|| {
+                    CodegenError::JitCompile(
+                        "naml_struct_decref_iterative not declared".to_string(),
+                    )
+                })?;
+        let iter_func_ref = self
+            .module
+            .declare_func_in_func(iter_func_id, builder.func);
+        builder
+            .ins()
+            .call(iter_func_ref, &[struct_ptr, indices_ptr, num_fields_val]);
+
+        builder.ins().return_(&[]);
+        builder.finalize();
+
+        let func_name_clone = func_name.to_string();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!(
+                    "Failed to define {}: {}",
+                    func_name, e
+                )));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &func_name_clone));
+            }
+        }
+
+        self.ctx.clear();
+        Ok(())
+    }
+
+    fn generate_struct_decref_loop(
+        &mut self,
+        func_name: &str,
+        func_id: cranelift_module::FuncId,
+        struct_def: &StructDef,
+        self_ref_fields: &[usize],
+    ) -> Result<(), CodegenError> {
+        let ptr_type = self.module.target_config().pointer_type();
+
+        let mut sig = self.module.make_signature();
+        sig.params.push(AbiParam::new(ptr_type));
+        self.ctx.func.signature = sig;
+
+        let mut builder_ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut builder_ctx);
+
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+
+        let struct_ptr = builder.block_params(entry_block)[0];
+
+        let loop_header = builder.create_block();
+        builder.append_block_param(loop_header, ptr_type);
+        builder.ins().jump(loop_header, &[struct_ptr]);
+        builder.seal_block(entry_block);
+
+        builder.switch_to_block(loop_header);
+        let current_ptr = builder.block_params(loop_header)[0];
+
+        let zero = builder.ins().iconst(ptr_type, 0);
+        let is_null = builder.ins().icmp(IntCC::Equal, current_ptr, zero);
+
+        let done_block = builder.create_block();
+        let check_rc_block = builder.create_block();
+
+        builder
+            .ins()
+            .brif(is_null, done_block, &[], check_rc_block, &[]);
+
+        builder.switch_to_block(check_rc_block);
+        builder.seal_block(check_rc_block);
+
+        let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
+        let free_block = builder.create_block();
+
+        if self.unsafe_mode {
+            let current_rc = builder.ins().load(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                current_ptr,
+                0,
+            );
+            let should_free = builder.ins().icmp(IntCC::Equal, current_rc, one);
+            let decrement_block = builder.create_block();
+            builder
+                .ins()
+                .brif(should_free, free_block, &[], decrement_block, &[]);
+
+            builder.switch_to_block(decrement_block);
+            builder.seal_block(decrement_block);
+            let decremented = builder.ins().iadd_imm(current_rc, -1);
+            builder
+                .ins()
+                .store(MemFlags::new(), decremented, current_ptr, 0);
+            builder.ins().jump(done_block, &[]);
+        } else {
+            let old_rc = builder.ins().atomic_rmw(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                AtomicRmwOp::Sub,
+                current_ptr,
+                one,
+            );
+            let should_free = builder.ins().icmp(IntCC::Equal, old_rc, one);
+            builder
+                .ins()
+                .brif(should_free, free_block, &[], done_block, &[]);
+        }
+
+        builder.switch_to_block(free_block);
+        builder.seal_block(free_block);
+        if !self.unsafe_mode {
+            builder.ins().fence();
+        }
+
+        let base_field_offset: i32 = 24;
+        let mut child_vals = Vec::new();
+        for &field_idx in self_ref_fields {
+            let field_offset = base_field_offset + (field_idx as i32 * 8);
+            let field_val = builder.ins().load(
+                cranelift::prelude::types::I64,
+                MemFlags::new(),
+                current_ptr,
+                field_offset,
+            );
+            child_vals.push(field_val);
+        }
+
+        let free_func_id = *self.runtime_funcs.get("naml_struct_free").ok_or_else(|| {
+            CodegenError::JitCompile("Unknown runtime function: naml_struct_free".to_string())
+        })?;
+        let free_func_ref = self.module.declare_func_in_func(free_func_id, builder.func);
+        builder.ins().call(free_func_ref, &[current_ptr]);
+
+        let self_func_id = *self.functions.get(func_name).ok_or_else(|| {
+            CodegenError::JitCompile(format!("Function not found: {}", func_name))
+        })?;
+        let self_func_ref = self.module.declare_func_in_func(self_func_id, builder.func);
+
+        for child in &child_vals[..child_vals.len() - 1] {
+            builder.ins().call(self_func_ref, &[*child]);
+        }
+
+        let last_child = *child_vals.last().unwrap();
+        builder.ins().jump(loop_header, &[last_child]);
+        builder.seal_block(loop_header);
+
+        builder.switch_to_block(done_block);
+        builder.seal_block(done_block);
+        builder.ins().return_(&[]);
+
+        builder.finalize();
+
+        let func_name_clone = func_name.to_string();
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            self.module.define_function(func_id, &mut self.ctx)
+        }));
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                return Err(CodegenError::JitCompile(format!(
+                    "Failed to define {}: {}",
+                    func_name, e
+                )));
+            }
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown internal error".to_string()
+                };
+                return Err(convert_cranelift_error(&panic_msg, &func_name_clone));
+            }
+        }
+
+        self.ctx.clear();
+        Ok(())
+    }
+
+    fn is_self_ref_heap_field(ht: &HeapType, struct_name: &str, interner: &lasso::Rodeo) -> bool {
+        match ht {
+            HeapType::Struct(Some(name)) => interner.resolve(name) == struct_name,
+            HeapType::OptionOf(inner) => Self::is_self_ref_heap_field(inner, struct_name, interner),
+            _ => false,
+        }
     }
 
     fn generate_struct_decref(
@@ -6180,6 +6534,21 @@ impl<'a> JitCompiler<'a> {
         let func_id = *self.functions.get(&func_name).ok_or_else(|| {
             CodegenError::JitCompile(format!("Decref function not pre-declared: {}", func_name))
         })?;
+
+        let self_ref_fields: Vec<usize> = struct_def
+            .field_heap_types
+            .iter()
+            .enumerate()
+            .filter_map(|(i, ht)| {
+                ht.as_ref().and_then(|h| {
+                    if Self::is_self_ref_heap_field(h, struct_name, self.interner) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
 
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(ptr_type));
@@ -6216,36 +6585,50 @@ impl<'a> JitCompiler<'a> {
         builder.seal_block(decref_block);
 
         let one = builder.ins().iconst(cranelift::prelude::types::I64, 1);
-        let old_refcount = if self.unsafe_mode {
+
+        let free_block = builder.create_block();
+        let decrement_block = builder.create_block();
+        let done_block = builder.create_block();
+
+        if self.unsafe_mode {
             let current = builder.ins().load(
                 cranelift::prelude::types::I64,
                 MemFlags::new(),
                 struct_ptr,
                 0,
             );
+            let should_free = builder.ins().icmp(IntCC::Equal, current, one);
+            builder
+                .ins()
+                .brif(should_free, free_block, &[], decrement_block, &[]);
+
+            // Decrement-only path (rc > 1): store decremented value and return
+            builder.switch_to_block(decrement_block);
+            builder.seal_block(decrement_block);
             let decremented = builder.ins().iadd_imm(current, -1);
             builder
                 .ins()
                 .store(MemFlags::new(), decremented, struct_ptr, 0);
-            current
+            builder.ins().jump(done_block, &[]);
         } else {
-            builder.ins().atomic_rmw(
+            let old_refcount = builder.ins().atomic_rmw(
                 cranelift::prelude::types::I64,
                 MemFlags::new(),
                 AtomicRmwOp::Sub,
                 struct_ptr,
                 one,
-            )
-        };
+            );
+            let should_free = builder.ins().icmp(IntCC::Equal, old_refcount, one);
+            builder
+                .ins()
+                .brif(should_free, free_block, &[], done_block, &[]);
 
-        let should_free = builder.ins().icmp(IntCC::Equal, old_refcount, one);
+            builder.switch_to_block(decrement_block);
+            builder.seal_block(decrement_block);
+            builder.ins().jump(done_block, &[]);
+        }
 
-        let free_block = builder.create_block();
-        let done_block = builder.create_block();
-
-        builder
-            .ins()
-            .brif(should_free, free_block, &[], done_block, &[]);
+        // Free path: skip refcount store (memory is about to be reused)
         builder.switch_to_block(free_block);
         builder.seal_block(free_block);
         if !self.unsafe_mode {
@@ -6290,7 +6673,7 @@ impl<'a> JitCompiler<'a> {
                         HeapType::Struct(None) => "naml_struct_decref".to_string(),
                         HeapType::Struct(Some(name)) => {
                             if struct_has_heap_fields(&self.struct_defs, name) {
-                                format!("naml_struct_decref_{}", name)
+                                format!("naml_struct_decref_{}", self.interner.resolve(name))
                             } else {
                                 "naml_struct_decref".to_string()
                             }
@@ -6337,7 +6720,7 @@ impl<'a> JitCompiler<'a> {
                         HeapType::Struct(None) => "naml_struct_decref".to_string(),
                         HeapType::Struct(Some(field_struct_name)) => {
                             if struct_has_heap_fields(&self.struct_defs, field_struct_name) {
-                                format!("naml_struct_decref_{}", field_struct_name)
+                                format!("naml_struct_decref_{}", self.interner.resolve(field_struct_name))
                             } else {
                                 "naml_struct_decref".to_string()
                             }
@@ -6368,12 +6751,8 @@ impl<'a> JitCompiler<'a> {
             }
         }
 
-        // Call naml_struct_free to deallocate the struct memory
-        let free_func_id = *self.runtime_funcs.get("naml_struct_free").ok_or_else(|| {
-            CodegenError::JitCompile("Unknown runtime function: naml_struct_free".to_string())
-        })?;
-        let free_func_ref = self.module.declare_func_in_func(free_func_id, builder.func);
-        builder.ins().call(free_func_ref, &[struct_ptr]);
+        let alloc_size = 24 + struct_def.fields.len() * 8;
+        structs::emit_inline_arena_free(&mut self.module, &self.runtime_funcs, &mut builder, struct_ptr, alloc_size)?;
         builder.ins().jump(done_block, &[]);
 
         // Done block: return
@@ -6563,6 +6942,7 @@ impl<'a> JitCompiler<'a> {
             inline_exit_block: None,
             inline_result_var: None,
             borrowed_vars: HashSet::new(),
+            reassigned_vars: HashSet::new(),
         };
 
         for (i, param) in func.params.iter().enumerate() {
@@ -7265,6 +7645,7 @@ impl<'a> JitCompiler<'a> {
             inline_exit_block: None,
             inline_result_var: None,
             borrowed_vars: HashSet::new(),
+            reassigned_vars: HashSet::new(),
         };
 
         // Load captured variables from closure data
@@ -7419,6 +7800,7 @@ impl<'a> JitCompiler<'a> {
             inline_exit_block: None,
             inline_result_var: None,
             borrowed_vars: HashSet::new(),
+            reassigned_vars: HashSet::new(),
         };
 
         // Load captured variables from closure data
@@ -7650,7 +8032,13 @@ impl<'a> JitCompiler<'a> {
             inline_exit_block: None,
             inline_result_var: None,
             borrowed_vars: HashSet::new(),
+            reassigned_vars: HashSet::new(),
         };
+
+        // Scan function body for variable reassignments to enable borrow optimization
+        if let Some(ref body) = func.body {
+            collect_reassigned_vars(&body.statements, self.interner, &mut ctx.reassigned_vars);
+        }
 
         for (i, param) in func.params.iter().enumerate() {
             let param_name = self.interner.resolve(&param.name.symbol).to_string();
@@ -7888,6 +8276,7 @@ impl<'a> JitCompiler<'a> {
             inline_exit_block: None,
             inline_result_var: None,
             borrowed_vars: HashSet::new(),
+            reassigned_vars: HashSet::new(),
         };
 
         // Set up receiver variable (self)
@@ -7909,6 +8298,11 @@ impl<'a> JitCompiler<'a> {
             builder.declare_var(var, ty);
             builder.def_var(var, val);
             ctx.variables.insert(param_name, var);
+        }
+
+        // Scan method body for variable reassignments to enable borrow optimization
+        if let Some(ref body) = func.body {
+            collect_reassigned_vars(&body.statements, self.interner, &mut ctx.reassigned_vars);
         }
 
         // Push method onto shadow stack for stack traces

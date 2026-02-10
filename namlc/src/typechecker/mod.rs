@@ -177,10 +177,19 @@ impl<'a> TypeChecker<'a> {
         }
 
         // Register standard exceptions
+        // Pre-intern field names used by codegen's register_builtin_exceptions
         let io_error_name = self.interner.get_or_intern("IOError");
         let msg_name = self.interner.get_or_intern("message");
         let path_name = self.interner.get_or_intern("path");
         let code_name = self.interner.get_or_intern("code");
+        self.interner.get_or_intern("stack");
+        self.interner.get_or_intern("key");
+        self.interner.get_or_intern("position");
+        self.interner.get_or_intern("timeout_ms");
+        self.interner.get_or_intern("function");
+        self.interner.get_or_intern("file");
+        self.interner.get_or_intern("line");
+        self.interner.get_or_intern("stack_frame");
 
         self.symbols.define_type(
             io_error_name,
@@ -3213,6 +3222,12 @@ impl<'a> TypeChecker<'a> {
                 "step",
                 vec![("stmt", Type::Int)],
                 Type::Unit,
+                vec!["DBError"],
+            ),
+            StdModuleFn::throwing(
+                "step_query",
+                vec![("stmt", Type::Int)],
+                Type::Int,
                 vec!["DBError"],
             ),
             StdModuleFn::new("reset", vec![("stmt", Type::Int)], Type::Unit),

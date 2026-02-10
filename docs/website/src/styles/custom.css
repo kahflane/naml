@@ -156,52 +156,47 @@ nav.sidebar .top-level > li > details > summary {
   .hero-ant svg { width: 260px; }
 }
 
-.landing-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  align-items: start;
-  justify-items: center;
-  gap: 1.5rem;
-  padding: 2.5rem 1.5rem;
-  margin: 2rem 0;
-  width: 100%;
-  border-top: 1px solid rgba(255, 87, 34, 0.1);
-  border-bottom: 1px solid rgba(255, 87, 34, 0.1);
-  background: radial-gradient(ellipse at center, rgba(255, 87, 34, 0.03) 0%, transparent 70%);
-}
-
-.stat-item {
+.builtin-grid {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  text-align: center;
-  gap: 0.15rem;
-  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0 0 2rem 0;
+  padding: 0 1rem;
 }
 
-.stat-value {
-  font-size: 2.4rem;
-  font-weight: 900;
-  color: var(--naml-accent);
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+.builtin-pill {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--sl-color-gray-1) !important;
+  background: var(--sl-color-gray-6);
+  border: 1px solid rgba(255, 87, 34, 0.08);
+  border-radius: 9999px;
+  text-decoration: none !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
 }
 
-.stat-label {
-  font-size: 0.8rem;
-  color: var(--sl-color-gray-2);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.builtin-pill:hover {
+  background: rgba(255, 87, 34, 0.1);
+  border-color: rgba(255, 87, 34, 0.3);
+  color: var(--naml-accent) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(255, 87, 34, 0.12);
 }
 
-.stat-detail {
-  font-size: 0.78rem;
-  color: var(--sl-color-gray-3);
-  font-weight: 400;
-  line-height: 1.4;
-  margin-top: 0.25rem;
+[data-theme='light'] .builtin-pill {
+  background: #fff;
+  border-color: rgba(234, 88, 12, 0.1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+[data-theme='light'] .builtin-pill:hover {
+  background: rgba(234, 88, 12, 0.06);
+  border-color: rgba(234, 88, 12, 0.3);
+  color: var(--naml-accent) !important;
 }
 
 .features-grid {
@@ -457,10 +452,10 @@ starlight-tabs button[role='tab'][aria-selected='true'] {
 }
 
 @media (max-width: 50rem) {
-  .landing-stats { grid-template-columns: 1fr; gap: 2rem; padding: 2rem 1rem; }
-  .stat-value { font-size: 2rem; }
   .hero-ant svg { width: 160px; }
   .quick-links { grid-template-columns: 1fr 1fr; }
+  .builtin-grid { gap: 0.4rem; }
+  .builtin-pill { font-size: 0.78rem; padding: 0.35rem 0.85rem; }
 }
 
 @media (max-width: 30rem) {

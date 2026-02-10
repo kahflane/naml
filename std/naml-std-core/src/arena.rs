@@ -175,19 +175,33 @@ thread_local! {
 fn get_arena() -> *mut ArenaState {
     ARENA_PTR.with(|cell| {
         let ptr = cell.get();
-        if ptr.is_null() {
-            let arena = Box::into_raw(Box::new(ArenaState::new()));
-            cell.set(arena);
-            arena
-        } else {
-            ptr
+        if !ptr.is_null() {
+            return ptr;
         }
+        let arena = Box::into_raw(Box::new(ArenaState::new()));
+        cell.set(arena);
+        arena
     })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn naml_arena_alloc(size: usize) -> *mut u8 {
     arena_alloc(size)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_arena_free_sized(p: *mut u8, size: usize) {
+    unsafe { arena_free(p, size) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_arena_ensure_init() -> *mut u8 {
+    get_arena() as *mut u8
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn naml_arena_get_tls_ptr() -> *mut u8 {
+    get_arena() as *mut u8
 }
 
 #[inline(always)]

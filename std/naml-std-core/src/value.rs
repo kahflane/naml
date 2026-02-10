@@ -372,12 +372,12 @@ pub unsafe extern "C" fn naml_struct_new(type_id: u32, field_count: u32) -> *mut
             panic!("Failed to allocate struct");
         }
 
-        (*ptr).header = HeapHeader::new(HeapTag::Struct);
+        // Only write refcount and metadata; skip pad zeroing and field zeroing.
+        // The caller (StructLiteral codegen) always writes all fields.
+        std::ptr::write(&mut (*ptr).header.refcount, AtomicUsize::new(1));
+        std::ptr::write(&mut (*ptr).header.tag, HeapTag::Struct);
         (*ptr).type_id = type_id;
         (*ptr).field_count = field_count;
-
-        let fields_ptr = (*ptr).fields.as_mut_ptr();
-        std::ptr::write_bytes(fields_ptr, 0, field_count as usize);
 
         ptr
     }
@@ -441,6 +441,63 @@ pub unsafe extern "C" fn naml_struct_free(s: *mut NamlStruct) {
             let field_count = (*s).field_count;
             let size = crate::arena::struct_alloc_size(field_count);
             crate::arena::arena_free(s as *mut u8, size);
+        }
+    }
+}
+
+/// Iterative decref for self-recursive structs (e.g., tree nodes).
+/// Uses a fixed-size stack on the call stack to avoid heap allocation.
+/// For a balanced binary tree of depth d, max worklist size is d+1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_struct_decref_iterative(
+    ptr: *mut NamlStruct,
+    heap_field_indices: *const u32,
+    num_heap_fields: u32,
+) {
+    if ptr.is_null() {
+        return;
+    }
+
+    unsafe {
+        let rc = (*ptr).header.refcount.load(std::sync::atomic::Ordering::Relaxed);
+        if rc > 1 {
+            (*ptr).header.refcount.store(rc - 1, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+
+        const STACK_CAP: usize = 128;
+        let mut stack: [*mut NamlStruct; STACK_CAP] = [std::ptr::null_mut(); STACK_CAP];
+        let mut top: usize = 1;
+        stack[0] = ptr;
+
+        while top > 0 {
+            top -= 1;
+            let node = stack[top];
+
+            let fields_base = (node as *const u8).add(24) as *const i64;
+            for i in 0..num_heap_fields {
+                let field_idx = *heap_field_indices.add(i as usize);
+                let child = *fields_base.add(field_idx as usize) as *mut NamlStruct;
+                if !child.is_null() {
+                    let child_rc =
+                        (*child).header.refcount.load(std::sync::atomic::Ordering::Relaxed);
+                    if child_rc > 1 {
+                        (*child)
+                            .header
+                            .refcount
+                            .store(child_rc - 1, std::sync::atomic::Ordering::Relaxed);
+                    } else if top < STACK_CAP {
+                        stack[top] = child;
+                        top += 1;
+                    } else {
+                        naml_struct_decref_iterative(child, heap_field_indices, num_heap_fields);
+                    }
+                }
+            }
+
+            let field_count = (*node).field_count;
+            let size = crate::arena::struct_alloc_size(field_count);
+            crate::arena::arena_free(node as *mut u8, size);
         }
     }
 }

@@ -750,6 +750,8 @@ pub enum BuiltinStrategy {
     SqliteBindFloat,
     /// (stmt: int) -> unit throws DBError
     SqliteStep,
+    /// (stmt: int) -> int throws DBError
+    SqliteStepQuery,
     /// (stmt: int) -> unit
     SqliteReset,
     /// (stmt: int) -> unit
@@ -2319,6 +2321,7 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction { name: "db::sqlite::bind_int", strategy: BuiltinStrategy::SqliteBindInt },
         BuiltinFunction { name: "db::sqlite::bind_float", strategy: BuiltinStrategy::SqliteBindFloat },
         BuiltinFunction { name: "db::sqlite::step", strategy: BuiltinStrategy::SqliteStep },
+        BuiltinFunction { name: "db::sqlite::step_query", strategy: BuiltinStrategy::SqliteStepQuery },
         BuiltinFunction { name: "db::sqlite::reset", strategy: BuiltinStrategy::SqliteReset },
         BuiltinFunction { name: "db::sqlite::finalize", strategy: BuiltinStrategy::SqliteFinalize },
         BuiltinFunction { name: "db::sqlite::changes", strategy: BuiltinStrategy::SqliteChanges },
@@ -5024,6 +5027,14 @@ pub fn compile_builtin_call(
             let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_step")?;
             builder.ins().call(func_ref, &[stmt]);
             Ok(builder.ins().iconst(types::I64, 0))
+        }
+
+        BuiltinStrategy::SqliteStepQuery => {
+            use super::runtime::rt_func_ref;
+            let stmt = compile_expression(ctx, builder, &args[0])?;
+            let func_ref = rt_func_ref(ctx, builder, "naml_db_sqlite_step_query")?;
+            let call = builder.ins().call(func_ref, &[stmt]);
+            Ok(builder.inst_results(call)[0])
         }
 
         BuiltinStrategy::SqliteReset => {

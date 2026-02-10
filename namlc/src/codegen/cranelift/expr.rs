@@ -23,13 +23,49 @@ use crate::codegen::cranelift::strings::{
     call_string_to_int,
 };
 use crate::codegen::cranelift::structs::{
-    call_struct_get_field, call_struct_new, call_struct_set_field,
+    call_struct_get_field, call_struct_new, call_struct_set_field, emit_inline_arena_alloc,
 };
 use crate::codegen::cranelift::types::tc_type_to_cranelift;
 use crate::source::Spanned;
 use crate::typechecker::Type;
 use cranelift::prelude::*;
 use cranelift_module::Module;
+
+fn try_force_unwrap_field_direct(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    expr: &Expression<'_>,
+) -> Option<cranelift_codegen::ir::Value> {
+    if let Expression::Field(field_expr) = expr {
+        if let Expression::Identifier(ident) = field_expr.base {
+            if let Some(Type::Struct(struct_type)) = ctx.annotations.get_type(ident.span) {
+                let field_spur = field_expr.field.symbol;
+                if let Some(struct_def) = ctx.struct_defs.get(&struct_type.name) {
+                    if let Some(idx) = struct_def.fields.iter().position(|f| *f == field_spur) {
+                        let field_type = struct_type
+                            .fields
+                            .iter()
+                            .find(|f| f.name == field_spur)
+                            .map(|f| &f.ty);
+                        if matches!(field_type, Some(Type::Option(_))) {
+                            let struct_ptr =
+                                compile_expression(ctx, builder, field_expr.base).ok()?;
+                            let offset = (24 + idx * 8) as i32;
+                            let val = builder.ins().load(
+                                cranelift::prelude::types::I64,
+                                MemFlags::new(),
+                                struct_ptr,
+                                offset,
+                            );
+                            return Some(val);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 
 pub fn compile_expression(
     ctx: &mut CompileContext<'_>,
@@ -534,9 +570,9 @@ pub fn compile_expression(
                     }
                 }
                 // Check for exception constructor: ExceptionType("message")
-                else if ctx.struct_defs.contains_key(func_name) {
+                else if ctx.struct_defs.contains_key(&ident.ident.symbol) {
                     // Exception constructor - allocate on heap (exceptions outlive stack frames)
-                    let struct_def = ctx.struct_defs.get(func_name).unwrap();
+                    let struct_def = ctx.struct_defs.get(&ident.ident.symbol).unwrap();
                     let num_fields = struct_def.fields.len();
                     // Exception layout: message (8) + stack (8) + user fields (8 each)
                     // Total size: 16 bytes for message + stack pointers + 8 bytes per field
@@ -798,13 +834,13 @@ pub fn compile_expression(
         }
 
         Expression::StructLiteral(struct_lit) => {
-            let struct_name = ctx.interner.resolve(&struct_lit.name.symbol).to_string();
+            let struct_name_spur = struct_lit.name.symbol;
 
             let struct_def = ctx
                 .struct_defs
-                .get(&struct_name)
+                .get(&struct_name_spur)
                 .ok_or_else(|| {
-                    CodegenError::JitCompile(format!("Unknown struct: {}", struct_name))
+                    CodegenError::JitCompile(format!("Unknown struct: {}", ctx.interner.resolve(&struct_name_spur)))
                 })?
                 .clone();
 
@@ -812,12 +848,7 @@ pub fn compile_expression(
 
             let struct_ptr = if ctx.unsafe_mode {
                 let alloc_size = 24 + num_fields * 8;
-                let size_val = builder
-                    .ins()
-                    .iconst(cranelift::prelude::types::I64, alloc_size as i64);
-                let alloc_ref = rt_func_ref(ctx, builder, "naml_arena_alloc")?;
-                let call = builder.ins().call(alloc_ref, &[size_val]);
-                let ptr = builder.inst_results(call)[0];
+                let ptr = emit_inline_arena_alloc(ctx, builder, alloc_size)?;
 
                 let one_i64 = builder.ins().iconst(cranelift::prelude::types::I64, 1);
                 builder.ins().store(MemFlags::new(), one_i64, ptr, 0);
@@ -844,31 +875,59 @@ pub fn compile_expression(
             };
 
             for field in struct_lit.fields.iter() {
-                let field_name = ctx.interner.resolve(&field.name.symbol).to_string();
+                let field_spur = field.name.symbol;
                 let field_idx = struct_def
                     .fields
                     .iter()
-                    .position(|f| *f == field_name)
+                    .position(|f| *f == field_spur)
                     .ok_or_else(|| {
-                        CodegenError::JitCompile(format!("Unknown field: {}", field_name))
+                        CodegenError::JitCompile(format!("Unknown field: {}", ctx.interner.resolve(&field_spur)))
                     })?;
 
-                let mut value = compile_expression(ctx, builder, &field.value)?;
-                if let Some(Type::String) = ctx.annotations.get_type(field.value.span())
-                    && matches!(
-                        &field.value,
+                let is_some_expr = matches!(&field.value, Expression::Some(_));
+                let (compile_expr, is_option) = if let Expression::Some(some_expr) = &field.value {
+                    (some_expr.value, true)
+                } else {
+                    (&field.value as &Expression<'_>, false)
+                };
+
+                let mut value = compile_expression(ctx, builder, compile_expr)?;
+
+                if is_some_expr {
+                    if matches!(
+                        compile_expr,
                         Expression::Literal(LiteralExpr {
                             value: Literal::String(_),
                             ..
                         })
-                    )
-                {
-                    value = call_string_from_cstr(ctx, builder, value)?;
+                    ) {
+                        value = call_string_from_cstr(ctx, builder, value)?;
+                    }
+                } else {
+                    if let Some(Type::String) = ctx.annotations.get_type(field.value.span())
+                        && matches!(
+                            &field.value,
+                            Expression::Literal(LiteralExpr {
+                                value: Literal::String(_),
+                                ..
+                            })
+                        )
+                    {
+                        value = call_string_from_cstr(ctx, builder, value)?;
+                    }
                 }
 
-                if matches!(ctx.annotations.get_type(field.value.span()), Some(Type::Option(_))) {
+                if !is_option
+                    && matches!(
+                        ctx.annotations.get_type(field.value.span()),
+                        Some(Type::Option(_))
+                    )
+                {
                     let tag = builder.ins().load(
-                        cranelift::prelude::types::I32, MemFlags::new(), value, 0,
+                        cranelift::prelude::types::I32,
+                        MemFlags::new(),
+                        value,
+                        0,
                     );
                     let is_some = builder.ins().icmp_imm(IntCC::NotEqual, tag, 0);
                     let some_block = builder.create_block();
@@ -876,12 +935,17 @@ pub fn compile_expression(
                     let merge_block = builder.create_block();
                     builder.append_block_param(merge_block, cranelift::prelude::types::I64);
 
-                    builder.ins().brif(is_some, some_block, &[], none_block, &[]);
+                    builder
+                        .ins()
+                        .brif(is_some, some_block, &[], none_block, &[]);
 
                     builder.switch_to_block(some_block);
                     builder.seal_block(some_block);
                     let inner_val = builder.ins().load(
-                        cranelift::prelude::types::I64, MemFlags::new(), value, 8,
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        value,
+                        8,
                     );
                     builder.ins().jump(merge_block, &[inner_val]);
 
@@ -895,17 +959,12 @@ pub fn compile_expression(
                     value = builder.block_params(merge_block)[0];
                 }
 
-                if ctx.unsafe_mode {
+                {
                     let store_value = super::misc::ensure_i64(builder, value);
                     let offset = (24 + field_idx * 8) as i32;
                     builder
                         .ins()
                         .store(MemFlags::new(), store_value, struct_ptr, offset);
-                } else {
-                    let idx_val = builder
-                        .ins()
-                        .iconst(cranelift::prelude::types::I32, field_idx as i64);
-                    call_struct_set_field(ctx, builder, struct_ptr, idx_val, value)?;
                 }
             }
 
@@ -914,7 +973,9 @@ pub fn compile_expression(
 
         Expression::Field(field_expr) => {
             let struct_ptr = compile_expression(ctx, builder, field_expr.base)?;
-            let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
+            let field_spur = field_expr.field.symbol;
+            let message_spur = ctx.interner.get("message").unwrap();
+            let stack_spur = ctx.interner.get("stack").unwrap();
 
             // Use type annotation to determine correct field offset
             // Note: use ident.span (IdentExpr span), not ident.ident.span (Ident span)
@@ -922,27 +983,26 @@ pub fn compile_expression(
                 && let Some(type_ann) = ctx.annotations.get_type(ident.span)
             {
                 if let crate::typechecker::Type::Exception(exc_name) = type_ann {
-                    let exc_name_str = ctx.interner.resolve(exc_name).to_string();
                     // Exception layout: message at 0, stack at 8, user fields at 16+
-                    let offset = if field_name == "message" {
+                    let offset = if field_spur == message_spur {
                         0
-                    } else if field_name == "stack" {
+                    } else if field_spur == stack_spur {
                         8
-                    } else if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
+                    } else if let Some(struct_def) = ctx.struct_defs.get(exc_name) {
                         if let Some(idx) =
-                            struct_def.fields.iter().position(|f| f == &field_name)
+                            struct_def.fields.iter().position(|f| *f == field_spur)
                         {
                             16 + (idx * 8) as i32
                         } else {
                             return Err(CodegenError::JitCompile(format!(
                                 "Unknown exception field: {}",
-                                field_name
+                                ctx.interner.resolve(&field_spur)
                             )));
                         }
                     } else {
                         return Err(CodegenError::JitCompile(format!(
                             "Unknown exception field: {}",
-                            field_name
+                            ctx.interner.resolve(&field_spur)
                         )));
                     };
                     let value = builder.ins().load(
@@ -953,14 +1013,13 @@ pub fn compile_expression(
                     );
                     return Ok(value);
                 } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
-                    let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
-                    if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
-                        && let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name)
+                    if let Some(struct_def) = ctx.struct_defs.get(&struct_type.name)
+                        && let Some(idx) = struct_def.fields.iter().position(|f| *f == field_spur)
                     {
                         let offset = (24 + idx * 8) as i32;
                         // Determine field type for typed load (eliminates bitcast for floats)
                         let field_type = struct_type.fields.iter()
-                            .find(|f| ctx.interner.resolve(&f.name) == field_name)
+                            .find(|f| f.name == field_spur)
                             .map(|f| &f.ty);
                         let load_type = if let Some(crate::typechecker::Type::Float) = field_type {
                             cranelift::prelude::types::F64
@@ -1015,14 +1074,15 @@ pub fn compile_expression(
                     }
                 } else if let crate::typechecker::Type::StackFrame = type_ann {
                     // stack_frame: function at 0, file at 8, line at 16
-                    let offset = match field_name.as_str() {
+                    let field_str = ctx.interner.resolve(&field_spur);
+                    let offset = match field_str {
                         "function" => 0,
                         "file" => 8,
                         "line" => 16,
                         _ => {
                             return Err(CodegenError::JitCompile(format!(
                                 "Unknown stack_frame field: {}",
-                                field_name
+                                field_str
                             )));
                         }
                     };
@@ -1044,13 +1104,12 @@ pub fn compile_expression(
                     ctx.annotations.get_type(index_expr.base.span())
                 {
                     if let crate::typechecker::Type::Struct(struct_type) = elem_ty.as_ref() {
-                        let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
-                        if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
-                            if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                        if let Some(struct_def) = ctx.struct_defs.get(&struct_type.name) {
+                            if let Some(idx) = struct_def.fields.iter().position(|f| *f == field_spur) {
                                 let offset = (24 + idx * 8) as i32;
                                 // Determine field type for typed load
                                 let field_type = struct_type.fields.iter()
-                                    .find(|f| ctx.interner.resolve(&f.name) == field_name)
+                                    .find(|f| f.name == field_spur)
                                     .map(|f| &f.ty);
                                 let load_type = if let Some(crate::typechecker::Type::Float) = field_type {
                                     cranelift::prelude::types::F64
@@ -1071,17 +1130,21 @@ pub fn compile_expression(
             }
 
             for (_, struct_def) in ctx.struct_defs.iter() {
-                if let Some(field_idx) = struct_def.fields.iter().position(|f| *f == field_name) {
-                    let idx_val = builder
-                        .ins()
-                        .iconst(cranelift::prelude::types::I32, field_idx as i64);
-                    return call_struct_get_field(ctx, builder, struct_ptr, idx_val);
+                if let Some(field_idx) = struct_def.fields.iter().position(|f| *f == field_spur) {
+                    let offset = (24 + field_idx * 8) as i32;
+                    let val = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        struct_ptr,
+                        offset,
+                    );
+                    return Ok(val);
                 }
             }
 
             Err(CodegenError::JitCompile(format!(
                 "Unknown field: {}",
-                field_name
+                ctx.interner.resolve(&field_spur)
             )))
         }
 
@@ -1777,6 +1840,40 @@ pub fn compile_expression(
 
                     return compile_direct_array_get_or_panic(ctx, builder, base, index, element_cl_type);
                 }
+            }
+
+            // Fast path: if unwrapping a struct field of option type, use nullable pointer directly
+            if let Some(nullable_val) =
+                try_force_unwrap_field_direct(ctx, builder, unwrap_expr.expr)
+            {
+                if ctx.unsafe_mode {
+                    return Ok(nullable_val);
+                }
+                let some_block = builder.create_block();
+                let none_block = builder.create_block();
+                let merge_block = builder.create_block();
+                builder.append_block_param(merge_block, cranelift::prelude::types::I64);
+
+                let zero = builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                let is_none =
+                    builder.ins().icmp(IntCC::Equal, nullable_val, zero);
+                builder
+                    .ins()
+                    .brif(is_none, none_block, &[], some_block, &[]);
+
+                builder.switch_to_block(none_block);
+                builder.seal_block(none_block);
+                let panic_func = rt_func_ref(ctx, builder, "naml_panic_unwrap")?;
+                builder.ins().call(panic_func, &[]);
+                builder.ins().jump(merge_block, &[zero]);
+
+                builder.switch_to_block(some_block);
+                builder.seal_block(some_block);
+                builder.ins().jump(merge_block, &[nullable_val]);
+
+                builder.switch_to_block(merge_block);
+                builder.seal_block(merge_block);
+                return Ok(builder.block_params(merge_block)[0]);
             }
 
             // General case: compile the option expression and unwrap

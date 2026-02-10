@@ -21,10 +21,10 @@ use crate::typechecker::{ImportedModule, TypeAnnotations};
 
 #[derive(Debug, Error)]
 pub enum CodegenError {
-    #[error("JIT compilation failed: {0}")]
+    #[error("Compilation failed: {0}")]
     JitCompile(String),
 
-    #[error("Execution failed: {0}")]
+    #[error("Panic #> {0}")]
     Execution(String),
 
     #[error("Unsupported feature: {0}")]

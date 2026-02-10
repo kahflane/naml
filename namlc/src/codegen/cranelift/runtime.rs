@@ -196,7 +196,7 @@ pub fn emit_decref(
         }
         HeapType::Struct(Some(struct_name)) => {
             if struct_has_heap_fields(ctx.struct_defs, struct_name) {
-                format!("naml_struct_decref_{}", struct_name)
+                format!("naml_struct_decref_{}", ctx.interner.resolve(struct_name))
             } else if ctx.unsafe_mode {
                 "naml_struct_decref_fast".to_string()
             } else {

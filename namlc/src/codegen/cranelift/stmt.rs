@@ -5,7 +5,7 @@ use crate::codegen::cranelift::array::{
 };
 use crate::codegen::cranelift::pattern::compile_pattern_match;
 use crate::codegen::cranelift::{
-    call_map_set, compile_expression,
+    call_map_set, compile_expression, get_field_access_base_var,
     types, CompileContext, HeapType,
 };
 use crate::codegen::cranelift::heap::get_heap_type_resolved;
@@ -16,6 +16,42 @@ use cranelift::prelude::*;
 use crate::codegen::cranelift::exceptions::call_exception_set;
 use crate::codegen::cranelift::runtime::{emit_cleanup_all_vars, emit_decref, emit_incref, emit_stack_pop, get_returned_var_name, rt_func_ref};
 use crate::codegen::cranelift::strings::{call_string_char_at, call_string_char_len, call_string_from_cstr};
+
+fn try_compile_option_field_direct(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    init: &Expression<'_>,
+) -> Option<cranelift_codegen::ir::Value> {
+    if let Expression::Field(field_expr) = init {
+        if let Expression::Identifier(ident) = field_expr.base {
+            if let Some(Type::Struct(struct_type)) = ctx.annotations.get_type(ident.span) {
+                let field_spur = field_expr.field.symbol;
+                if let Some(struct_def) = ctx.struct_defs.get(&struct_type.name) {
+                    if let Some(idx) = struct_def.fields.iter().position(|f| *f == field_spur) {
+                        let field_type = struct_type
+                            .fields
+                            .iter()
+                            .find(|f| f.name == field_spur)
+                            .map(|f| &f.ty);
+                        if matches!(field_type, Some(Type::Option(_))) {
+                            let struct_ptr =
+                                compile_expression(ctx, builder, field_expr.base).ok()?;
+                            let offset = (24 + idx * 8) as i32;
+                            let val = builder.ins().load(
+                                cranelift::prelude::types::I64,
+                                MemFlags::new(),
+                                struct_ptr,
+                                offset,
+                            );
+                            return Some(val);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 
 pub fn compile_statement(
     ctx: &mut CompileContext<'_>,
@@ -45,7 +81,7 @@ pub fn compile_statement(
             // and exception types - they use raw allocation, not NamlStruct)
             let skip_heap_tracking = matches!(var_stmt.ty.as_ref(), Some(crate::ast::NamlType::Named(ident)) if {
                 let type_name = ctx.interner.resolve(&ident.symbol).to_string();
-                ctx.enum_defs.contains_key(&type_name) || ctx.exception_names.contains(&type_name)
+                ctx.enum_defs.contains_key(&type_name) || ctx.exception_names.contains(&ident.symbol)
             });
             if !skip_heap_tracking {
                 if let Some(ref naml_ty) = var_stmt.ty
@@ -61,77 +97,126 @@ pub fn compile_statement(
 
             // Handle else block for option unwrap pattern: var x = opt else { ... }
             if let (Some(init), Some(else_block)) = (&var_stmt.init, &var_stmt.else_block) {
-                // This is an option unwrap with else block
-                // Compile the option expression
-                let option_ptr = compile_expression(ctx, builder, init)?;
+                let nullable_direct = try_compile_option_field_direct(ctx, builder, init);
 
-                // Load the tag from offset 0 (0 = none, 1 = some)
-                let tag = builder.ins().load(
-                    cranelift::prelude::types::I32,
-                    MemFlags::new(),
-                    option_ptr,
-                    0,
-                );
+                let val;
 
-                // Create blocks
-                let some_block = builder.create_block();
-                let none_block = builder.create_block();
-                let merge_block = builder.create_block();
+                if let Some(field_val) = nullable_direct {
+                    let some_block = builder.create_block();
+                    let none_block = builder.create_block();
+                    let merge_block = builder.create_block();
 
-                // Branch based on tag (tag == 0 means none)
-                let is_none = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
-                builder
-                    .ins()
-                    .brif(is_none, none_block, &[], some_block, &[]);
+                    let zero_ptr =
+                        builder.ins().iconst(cranelift::prelude::types::I64, 0);
+                    let is_none =
+                        builder
+                            .ins()
+                            .icmp(IntCC::Equal, field_val, zero_ptr);
+                    builder
+                        .ins()
+                        .brif(is_none, none_block, &[], some_block, &[]);
 
-                // None block: execute else block
-                builder.switch_to_block(none_block);
-                builder.seal_block(none_block);
+                    builder.switch_to_block(none_block);
+                    builder.seal_block(none_block);
+                    let zero = builder.ins().iconst(ty, 0);
+                    builder.def_var(var, zero);
 
-                // Initialize variable with zero before else block (in case else doesn't exit)
-                let zero = builder.ins().iconst(ty, 0);
-                builder.def_var(var, zero);
-
-                for else_stmt in &else_block.statements {
-                    compile_statement(ctx, builder, else_stmt)?;
-                    if ctx.block_terminated {
-                        break;
+                    for else_stmt in &else_block.statements {
+                        compile_statement(ctx, builder, else_stmt)?;
+                        if ctx.block_terminated {
+                            break;
+                        }
                     }
-                }
+                    if !ctx.block_terminated {
+                        builder.ins().jump(merge_block, &[]);
+                    }
+                    ctx.block_terminated = false;
 
-                // If else block didn't terminate (return/break), jump to merge
-                if !ctx.block_terminated {
+                    builder.switch_to_block(some_block);
+                    builder.seal_block(some_block);
+                    val = field_val;
+                    builder.def_var(var, val);
+
+                    if ctx.inline_depth == 0 {
+                        let can_borrow = get_field_access_base_var(init, ctx.interner)
+                            .is_some_and(|base| !ctx.reassigned_vars.contains(&base));
+                        if can_borrow {
+                            ctx.borrowed_vars.insert(var_name.clone());
+                        } else {
+                            let heap_type_clone =
+                                ctx.var_heap_types.get(&var_name).cloned();
+                            if let Some(ref heap_type) = heap_type_clone {
+                                emit_incref(ctx, builder, val, heap_type)?;
+                            }
+                        }
+                    }
+
                     builder.ins().jump(merge_block, &[]);
-                }
-                ctx.block_terminated = false;
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
+                } else {
+                    let option_ptr = compile_expression(ctx, builder, init)?;
 
-                // Some block: extract value and assign
-                builder.switch_to_block(some_block);
-                builder.seal_block(some_block);
+                    let tag = builder.ins().load(
+                        cranelift::prelude::types::I32,
+                        MemFlags::new(),
+                        option_ptr,
+                        0,
+                    );
 
-                // Load value from offset 8
-                let val = builder.ins().load(
-                    cranelift::prelude::types::I64,
-                    MemFlags::new(),
-                    option_ptr,
-                    8,
-                );
-                builder.def_var(var, val);
+                    let some_block = builder.create_block();
+                    let none_block = builder.create_block();
+                    let merge_block = builder.create_block();
 
-                // Skip incref in inlined functions — the inlined function
-                // borrows the value and we skip decref at inline return too.
-                if ctx.inline_depth == 0 {
-                    let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
-                    if let Some(ref heap_type) = heap_type_clone {
-                        emit_incref(ctx, builder, val, heap_type)?;
+                    let is_none = builder.ins().icmp_imm(IntCC::Equal, tag, 0);
+                    builder
+                        .ins()
+                        .brif(is_none, none_block, &[], some_block, &[]);
+
+                    builder.switch_to_block(none_block);
+                    builder.seal_block(none_block);
+                    let zero = builder.ins().iconst(ty, 0);
+                    builder.def_var(var, zero);
+
+                    for else_stmt in &else_block.statements {
+                        compile_statement(ctx, builder, else_stmt)?;
+                        if ctx.block_terminated {
+                            break;
+                        }
                     }
+                    if !ctx.block_terminated {
+                        builder.ins().jump(merge_block, &[]);
+                    }
+                    ctx.block_terminated = false;
+
+                    builder.switch_to_block(some_block);
+                    builder.seal_block(some_block);
+                    val = builder.ins().load(
+                        cranelift::prelude::types::I64,
+                        MemFlags::new(),
+                        option_ptr,
+                        8,
+                    );
+                    builder.def_var(var, val);
+
+                    if ctx.inline_depth == 0 {
+                        let can_borrow = get_field_access_base_var(init, ctx.interner)
+                            .is_some_and(|base| !ctx.reassigned_vars.contains(&base));
+                        if can_borrow {
+                            ctx.borrowed_vars.insert(var_name.clone());
+                        } else {
+                            let heap_type_clone =
+                                ctx.var_heap_types.get(&var_name).cloned();
+                            if let Some(ref heap_type) = heap_type_clone {
+                                emit_incref(ctx, builder, val, heap_type)?;
+                            }
+                        }
+                    }
+
+                    builder.ins().jump(merge_block, &[]);
+                    builder.switch_to_block(merge_block);
+                    builder.seal_block(merge_block);
                 }
-
-                builder.ins().jump(merge_block, &[]);
-
-                // Merge block
-                builder.switch_to_block(merge_block);
-                builder.seal_block(merge_block);
             } else if let Some(ref init) = var_stmt.init {
                 let mut val = compile_expression(ctx, builder, init)?;
 
@@ -152,14 +237,21 @@ pub fn compile_statement(
                 // Skip incref in inlined functions (borrow semantics).
                 // At top level, skip incref for fresh values (struct literal,
                 // function call) which already have refcount=1.
+                // Also skip incref when borrowing from a non-reassigned variable's field.
                 if ctx.inline_depth == 0 {
                     let is_fresh_value = matches!(init,
                         Expression::StructLiteral(_) | Expression::Call(_) | Expression::Some(_)
                     );
                     if !is_fresh_value {
-                        let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
-                        if let Some(ref heap_type) = heap_type_clone {
-                            emit_incref(ctx, builder, val, heap_type)?;
+                        let can_borrow = get_field_access_base_var(init, ctx.interner)
+                            .is_some_and(|base| !ctx.reassigned_vars.contains(&base));
+                        if can_borrow {
+                            ctx.borrowed_vars.insert(var_name.clone());
+                        } else {
+                            let heap_type_clone = ctx.var_heap_types.get(&var_name).cloned();
+                            if let Some(ref heap_type) = heap_type_clone {
+                                emit_incref(ctx, builder, val, heap_type)?;
+                            }
                         }
                     }
                 }
@@ -278,32 +370,32 @@ pub fn compile_statement(
                     // Get the base pointer (struct/exception)
                     let base_ptr = compile_expression(ctx, builder, field_expr.base)?;
                     let value = compile_expression(ctx, builder, &assign.value)?;
-                    let field_name = ctx.interner.resolve(&field_expr.field.symbol).to_string();
+                    let field_spur = field_expr.field.symbol;
+                    let message_spur = ctx.interner.get("message").unwrap();
+                    let stack_spur = ctx.interner.get("stack").unwrap();
 
                     // Determine field offset based on struct type
                     // For exceptions: message at 0, stack at 8, user fields at 16, 24, etc.
                     // For structs: fields at 0, 8, 16, etc.
                     if let Expression::Identifier(ident) = field_expr.base {
-                        let _var_name = ctx.interner.resolve(&ident.ident.symbol).to_string();
                         // Get the type annotation to determine struct/exception type
                         // Note: use ident.span (IdentExpr span), not ident.ident.span (Ident span)
                         if let Some(type_ann) = ctx.annotations.get_type(ident.span) {
                             if let crate::typechecker::Type::Exception(exc_name) = type_ann {
-                                let exc_name_str = ctx.interner.resolve(exc_name).to_string();
-                                if let Some(struct_def) = ctx.struct_defs.get(&exc_name_str) {
+                                if let Some(struct_def) = ctx.struct_defs.get(exc_name) {
                                     // Find field offset (message at 0, stack at 8, user fields at 16+)
-                                    let offset = if field_name == "message" {
+                                    let offset = if field_spur == message_spur {
                                         0
-                                    } else if field_name == "stack" {
+                                    } else if field_spur == stack_spur {
                                         8
                                     } else if let Some(idx) =
-                                        struct_def.fields.iter().position(|f| f == &field_name)
+                                        struct_def.fields.iter().position(|f| *f == field_spur)
                                     {
                                         16 + (idx * 8) as i32
                                     } else {
                                         return Err(CodegenError::JitCompile(format!(
                                             "Unknown field: {}",
-                                            field_name
+                                            ctx.interner.resolve(&field_spur)
                                         )));
                                     };
                                     builder
@@ -312,11 +404,9 @@ pub fn compile_statement(
                                     return Ok(());
                                 }
                             } else if let crate::typechecker::Type::Struct(struct_type) = type_ann {
-                                let struct_name =
-                                    ctx.interner.resolve(&struct_type.name).to_string();
-                                if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
+                                if let Some(struct_def) = ctx.struct_defs.get(&struct_type.name)
                                     && let Some(idx) =
-                                        struct_def.fields.iter().position(|f| f == &field_name)
+                                        struct_def.fields.iter().position(|f| *f == field_spur)
                                 {
                                     let offset = (24 + idx * 8) as i32;
                                     builder
@@ -326,10 +416,9 @@ pub fn compile_statement(
                                 }
                             } else if let crate::typechecker::Type::Generic(name, _) = type_ann {
                                 // Handle generic struct types like LinkedList<T>
-                                let struct_name = ctx.interner.resolve(name).to_string();
-                                if let Some(struct_def) = ctx.struct_defs.get(&struct_name)
+                                if let Some(struct_def) = ctx.struct_defs.get(name)
                                     && let Some(idx) =
-                                        struct_def.fields.iter().position(|f| f == &field_name)
+                                        struct_def.fields.iter().position(|f| *f == field_spur)
                                 {
                                     let offset = (24 + idx * 8) as i32;
                                     builder
@@ -349,9 +438,8 @@ pub fn compile_statement(
                                 ctx.annotations.get_type(index_expr.base.span())
                             {
                                 if let crate::typechecker::Type::Struct(struct_type) = elem_ty.as_ref() {
-                                    let struct_name = ctx.interner.resolve(&struct_type.name).to_string();
-                                    if let Some(struct_def) = ctx.struct_defs.get(&struct_name) {
-                                        if let Some(idx) = struct_def.fields.iter().position(|f| f == &field_name) {
+                                    if let Some(struct_def) = ctx.struct_defs.get(&struct_type.name) {
+                                        if let Some(idx) = struct_def.fields.iter().position(|f| *f == field_spur) {
                                             // Get struct pointer from array element
                                             let arr_ptr = compile_expression(ctx, builder, index_expr.base)?;
                                             let index = compile_expression(ctx, builder, index_expr.index)?;
@@ -362,7 +450,7 @@ pub fn compile_statement(
 
                                             // Determine field type for typed store (F64 for floats)
                                             let field_type = struct_type.fields.iter()
-                                                .find(|f| ctx.interner.resolve(&f.name) == field_name)
+                                                .find(|f| f.name == field_spur)
                                                 .map(|f| &f.ty);
                                             let is_float = matches!(field_type, Some(crate::typechecker::Type::Float));
 
@@ -386,7 +474,7 @@ pub fn compile_statement(
 
                     return Err(CodegenError::JitCompile(format!(
                         "Cannot assign to field: {}",
-                        field_name
+                        ctx.interner.resolve(&field_spur)
                     )));
                 }
                 _ => {

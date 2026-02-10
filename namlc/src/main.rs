@@ -140,7 +140,7 @@ fn run_file(file: &PathBuf, cached: bool, release: bool, unsafe_mode: bool) {
     ) {
         Ok(()) => {}
         Err(e) => {
-            eprintln!("Execution error: {}", e);
+            eprintln!("{}", e);
             std::process::exit(1);
         }
     }

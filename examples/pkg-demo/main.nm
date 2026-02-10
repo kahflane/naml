@@ -9,4 +9,6 @@ fn main() {
 
     var factorial: int = factorial(5);
     println(fmt("5! = {}", factorial));
+
+    var m: MathMatecian = MathMatecian{i: 1};
 }

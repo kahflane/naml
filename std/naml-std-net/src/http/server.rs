@@ -31,16 +31,15 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Request, Response};
+use hyper::{Method, Request, Response};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 
-use naml_std_core::{NamlString, NamlStruct};
+use naml_std_core::{HeapTag, NamlArray, NamlBytes, NamlString, NamlStruct};
 
 use super::types::{
-    naml_net_http_request_new, naml_net_http_request_set_body, naml_net_http_request_set_method,
-    naml_net_http_request_set_path, naml_net_http_response_create, naml_net_http_response_get_body,
+    array_to_vec, create_bytes_from, naml_net_http_response_create, naml_net_http_response_get_body,
     naml_net_http_response_get_status, vec_to_array,
 };
 use crate::errors::{string_from_naml, throw_network_error};
@@ -100,6 +99,63 @@ impl Router {
 
     fn add_middleware(&mut self, mw_handle: i64) {
         self.middleware_handles.push(mw_handle);
+    }
+}
+
+/// Frozen (immutable) router snapshot for zero-lock request handling.
+/// Created once at serve-time; shared across all worker tasks via Arc.
+struct FrozenRouter {
+    exact_routes: Vec<(String, String, HandlerFn)>,
+    param_routes: Vec<Route>,
+    has_logger: bool,
+    timeout_ms: Option<u64>,
+    has_recover: bool,
+    has_compress: bool,
+}
+
+impl FrozenRouter {
+    fn from_router(router: &Router) -> Self {
+        use super::middleware::{get_middleware_config, MiddlewareConfig};
+
+        let mut exact_routes = Vec::new();
+        let mut param_routes = Vec::new();
+        for route in &router.routes {
+            if route.param_names.is_empty() {
+                exact_routes.push((
+                    route.method.clone(),
+                    route.pattern.clone(),
+                    route.handler,
+                ));
+            } else {
+                param_routes.push(route.clone());
+            }
+        }
+
+        let mut has_logger = false;
+        let mut timeout_ms = None;
+        let mut has_recover = false;
+        let mut has_compress = false;
+
+        for handle in &router.middleware_handles {
+            if let Some(config) = get_middleware_config(*handle) {
+                match config {
+                    MiddlewareConfig::Logger => has_logger = true,
+                    MiddlewareConfig::Timeout { ms } => timeout_ms = Some(ms),
+                    MiddlewareConfig::Recover => has_recover = true,
+                    MiddlewareConfig::Compress => has_compress = true,
+                    _ => {}
+                }
+            }
+        }
+
+        FrozenRouter {
+            exact_routes,
+            param_routes,
+            has_logger,
+            timeout_ms,
+            has_recover,
+            has_compress,
+        }
     }
 }
 
@@ -335,18 +391,23 @@ pub unsafe extern "C" fn naml_net_http_server_serve(
     let addr_str = unsafe { string_from_naml(address) };
     let runtime = get_runtime();
 
-    let routers = get_routers().read().unwrap();
-    let router = match routers.get(&router_handle) {
-        Some(r) => Arc::clone(r),
-        None => {
-            throw_network_error(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Router not found",
-            ));
-            return;
-        }
+    let frozen = {
+        let routers = get_routers().read().unwrap();
+        let router_arc = match routers.get(&router_handle) {
+            Some(r) => Arc::clone(r),
+            None => {
+                drop(routers);
+                throw_network_error(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Router not found",
+                ));
+                return;
+            }
+        };
+        drop(routers);
+        let router_guard = router_arc.lock().unwrap();
+        Arc::new(FrozenRouter::from_router(&router_guard))
     };
-    drop(routers);
 
     let result = runtime.block_on(async move {
         let addr: SocketAddr = if addr_str.starts_with(':') {
@@ -360,13 +421,14 @@ pub unsafe extern "C" fn naml_net_http_server_serve(
 
         loop {
             let (stream, _) = listener.accept().await?;
+            let _ = stream.set_nodelay(true);
             let io = TokioIo::new(stream);
-            let router_clone = Arc::clone(&router);
+            let frozen_clone = Arc::clone(&frozen);
 
             tokio::spawn(async move {
                 let service = service_fn(move |req: Request<Incoming>| {
-                    let router = Arc::clone(&router_clone);
-                    async move { handle_request(req, router).await }
+                    let frozen = Arc::clone(&frozen_clone);
+                    async move { handle_request(req, &frozen).await }
                 });
 
                 if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
@@ -384,96 +446,92 @@ pub unsafe extern "C" fn naml_net_http_server_serve(
     }
 }
 
-/// Handle incoming HTTP request with tower-http middleware
+/// Handle incoming HTTP request
 async fn handle_request(
     req: Request<Incoming>,
-    router: Arc<Mutex<Router>>,
+    frozen: &FrozenRouter,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
-    use std::time::Instant;
-    use super::middleware::{get_middleware_config, MiddlewareConfig};
-
-    let start = Instant::now();
-    let method = req.method().to_string();
-    let path = req.uri().path().to_string();
-    let query_string = req.uri().query().unwrap_or("").to_string();
-
-    let body_bytes = match req.into_body().collect().await {
-        Ok(collected) => collected.to_bytes().to_vec(),
-        Err(_) => Vec::new(),
+    let start = if frozen.has_logger || frozen.timeout_ms.is_some() {
+        Some(std::time::Instant::now())
+    } else {
+        None
     };
 
-    let router_guard = router.lock().unwrap();
-    let routes = router_guard.routes.clone();
-    let middleware_handles = router_guard.middleware_handles.clone();
-    drop(router_guard);
+    let (parts, body) = req.into_parts();
+    let skip_body = parts.method == Method::GET || parts.method == Method::HEAD;
+    let method = parts.method.as_str();
+    let path = parts.uri.path();
+    let query_string = parts.uri.query().unwrap_or("");
 
-    // Collect middleware configs
-    let mut has_logger = false;
-    let mut timeout_ms: Option<u64> = None;
-    let mut has_recover = false;
-    let mut has_compress = false;
-    let mut _rate_limit_rps: Option<u64> = None;
-
-    for handle in &middleware_handles {
-        if let Some(config) = get_middleware_config(*handle) {
-            match config {
-                MiddlewareConfig::Logger => has_logger = true,
-                MiddlewareConfig::Timeout { ms } => timeout_ms = Some(ms),
-                MiddlewareConfig::Recover => has_recover = true,
-                MiddlewareConfig::Compress => has_compress = true,
-                MiddlewareConfig::RateLimit { rps } => _rate_limit_rps = Some(rps),
-                _ => {}
-            }
-        }
-    }
-
-    // Check timeout (tower-http TimeoutLayer behavior)
-    if let Some(ms) = timeout_ms {
+    if let (Some(ms), Some(start)) = (frozen.timeout_ms, &start) {
         if start.elapsed().as_millis() > ms as u128 {
-            if has_logger {
+            if frozen.has_logger {
                 eprintln!("[HTTP] {} {} -> 408 (timeout)", method, path);
             }
             return Ok(Response::builder()
                 .status(408)
-                .body(Full::new(Bytes::from("Request Timeout")))
+                .header("content-length", 15)
+                .body(Full::new(Bytes::from_static(b"Request Timeout")))
                 .unwrap());
         }
     }
 
-    let mut matched_route: Option<&Route> = None;
+    let mut matched_handler: Option<HandlerFn> = None;
     let mut params: HashMap<String, String> = HashMap::new();
 
-    for route in &routes {
-        if route.method == method {
-            if let Some(p) = match_route(&route.pattern, &path, &route.param_names) {
-                matched_route = Some(route);
-                params = p;
-                break;
+    for (route_method, route_path, handler) in &frozen.exact_routes {
+        if route_method == method && route_path == path {
+            matched_handler = Some(*handler);
+            break;
+        }
+    }
+
+    if matched_handler.is_none() {
+        for route in &frozen.param_routes {
+            if route.method == method {
+                if let Some(p) = match_route(&route.pattern, path, &route.param_names) {
+                    matched_handler = Some(route.handler);
+                    params = p;
+                    break;
+                }
             }
         }
     }
 
-    let (status, mut response_body) = if let Some(route) = matched_route {
-        let handler = route.handler;
+    let (status, mut response_body) = if let Some(handler) = matched_handler {
+        let body_bytes = if skip_body {
+            drop(body);
+            Vec::new()
+        } else {
+            match body.collect().await {
+                Ok(collected) => collected.to_bytes().to_vec(),
+                Err(_) => Vec::new(),
+            }
+        };
 
-        let naml_request = unsafe { create_naml_request(&method, &path, &body_bytes, &params, &query_string) };
+        let naml_request =
+            unsafe { create_naml_request(method, path, &body_bytes, &params, query_string) };
 
-        // Wrap with panic recovery (tower-http CatchPanicLayer behavior)
-        let result = if has_recover {
+        let result = if frozen.has_recover {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handler(naml_request)))
         } else {
             Ok(handler(naml_request))
         };
 
         match result {
-            Ok(naml_response) if !naml_response.is_null() => {
-                unsafe {
-                    let status = naml_net_http_response_get_status(naml_response);
-                    let body_arr = naml_net_http_response_get_body(naml_response);
-                    let body = super::types::array_to_vec(body_arr);
-                    (status as u16, body)
-                }
-            }
+            Ok(naml_response) if !naml_response.is_null() => unsafe {
+                let status = naml_net_http_response_get_status(naml_response);
+                let body_ptr = naml_net_http_response_get_body(naml_response);
+                let body_vec = if body_ptr.is_null() {
+                    Vec::new()
+                } else if (*(body_ptr as *const NamlBytes)).header.tag == HeapTag::Bytes {
+                    let b = body_ptr as *const NamlBytes;
+                    std::slice::from_raw_parts((*b).data.as_ptr(), (*b).len).to_vec()
+                } else {
+                    array_to_vec(body_ptr)
+                };
+                (status as u16, body_vec)
+            },
             Ok(_) => (500, b"Internal Server Error".to_vec()),
             Err(_) => {
                 eprintln!("[HTTP] Recovered from panic in request handler");
@@ -484,11 +542,10 @@ async fn handle_request(
         (404, b"Not Found".to_vec())
     };
 
-    // Apply compression (tower-http CompressionLayer behavior)
-    if has_compress && response_body.len() >= 1024 {
-        use std::io::Write;
+    if frozen.has_compress && response_body.len() >= 1024 {
         use flate2::write::GzEncoder;
         use flate2::Compression;
+        use std::io::Write;
 
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         if encoder.write_all(&response_body).is_ok() {
@@ -500,19 +557,22 @@ async fn handle_request(
         }
     }
 
-    // Log request (tower-http TraceLayer behavior)
-    if has_logger {
-        let elapsed = start.elapsed();
-        eprintln!("[HTTP] {} {} -> {} ({:.2?})", method, path, status, elapsed);
+    if frozen.has_logger {
+        if let Some(start) = start {
+            let elapsed = start.elapsed();
+            eprintln!("[HTTP] {} {} -> {} ({:.2?})", method, path, status, elapsed);
+        }
     }
 
     Ok(Response::builder()
         .status(status)
+        .header("content-length", response_body.len())
         .body(Full::new(Bytes::from(response_body)))
         .unwrap())
 }
 
-/// Create a naml request struct from HTTP request data
+/// Create a naml request struct from HTTP request data.
+/// Builds struct directly — avoids 3 dummy allocations from naml_net_http_request_new.
 unsafe fn create_naml_request(
     method: &str,
     path: &str,
@@ -521,32 +581,58 @@ unsafe fn create_naml_request(
     _query_string: &str,
 ) -> *mut NamlStruct {
     unsafe {
-        let request = naml_net_http_request_new();
+        let request = naml_std_core::naml_struct_new(
+            super::types::TYPE_ID_REQUEST,
+            super::types::request_fields::FIELD_COUNT,
+        );
 
         let method_ptr = naml_std_core::naml_string_new(method.as_ptr(), method.len());
-        naml_net_http_request_set_method(request, method_ptr);
+        naml_std_core::naml_struct_set_field(
+            request,
+            super::types::request_fields::METHOD,
+            method_ptr as i64,
+        );
 
         let path_ptr = naml_std_core::naml_string_new(path.as_ptr(), path.len());
-        naml_net_http_request_set_path(request, path_ptr);
+        naml_std_core::naml_struct_set_field(
+            request,
+            super::types::request_fields::PATH,
+            path_ptr as i64,
+        );
 
-        let body_arr = vec_to_array(body);
-        naml_net_http_request_set_body(request, body_arr);
+        naml_std_core::naml_struct_set_field(request, super::types::request_fields::HEADERS, 0);
+        naml_std_core::naml_struct_set_field(request, super::types::request_fields::PARAMS, 0);
+        naml_std_core::naml_struct_set_field(request, super::types::request_fields::QUERY, 0);
+
+        if body.is_empty() {
+            naml_std_core::naml_struct_set_field(request, super::types::request_fields::BODY, 0);
+        } else {
+            let body_arr = vec_to_array(body);
+            naml_std_core::naml_struct_set_field(
+                request,
+                super::types::request_fields::BODY,
+                body_arr as i64,
+            );
+        }
 
         request
     }
 }
 
-/// Create a text/JSON response from a status code and string body
+/// Create a text/JSON response from a status code and string body.
+/// Reads NamlString data directly and copies into NamlBytes (1 alloc + 1 memcpy).
+/// Must copy because the handler may decref the source string after returning.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_net_http_server_text_response(
     status: i64,
     body: *const NamlString,
 ) -> *mut NamlStruct {
     unsafe {
-        let body_str = crate::errors::string_from_naml(body);
-        let body_bytes = body_str.as_bytes();
-        let body_arr = vec_to_array(body_bytes);
-        naml_net_http_response_create(status, 0, body_arr)
+        if body.is_null() {
+            return naml_net_http_response_create(status, 0, std::ptr::null_mut());
+        }
+        let body_bytes = create_bytes_from((*body).data.as_ptr(), (*body).len);
+        naml_net_http_response_create(status, 0, body_bytes as *mut NamlArray)
     }
 }
 
