@@ -188,7 +188,7 @@ naml-pkg = { path = "tools/naml-pkg" }
 ##
 ## Git operations for package manager
 ##
-git2 = "0.19"
+git2 = { version = "0.19", features = ["vendored-openssl", "vendored-libgit2"] }
 
 ##
 ## Cross-platform directory paths

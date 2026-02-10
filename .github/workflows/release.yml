@@ -53,10 +53,6 @@ jobs:
           key: ${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ matrix.target }}-cargo-
 
-      - name: Install system dependencies (Linux)
-        if: matrix.runner == 'ubuntu-latest' && !matrix.cross
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config cmake
-
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross
