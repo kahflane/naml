@@ -26,7 +26,7 @@ jobs:
             runner: ubuntu-latest
             cross: true
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
             cross: false
           - target: aarch64-apple-darwin
             runner: macos-latest
@@ -70,7 +70,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Smoke test
-        if: "!matrix.cross && matrix.runner != 'windows-latest'"
+        if: "!matrix.cross && matrix.runner != 'windows-latest' && matrix.target != 'x86_64-apple-darwin'"
         run: ./target/${{ matrix.target }}/release/naml run examples/basic.nm
 
       - name: Smoke test (Windows)
