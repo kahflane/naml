@@ -1,5 +1,6 @@
 use crate::ast::{Expression, Literal, LiteralExpr};
-use crate::codegen::cranelift::{compile_expression, CompileContext, HeapType};
+use crate::codegen::cranelift::expr::compile_expression;
+use crate::codegen::cranelift::{CompileContext, HeapType};
 use crate::codegen::CodegenError;
 use cranelift::prelude::*;
 use crate::codegen::cranelift::misc::ensure_i64;

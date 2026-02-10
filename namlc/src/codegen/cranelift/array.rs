@@ -3,8 +3,9 @@ use crate::codegen::CodegenError;
 use crate::codegen::cranelift::misc::ensure_i64;
 use crate::codegen::cranelift::runtime::rt_func_ref;
 use crate::codegen::cranelift::strings::call_string_from_cstr;
+use crate::codegen::cranelift::expr::compile_expression;
 use crate::codegen::cranelift::{
-    ARRAY_CAPACITY_OFFSET, ARRAY_DATA_OFFSET, ARRAY_LEN_OFFSET, CompileContext, compile_expression,
+    ARRAY_CAPACITY_OFFSET, ARRAY_DATA_OFFSET, ARRAY_LEN_OFFSET, CompileContext,
 };
 use cranelift::prelude::*;
 use cranelift_module::Module;

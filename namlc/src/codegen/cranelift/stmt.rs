@@ -4,9 +4,10 @@ use crate::codegen::cranelift::array::{
     compile_direct_array_get_or_panic,
 };
 use crate::codegen::cranelift::pattern::compile_pattern_match;
+use crate::codegen::cranelift::expr::compile_expression;
+use crate::codegen::cranelift::map::call_map_set;
 use crate::codegen::cranelift::{
-    call_map_set, compile_expression, get_field_access_base_var,
-    types, CompileContext, HeapType,
+    get_field_access_base_var, types, CompileContext, HeapType,
 };
 use crate::codegen::cranelift::heap::{get_heap_type_resolved, heap_type_from_type};
 use crate::codegen::CodegenError;
