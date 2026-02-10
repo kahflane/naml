@@ -1,0 +1,2 @@
+# naml language detection for GitHub Linguist
+*.nm linguist-language=naml
