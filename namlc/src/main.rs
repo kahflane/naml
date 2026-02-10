@@ -87,6 +87,10 @@ fn main() {
 }
 
 fn run_file(file: &PathBuf, cached: bool, release: bool, unsafe_mode: bool) {
+    if file.extension().map(|e| e != "nm").unwrap_or(true) {
+        eprintln!("Error: expected a .nm file, got '{}'", file.display());
+        std::process::exit(1);
+    }
     let source_text = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(e) => {
@@ -184,6 +188,10 @@ fn create_package_manager(source_dir: Option<&std::path::Path>) -> Option<naml_p
 }
 
 fn check_file(path: &std::path::Path) {
+    if path.extension().map(|e| e != "nm").unwrap_or(true) {
+        eprintln!("Error: expected a .nm file, got '{}'", path.display());
+        std::process::exit(1);
+    }
     let source_text = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {

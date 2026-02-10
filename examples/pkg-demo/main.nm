@@ -1,14 +1,14 @@
 use mathlib::*;
 
 fn main() {
-    var result: int = add(10, 20);
+    var result: Math = add(10, 20);
     println(fmt("10 + 20 = {}", result));
 
-    var product: int = multiply(6, 7);
+    var product: Math = multiply(6, 7);
     println(fmt("6 * 7 = {}", product));
 
-    var factorial: int = factorial(5);
+    var factorial: Math = factorial(5);
     println(fmt("5! = {}", factorial));
 
-    var m: MathMatecian = MathMatecian{i: 1};
+    var m: Mathematician = Mathematician{i: 1};
 }

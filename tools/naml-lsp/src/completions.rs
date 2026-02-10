@@ -313,6 +313,18 @@ impl DocumentAnalysis {
                             });
                         }
                     }
+                    for typedef in &module.types {
+                        let name = typedef.name();
+                        if partial.is_empty() || name.starts_with(partial) {
+                            let (kind, detail) = type_def_completion_info(typedef);
+                            items.push(CompletionItem {
+                                label: name.to_string(),
+                                kind: Some(kind),
+                                detail: Some(detail),
+                                ..Default::default()
+                            });
+                        }
+                    }
                 }
                 ImportedItems::Named(names) => {
                     for import_name in names {
@@ -322,6 +334,14 @@ impl DocumentAnalysis {
                                     label: import_name.clone(),
                                     kind: Some(CompletionItemKind::FUNCTION),
                                     detail: Some(sig.detail.clone()),
+                                    ..Default::default()
+                                });
+                            } else if let Some(typedef) = module.types.iter().find(|t| t.name() == import_name.as_str()) {
+                                let (kind, detail) = type_def_completion_info(typedef);
+                                items.push(CompletionItem {
+                                    label: import_name.clone(),
+                                    kind: Some(kind),
+                                    detail: Some(detail),
                                     ..Default::default()
                                 });
                             }
@@ -509,4 +529,29 @@ pub fn navigate_to_module<'a>(
         current = current.submodules.get(seg)?;
     }
     Some(current)
+}
+
+fn type_def_completion_info(typedef: &LspTypeDef) -> (CompletionItemKind, String) {
+    match typedef {
+        LspTypeDef::Struct { name, fields, .. } => {
+            let detail = format!("struct {} ({} fields)", name, fields.len());
+            (CompletionItemKind::STRUCT, detail)
+        }
+        LspTypeDef::Enum { name, variants, .. } => {
+            let detail = format!("enum {} ({} variants)", name, variants.len());
+            (CompletionItemKind::ENUM, detail)
+        }
+        LspTypeDef::Interface { name, methods, .. } => {
+            let detail = format!("interface {} ({} methods)", name, methods.len());
+            (CompletionItemKind::INTERFACE, detail)
+        }
+        LspTypeDef::Exception { name, fields, .. } => {
+            let detail = format!("exception {} ({} fields)", name, fields.len());
+            (CompletionItemKind::STRUCT, detail)
+        }
+        LspTypeDef::TypeAlias { name, aliased_type, .. } => {
+            let detail = format!("type {} = {}", name, aliased_type);
+            (CompletionItemKind::TYPE_PARAMETER, detail)
+        }
+    }
 }

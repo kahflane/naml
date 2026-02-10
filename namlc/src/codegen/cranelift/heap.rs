@@ -34,6 +34,26 @@ pub fn get_heap_type_resolved(naml_ty: &crate::ast::NamlType, interner: &lasso::
     }
 }
 
+pub fn remap_heap_type(ht: HeapType, from: &lasso::Rodeo, to: &lasso::Rodeo) -> HeapType {
+    match ht {
+        HeapType::String => HeapType::String,
+        HeapType::Array(inner) => HeapType::Array(
+            inner.map(|b| Box::new(remap_heap_type(*b, from, to))),
+        ),
+        HeapType::Map(inner) => HeapType::Map(
+            inner.map(|b| Box::new(remap_heap_type(*b, from, to))),
+        ),
+        HeapType::Struct(Some(spur)) => {
+            let name = from.resolve(&spur);
+            HeapType::Struct(to.get(name))
+        }
+        HeapType::Struct(None) => HeapType::Struct(None),
+        HeapType::OptionOf(inner) => {
+            HeapType::OptionOf(Box::new(remap_heap_type(*inner, from, to)))
+        }
+    }
+}
+
 pub fn heap_type_from_type(
     ty: &crate::typechecker::types::Type,
     _interner: &lasso::Rodeo,

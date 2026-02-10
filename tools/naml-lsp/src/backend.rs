@@ -15,6 +15,10 @@ use tower_lsp::{Client, LanguageServer};
 
 use crate::analysis::DocumentAnalysis;
 
+fn is_naml_file(uri: &Url) -> bool {
+    uri.path().ends_with(".nm")
+}
+
 pub struct NamlBackend {
     client: Client,
     documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
@@ -83,6 +87,9 @@ impl LanguageServer for NamlBackend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
+        if !is_naml_file(&uri) {
+            return;
+        }
         let content = params.text_document.text;
         let version = params.text_document.version;
 
@@ -100,6 +107,9 @@ impl LanguageServer for NamlBackend {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
+        if !is_naml_file(&uri) {
+            return;
+        }
         let version = params.text_document.version;
 
         {

@@ -8,7 +8,7 @@ use crate::codegen::cranelift::{
     call_map_set, compile_expression, get_field_access_base_var,
     types, CompileContext, HeapType,
 };
-use crate::codegen::cranelift::heap::get_heap_type_resolved;
+use crate::codegen::cranelift::heap::{get_heap_type_resolved, heap_type_from_type};
 use crate::codegen::CodegenError;
 use crate::source::Spanned;
 use crate::typechecker::Type;
@@ -87,7 +87,19 @@ pub fn compile_statement(
                 if let Some(ref naml_ty) = var_stmt.ty
                     && let Some(heap_type) = get_heap_type_resolved(naml_ty, ctx.interner)
                 {
-                    ctx.var_heap_types.insert(var_name.clone(), heap_type);
+                    let valid = match &heap_type {
+                        HeapType::Struct(Some(spur)) => ctx.struct_defs.contains_key(spur),
+                        _ => true,
+                    };
+                    if valid {
+                        ctx.var_heap_types.insert(var_name.clone(), heap_type);
+                    } else if let Some(ref init) = var_stmt.init {
+                        if let Some(resolved_ty) = ctx.annotations.get_type(init.span()) {
+                            if let Some(ht) = heap_type_from_type(resolved_ty, ctx.interner) {
+                                ctx.var_heap_types.insert(var_name.clone(), ht);
+                            }
+                        }
+                    }
                 }
             }
 

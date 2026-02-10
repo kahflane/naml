@@ -1,7 +1,10 @@
-pub struct MathMatecian {
+pub struct Mathematician {
     pub i: int,
     x: int
 }
+
+pub type Math = int;
+
 pub fn add(a: int, b: int) -> int {
     return a + b;
 }

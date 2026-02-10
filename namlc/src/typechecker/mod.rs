@@ -3363,6 +3363,7 @@ impl<'a> TypeChecker<'a> {
         }
 
         let mut pub_functions: Vec<(String, Vec<(String, Type)>, Type, bool)> = Vec::new();
+        let mut pub_type_spurs: Vec<lasso::Spur> = Vec::new();
 
         for item in &parse_result.ast.items {
             match item {
@@ -3389,6 +3390,17 @@ impl<'a> TypeChecker<'a> {
                 }
                 _ => {
                     self.collect_item_definition(item);
+                    let type_spur = match item {
+                        Item::Struct(s) if s.is_public => Some(s.name.symbol),
+                        Item::Enum(e) if e.is_public => Some(e.name.symbol),
+                        Item::Interface(i) if i.is_public => Some(i.name.symbol),
+                        Item::Exception(e) if e.is_public => Some(e.name.symbol),
+                        Item::TypeAlias(a) if a.is_public => Some(a.name.symbol),
+                        _ => None,
+                    };
+                    if let Some(spur) = type_spur {
+                        pub_type_spurs.push(spur);
+                    }
                 }
             }
         }
@@ -3425,6 +3437,14 @@ impl<'a> TypeChecker<'a> {
                         .add_function(sig.clone());
                     self.symbols.import_function(sig);
                 }
+                for type_spur in &pub_type_spurs {
+                    if let Some(type_def) = self.symbols.get_type(*type_spur) {
+                        let type_def = type_def.clone();
+                        self.symbols
+                            .register_module(module_spur)
+                            .define_type(*type_spur, type_def);
+                    }
+                }
             }
             UseItems::Specific(entries) => {
                 for entry in entries {
@@ -3459,11 +3479,20 @@ impl<'a> TypeChecker<'a> {
                             self.symbols.import_function(sig);
                         }
                         None => {
-                            self.errors.push(TypeError::PrivateSymbol {
-                                module: path.join("::"),
-                                symbol: entry_name,
-                                span: entry.span,
-                            });
+                            if pub_type_spurs.contains(&entry.name.symbol) {
+                                if let Some(type_def) = self.symbols.get_type(entry.name.symbol) {
+                                    let type_def = type_def.clone();
+                                    self.symbols
+                                        .register_module(module_spur)
+                                        .define_type(entry.name.symbol, type_def);
+                                }
+                            } else {
+                                self.errors.push(TypeError::PrivateSymbol {
+                                    module: path.join("::"),
+                                    symbol: entry_name,
+                                    span: entry.span,
+                                });
+                            }
                         }
                     }
                 }
@@ -3535,10 +3564,11 @@ impl<'a> TypeChecker<'a> {
         }
 
         let mut pub_functions: Vec<(String, Vec<(String, Type)>, Type, bool)> = Vec::new();
+        let mut pub_type_spurs: Vec<lasso::Spur> = Vec::new();
 
         for item in &parse_result.ast.items {
-            if let Item::Function(func) = item {
-                if func.is_public && func.receiver.is_none() {
+            match item {
+                Item::Function(func) if func.is_public && func.receiver.is_none() => {
                     let name = self.interner.resolve(&func.name.symbol).to_string();
                     let params: Vec<_> = func
                         .params
@@ -3555,6 +3585,20 @@ impl<'a> TypeChecker<'a> {
                         .map(|t| self.convert_type(t))
                         .unwrap_or(Type::Unit);
                     pub_functions.push((name, params, return_ty, false));
+                }
+                _ => {
+                    self.collect_item_definition(item);
+                    let type_spur = match item {
+                        Item::Struct(s) if s.is_public => Some(s.name.symbol),
+                        Item::Enum(e) if e.is_public => Some(e.name.symbol),
+                        Item::Interface(i) if i.is_public => Some(i.name.symbol),
+                        Item::Exception(e) if e.is_public => Some(e.name.symbol),
+                        Item::TypeAlias(a) if a.is_public => Some(a.name.symbol),
+                        _ => None,
+                    };
+                    if let Some(spur) = type_spur {
+                        pub_type_spurs.push(spur);
+                    }
                 }
             }
         }
@@ -3599,6 +3643,14 @@ impl<'a> TypeChecker<'a> {
                         self.symbols.import_function(sig.clone());
                     }
                 }
+                for type_spur in &pub_type_spurs {
+                    if let Some(type_def) = self.symbols.get_type(*type_spur) {
+                        let type_def = type_def.clone();
+                        self.symbols
+                            .register_module(module_spur)
+                            .define_type(*type_spur, type_def);
+                    }
+                }
             }
             UseItems::Specific(entries) => {
                 for entry in entries {
@@ -3630,7 +3682,6 @@ impl<'a> TypeChecker<'a> {
                             self.symbols
                                 .register_module(module_spur)
                                 .add_function(sig.clone());
-                            // Check for duplicate imports and emit error
                             if self.symbols.has_function(sig.name) {
                                 self.symbols.mark_ambiguous(sig.name);
                                 self.errors.push(TypeError::DuplicateImport {
@@ -3642,11 +3693,20 @@ impl<'a> TypeChecker<'a> {
                             }
                         }
                         None => {
-                            self.errors.push(TypeError::PrivateSymbol {
-                                module: path.join("::"),
-                                symbol: entry_name,
-                                span: entry.span,
-                            });
+                            if pub_type_spurs.contains(&entry.name.symbol) {
+                                if let Some(type_def) = self.symbols.get_type(entry.name.symbol) {
+                                    let type_def = type_def.clone();
+                                    self.symbols
+                                        .register_module(module_spur)
+                                        .define_type(entry.name.symbol, type_def);
+                                }
+                            } else {
+                                self.errors.push(TypeError::PrivateSymbol {
+                                    module: path.join("::"),
+                                    symbol: entry_name,
+                                    span: entry.span,
+                                });
+                            }
                         }
                     }
                 }

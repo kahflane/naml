@@ -6210,6 +6210,43 @@ impl<'a> JitCompiler<'a> {
         let type_result =
             crate::typechecker::check_with_types(&parse_result.ast, &mut module_interner, None, None);
 
+        for item in &parse_result.ast.items {
+            if let Item::Struct(struct_item) = item {
+                if !struct_item.is_public {
+                    continue;
+                }
+                let name_str = module_interner.resolve(&struct_item.name.symbol);
+                let name_spur = match self.interner.get(name_str) {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let mut fields = Vec::new();
+                let mut field_heap_types = Vec::new();
+                for f in &struct_item.fields {
+                    let field_str = module_interner.resolve(&f.name.symbol);
+                    let field_spur = match self.interner.get(field_str) {
+                        Some(s) => s,
+                        None => continue,
+                    };
+                    fields.push(field_spur);
+                    let ht = heap::get_heap_type_resolved(&f.ty, &module_interner);
+                    field_heap_types.push(
+                        ht.map(|h| heap::remap_heap_type(h, &module_interner, self.interner)),
+                    );
+                }
+                let type_id = self.next_type_id;
+                self.next_type_id += 1;
+                self.struct_defs.insert(
+                    name_spur,
+                    StructDef {
+                        type_id,
+                        fields,
+                        field_heap_types,
+                    },
+                );
+            }
+        }
+
         let saved_interner = self.interner;
         let saved_annotations = self.annotations;
         self.interner = unsafe { std::mem::transmute::<&Rodeo, &Rodeo>(&module_interner) };

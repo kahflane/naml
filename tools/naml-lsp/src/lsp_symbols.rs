@@ -136,7 +136,7 @@ pub fn snapshot_symbols(symbols: &SymbolTable, interner: &Rodeo) -> LspSymbols {
             name,
             detail,
             span: sig.span,
-            is_std: sig.module.is_some(),
+            is_std: sig.module.as_ref().is_some_and(|m| m.starts_with("std")),
         });
     }
 
@@ -171,7 +171,7 @@ fn snapshot_module(module: &ModuleNamespace, interner: &Rodeo) -> LspModule {
             name: fname,
             detail,
             span: sig.span,
-            is_std: sig.module.is_some(),
+            is_std: sig.module.as_ref().is_some_and(|m| m.starts_with("std")),
         });
     }
 
