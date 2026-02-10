@@ -22,9 +22,7 @@ use crate::codegen::cranelift::strings::{
     call_string_equals, call_string_from_cstr, call_string_to_bytes, call_string_to_float,
     call_string_to_int,
 };
-use crate::codegen::cranelift::structs::{
-    call_struct_get_field, call_struct_new, call_struct_set_field, emit_inline_arena_alloc,
-};
+use crate::codegen::cranelift::structs::{call_struct_new, emit_inline_arena_alloc};
 use crate::codegen::cranelift::types::tc_type_to_cranelift;
 use crate::source::Spanned;
 use crate::typechecker::Type;
