@@ -19,6 +19,7 @@ use super::types::{
     EnumType, FieldType, FunctionType, InterfaceType, MethodType, StructType, Type, TypeParam,
     VariantType,
 };
+use crate::ast::Platform;
 use crate::source::Span;
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,7 @@ pub struct FunctionSig {
     pub is_variadic: bool,
     pub span: Span,
     pub module: Option<String>,
+    pub platforms: Option<Vec<Platform>>,
 }
 
 #[derive(Debug, Clone)]
@@ -467,6 +469,7 @@ mod tests {
             is_variadic: false,
             span: Span::dummy(),
             module: None,
+            platforms: None,
         });
 
         assert!(table.get_function(main).is_some());

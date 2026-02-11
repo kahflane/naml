@@ -17,7 +17,7 @@
 
 use lasso::Rodeo;
 
-use crate::ast::{self, Expression, Literal, Pattern};
+use crate::ast::{self, CompilationTarget, Expression, Literal, Pattern};
 use crate::source::Spanned;
 
 use super::env::TypeEnv;
@@ -58,9 +58,34 @@ pub struct TypeInferrer<'a> {
     pub annotations: &'a mut TypeAnnotations,
     pub switch_scrutinee: Option<Type>,
     pub in_catch_context: bool,
+    pub target: CompilationTarget,
 }
 
 impl<'a> TypeInferrer<'a> {
+    fn check_platform_for_function(
+        &mut self,
+        sig: &super::symbols::FunctionSig,
+        span: crate::source::Span,
+    ) {
+        if let Some(ref platforms) = sig.platforms {
+            if !platforms.iter().any(|p| self.target.matches_platform(p)) {
+                let name = self.interner.resolve(&sig.name).to_string();
+                let platform_str = format!("{:?}", self.target).to_lowercase();
+                let available = platforms
+                    .iter()
+                    .map(|p| format!("{:?}", p).to_lowercase())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.errors.push(TypeError::PlatformMismatch {
+                    feature: name,
+                    platform: platform_str,
+                    available,
+                    span,
+                });
+            }
+        }
+    }
+
     pub fn infer_expr(&mut self, expr: &Expression) -> Type {
         let ty = match expr {
             Expression::Literal(lit) => self.infer_literal(lit),
@@ -371,6 +396,7 @@ impl<'a> TypeInferrer<'a> {
         if let Some(resolved) = self.symbols.resolve_path(&path_spurs, self.interner) {
             match resolved {
                 super::symbols::ResolvedItem::Function(sig) => {
+                    self.check_platform_for_function(sig, path.span);
                     return Type::Function(self.symbols.to_function_type(sig));
                 }
                 super::symbols::ResolvedItem::Type(def) => {
@@ -428,6 +454,7 @@ impl<'a> TypeInferrer<'a> {
                 return Type::Error;
             }
             if let Some(sig) = self.symbols.get_function(ident.symbol) {
+                self.check_platform_for_function(sig, path.span);
                 return Type::Function(self.symbols.to_function_type(sig));
             }
             if let Some(def) = self.symbols.get_type(ident.symbol) {
@@ -720,6 +747,7 @@ impl<'a> TypeInferrer<'a> {
             }
 
             if let Some(func_sig) = self.symbols.get_function(ident.ident.symbol) {
+                self.check_platform_for_function(func_sig, call.span);
                 if let Some(ref module) = func_sig.module {
                     self.annotations
                         .record_resolved_module(call.span, module.clone());
@@ -744,6 +772,7 @@ impl<'a> TypeInferrer<'a> {
                     if let Some(func_sig) =
                         self.symbols.get_module_function(module_symbol, func_symbol)
                     {
+                        self.check_platform_for_function(func_sig, call.span);
                         if !func_sig.type_params.is_empty() {
                             return self.infer_generic_call(call, func_sig);
                         }
@@ -756,6 +785,7 @@ impl<'a> TypeInferrer<'a> {
                             if std_fn.name == func_name && !std_fn.type_params.is_empty() {
                                 // Create a temporary FunctionSig for generic inference
                                 if let Some(func_sig) = self.create_temp_function_sig(std_fn) {
+                                    self.check_platform_for_function(&func_sig, call.span);
                                     return self.infer_generic_call(call, &func_sig);
                                 }
                             }
@@ -1510,6 +1540,15 @@ impl<'a> TypeInferrer<'a> {
     }
 
     fn infer_spawn(&mut self, spawn: &ast::SpawnExpr) -> Type {
+        if self.target != CompilationTarget::Native {
+            let platform_str = format!("{:?}", self.target).to_lowercase();
+            self.errors.push(TypeError::PlatformMismatch {
+                feature: "spawn".to_string(),
+                platform: platform_str,
+                available: "native".to_string(),
+                span: spawn.span,
+            });
+        }
         // Infer the block body for type checking purposes
         let _body_ty = self.infer_block(spawn.body);
         // Spawn runs concurrently and doesn't return a value
@@ -2292,6 +2331,15 @@ impl<'a> TypeInferrer<'a> {
             })
             .collect();
 
+        let platforms = if std_fn.platforms.contains(&crate::ast::Platform::Native)
+            && std_fn.platforms.contains(&crate::ast::Platform::Edge)
+            && std_fn.platforms.contains(&crate::ast::Platform::Browser)
+        {
+            None
+        } else {
+            Some(std_fn.platforms.to_vec())
+        };
+
         Some(super::symbols::FunctionSig {
             name: spur,
             type_params,
@@ -2302,6 +2350,7 @@ impl<'a> TypeInferrer<'a> {
             is_variadic: std_fn.is_variadic,
             span: crate::source::Span::dummy(),
             module: None,
+            platforms,
         })
     }
 }

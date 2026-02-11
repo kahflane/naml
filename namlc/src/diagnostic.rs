@@ -182,10 +182,10 @@ fn type_error_details(err: &TypeError) -> (String, String, Option<String>) {
             "not inside a loop".to_string(),
             Some("continue can only be used inside loops".to_string()),
         ),
-        TypeError::PlatformMismatch { feature, platform, .. } => (
+        TypeError::PlatformMismatch { feature, platform, available, .. } => (
             format!("feature '{}' not available on '{}'", feature, platform),
-            format!("not on {}", platform),
-            None,
+            format!("not available on {}", platform),
+            Some(format!("'{}' is only available on: {}", feature, available)),
         ),
         TypeError::BoundNotSatisfied { ty, bound, .. } => (
             format!("type '{}' does not satisfy bound '{}'", ty, bound),

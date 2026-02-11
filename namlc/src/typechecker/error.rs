@@ -105,6 +105,7 @@ pub enum TypeError {
     PlatformMismatch {
         feature: String,
         platform: String,
+        available: String,
         span: Span,
     },
 

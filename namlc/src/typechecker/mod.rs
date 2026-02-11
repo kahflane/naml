@@ -186,6 +186,7 @@ impl<'a> TypeChecker<'a> {
                     is_variadic,
                     span: Span::dummy(),
                     module: None,
+                    platforms: None,
                 });
             }
         }
@@ -778,6 +779,15 @@ impl<'a> TypeChecker<'a> {
         // Use full module path for qualified function lookup in codegen
         let module = Some(module_name.to_string());
 
+        let platforms = if module_fn.platforms.contains(&Platform::Native)
+            && module_fn.platforms.contains(&Platform::Edge)
+            && module_fn.platforms.contains(&Platform::Browser)
+        {
+            None
+        } else {
+            Some(module_fn.platforms.to_vec())
+        };
+
         Some(FunctionSig {
             name: spur,
             type_params,
@@ -788,6 +798,7 @@ impl<'a> TypeChecker<'a> {
             is_variadic: module_fn.is_variadic,
             span: Span::dummy(),
             module,
+            platforms,
         })
     }
 
@@ -3821,6 +3832,7 @@ impl<'a> TypeChecker<'a> {
                         is_variadic: *is_variadic,
                         span: crate::source::Span::dummy(),
                         module: Some(path.join("::")),
+                        platforms: None,
                     };
                     self.symbols
                         .register_module(module_spur)
@@ -3862,6 +3874,7 @@ impl<'a> TypeChecker<'a> {
                                 is_variadic: *is_variadic,
                                 span: crate::source::Span::dummy(),
                                 module: Some(path.join("::")),
+                                platforms: None,
                             };
                             self.symbols
                                 .register_module(module_spur)
@@ -4026,6 +4039,7 @@ impl<'a> TypeChecker<'a> {
                             is_variadic: *is_variadic,
                             span: crate::source::Span::dummy(),
                             module: Some(path.join("::")),
+                            platforms: None,
                         };
                         self.symbols
                             .register_module(module_spur)
@@ -4068,6 +4082,7 @@ impl<'a> TypeChecker<'a> {
                                 is_variadic: *is_variadic,
                                 span: crate::source::Span::dummy(),
                                 module: Some(path.join("::")),
+                                platforms: None,
                             };
                             self.symbols
                                 .register_module(module_spur)
@@ -4133,6 +4148,8 @@ impl<'a> TypeChecker<'a> {
 
         let throws = func.throws.iter().map(|t| self.convert_type(t)).collect();
 
+        let platforms = func.platforms.as_ref().map(|p| p.platforms.clone());
+
         self.symbols.define_function(FunctionSig {
             name: func.name.symbol,
             type_params,
@@ -4143,6 +4160,7 @@ impl<'a> TypeChecker<'a> {
             is_variadic: false,
             span: func.span,
             module: None,
+            platforms,
         });
     }
 
@@ -4171,6 +4189,7 @@ impl<'a> TypeChecker<'a> {
             is_variadic: false,
             span: ext.span,
             module: None,
+            platforms: None,
         });
     }
 
@@ -4439,6 +4458,7 @@ impl<'a> TypeChecker<'a> {
             annotations: &mut self.annotations,
             switch_scrutinee: None,
             in_catch_context: false,
+            target: self.target,
         };
 
         inferrer.check_stmt(&stmt_item.stmt);
@@ -4498,6 +4518,7 @@ impl<'a> TypeChecker<'a> {
                 annotations: &mut self.annotations,
                 switch_scrutinee: None,
                 in_catch_context: false,
+                target: self.target,
             };
 
             for stmt in &body.statements {
