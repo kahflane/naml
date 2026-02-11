@@ -34,24 +34,10 @@
 /// - `all(m, fn) -> bool` - All entries match
 ///
 
-use naml_std_core::{NamlArray, NamlString, naml_array_new, naml_array_push};
-
-/// NamlMap structure (must match namlc/src/runtime/map.rs)
-#[repr(C)]
-pub struct NamlMap {
-    pub header: naml_std_core::HeapHeader,
-    pub capacity: usize,
-    pub length: usize,
-    pub entries: *mut MapEntry,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct MapEntry {
-    pub key: i64,
-    pub value: i64,
-    pub occupied: bool,
-}
+use naml_std_core::{NamlArray, NamlString, NamlMap,
+                    naml_array_new, naml_array_push,
+                    naml_map_new, naml_map_set, naml_map_contains,
+                    hash_string, string_eq};
 
 /// Get number of entries in map
 #[unsafe(no_mangle)]
@@ -348,10 +334,6 @@ pub unsafe extern "C" fn naml_map_transform(
     func_ptr: i64,
     data_ptr: i64,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-    }
 
     if map.is_null() || func_ptr == 0 {
         return naml_map_new(16);
@@ -375,10 +357,6 @@ pub unsafe extern "C" fn naml_map_where(
     func_ptr: i64,
     data_ptr: i64,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-    }
 
     if map.is_null() || func_ptr == 0 {
         return naml_map_new(16);
@@ -403,10 +381,6 @@ pub unsafe extern "C" fn naml_map_reject(
     func_ptr: i64,
     data_ptr: i64,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-    }
 
     if map.is_null() || func_ptr == 0 {
         return naml_map_new(16);
@@ -430,10 +404,6 @@ pub unsafe extern "C" fn naml_map_merge(
     a: *const NamlMap,
     b: *const NamlMap,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-    }
 
     let cap_a = if a.is_null() { 0 } else { (*a).capacity };
     let cap_b = if b.is_null() { 0 } else { (*b).capacity };
@@ -466,11 +436,6 @@ pub unsafe extern "C" fn naml_map_defaults(
     map: *const NamlMap,
     defs: *const NamlMap,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-        fn naml_map_contains(map: *const NamlMap, key: i64) -> i64;
-    }
 
     let cap_m = if map.is_null() { 0 } else { (*map).capacity };
     let cap_d = if defs.is_null() { 0 } else { (*defs).capacity };
@@ -503,11 +468,6 @@ pub unsafe extern "C" fn naml_map_intersect(
     a: *const NamlMap,
     b: *const NamlMap,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-        fn naml_map_contains(map: *const NamlMap, key: i64) -> i64;
-    }
 
     if a.is_null() || b.is_null() {
         return naml_map_new(16);
@@ -533,11 +493,6 @@ pub unsafe extern "C" fn naml_map_diff(
     a: *const NamlMap,
     b: *const NamlMap,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-        fn naml_map_contains(map: *const NamlMap, key: i64) -> i64;
-    }
 
     if a.is_null() {
         return naml_map_new(16);
@@ -561,10 +516,6 @@ pub unsafe extern "C" fn naml_map_diff(
 /// Invert map (swap keys and values), returning a new map
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_map_invert(map: *const NamlMap) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-    }
 
     if map.is_null() {
         return naml_map_new(16);
@@ -588,10 +539,6 @@ pub unsafe extern "C" fn naml_map_from_arrays(
     keys: *const NamlArray,
     values: *const NamlArray,
 ) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-    }
 
     if keys.is_null() || values.is_null() {
         return naml_map_new(16);
@@ -612,10 +559,6 @@ pub unsafe extern "C" fn naml_map_from_arrays(
 /// Create map from array of [key, value] pairs
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn naml_map_from_entries(pairs: *const NamlArray) -> *mut NamlMap {
-    unsafe extern "C" {
-        fn naml_map_new(capacity: usize) -> *mut NamlMap;
-        fn naml_map_set(map: *mut NamlMap, key: i64, value: i64);
-    }
 
     if pairs.is_null() {
         return naml_map_new(16);
@@ -635,62 +578,14 @@ pub unsafe extern "C" fn naml_map_from_entries(pairs: *const NamlArray) -> *mut 
     result
 }
 
-fn hash_string(s: *const NamlString) -> u64 {
-    if s.is_null() {
-        return 0;
-    }
-    unsafe {
-        let len = (*s).len;
-        let data = (*s).data.as_ptr();
-        let mut hash: u64 = 0xcbf29ce484222325;
-        for i in 0..len {
-            hash ^= *data.add(i) as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        hash
-    }
-}
-
-fn string_eq(a: *const NamlString, b: *const NamlString) -> bool {
-    if a.is_null() && b.is_null() {
-        return true;
-    }
-    if a.is_null() || b.is_null() {
-        return false;
-    }
-    unsafe {
-        if (*a).len != (*b).len {
-            return false;
-        }
-        let a_slice = std::slice::from_raw_parts((*a).data.as_ptr(), (*a).len);
-        let b_slice = std::slice::from_raw_parts((*b).data.as_ptr(), (*b).len);
-        a_slice == b_slice
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::alloc::{alloc_zeroed, Layout};
-    use naml_std_core::{HeapHeader, HeapTag};
-
-    unsafe fn test_map_new(capacity: usize) -> *mut NamlMap {
-        let cap = if capacity < 16 { 16 } else { capacity };
-        let map_layout = Layout::new::<NamlMap>();
-        let map_ptr = alloc_zeroed(map_layout) as *mut NamlMap;
-        let entries_layout = Layout::array::<MapEntry>(cap).unwrap();
-        let entries_ptr = alloc_zeroed(entries_layout) as *mut MapEntry;
-        (*map_ptr).header = HeapHeader::new(HeapTag::Map);
-        (*map_ptr).capacity = cap;
-        (*map_ptr).length = 0;
-        (*map_ptr).entries = entries_ptr;
-        map_ptr
-    }
 
     #[test]
     fn test_map_count() {
         unsafe {
-            let map = test_map_new(16);
+            let map = naml_map_new(16);
             assert_eq!(naml_map_count(map), 0);
         }
     }
@@ -698,7 +593,7 @@ mod tests {
     #[test]
     fn test_map_keys_values() {
         unsafe {
-            let map = test_map_new(16);
+            let map = naml_map_new(16);
             let keys = naml_map_keys(map);
             let values = naml_map_values(map);
             assert_eq!((*keys).len, 0);

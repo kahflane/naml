@@ -30,8 +30,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use tokio::runtime::Runtime;
 
-use naml_std_collections::NamlMap;
-use naml_std_core::{NamlBytes, NamlString, NamlStruct};
+use naml_std_core::{NamlBytes, NamlMap, NamlString, NamlStruct};
 
 use super::types::{
     naml_net_http_response_new, naml_net_http_response_set_body, naml_net_http_response_set_status,

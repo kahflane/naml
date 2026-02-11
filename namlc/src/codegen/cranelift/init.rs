@@ -107,15 +107,15 @@ impl<'a> JitCompiler<'a> {
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
 
         // Print builtins
-        builder.symbol("naml_print_int", super::naml_print_int as *const u8);
-        builder.symbol("naml_print_float", super::naml_print_float as *const u8);
-        builder.symbol("naml_print_bool", super::naml_print_bool as *const u8);
-        builder.symbol("naml_print_str", super::naml_print_str as *const u8);
-        builder.symbol("naml_print_newline", super::naml_print_newline as *const u8);
-        builder.symbol("naml_option_print_int", super::naml_option_print_int as *const u8);
-        builder.symbol("naml_option_print_float", super::naml_option_print_float as *const u8);
-        builder.symbol("naml_option_print_bool", super::naml_option_print_bool as *const u8);
-        builder.symbol("naml_option_print_string", super::naml_option_print_string as *const u8);
+        builder.symbol("naml_print_int", crate::runtime::naml_print_int as *const u8);
+        builder.symbol("naml_print_float", crate::runtime::naml_print_float as *const u8);
+        builder.symbol("naml_print_bool", crate::runtime::naml_print_bool as *const u8);
+        builder.symbol("naml_print_str", crate::runtime::naml_print_str as *const u8);
+        builder.symbol("naml_print_newline", crate::runtime::naml_print_newline as *const u8);
+        builder.symbol("naml_option_print_int", crate::runtime::naml_option_print_int as *const u8);
+        builder.symbol("naml_option_print_float", crate::runtime::naml_option_print_float as *const u8);
+        builder.symbol("naml_option_print_bool", crate::runtime::naml_option_print_bool as *const u8);
+        builder.symbol("naml_option_print_string", crate::runtime::naml_option_print_string as *const u8);
 
         // Array runtime functions
         builder.symbol(

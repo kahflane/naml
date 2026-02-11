@@ -15,7 +15,7 @@ description = "Runtime static library for AOT-compiled naml programs"
 
 [lib]
 name = "naml_runtime"
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 naml-std-core.workspace = true

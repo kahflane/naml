@@ -17,6 +17,8 @@
 pub mod value;
 pub mod array;
 pub mod bytes;
+pub mod map;
+pub mod print;
 pub mod exception;
 pub mod stack;
 pub mod arena;
@@ -24,6 +26,8 @@ pub mod arena;
 pub use value::*;
 pub use array::*;
 pub use bytes::*;
+pub use map::*;
+pub use print::*;
 pub use exception::*;
 pub use stack::*;
 pub use arena::*;

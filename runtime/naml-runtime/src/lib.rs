@@ -1,19 +1,12 @@
 ///
 /// naml Runtime Static Library
 ///
-/// Provides all runtime functions needed by AOT-compiled naml programs.
-/// This crate produces a static library (libnaml_runtime.a) that gets
-/// linked with the compiled naml object file to produce a standalone binary.
+/// Produces a static library (libnaml_runtime.a) that gets linked with
+/// AOT-compiled naml object files to produce standalone binaries.
 ///
-/// Contains:
-/// - Print builtins (naml_print_int, naml_print_float, etc.)
-/// - Map operations (naml_map_new, naml_map_set, etc.)
-/// - Bytes operations (naml_bytes_new, naml_bytes_from, etc.)
-/// - All standard library functions via naml-std-* crate dependencies
+/// All runtime functions are provided by naml-std-* crates; this crate
+/// re-exports them so they appear as link-time symbols in the static lib.
 ///
-
-mod map;
-mod bytes;
 
 pub use naml_std_core::*;
 pub use naml_std_random::*;
@@ -44,92 +37,7 @@ pub use naml_std_collections::maps::{
     naml_map_invert, naml_map_from_arrays, naml_map_from_entries,
 };
 
-#[unsafe(no_mangle)]
-pub extern "C" fn naml_print_int(val: i64) {
-    print!("{}", val);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn naml_print_float(val: f64) {
-    print!("{}", val);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn naml_print_bool(val: i64) {
-    if val != 0 {
-        print!("true");
-    } else {
-        print!("false");
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn naml_print_str(ptr: *const std::ffi::c_char) {
-    if !ptr.is_null() {
-        let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
-        if let Ok(s) = c_str.to_str() {
-            print!("{}", s);
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn naml_print_newline() {
-    println!();
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_option_print_int(ptr: *const u8) {
-    if ptr.is_null() { print!("none"); return; }
-    unsafe {
-        let tag = *(ptr as *const i32);
-        if tag == 0 { print!("none"); }
-        else {
-            let val = *(ptr.add(8) as *const i64);
-            print!("some({})", val);
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_option_print_float(ptr: *const u8) {
-    if ptr.is_null() { print!("none"); return; }
-    unsafe {
-        let tag = *(ptr as *const i32);
-        if tag == 0 { print!("none"); }
-        else {
-            let val = *(ptr.add(8) as *const f64);
-            print!("some({})", val);
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_option_print_bool(ptr: *const u8) {
-    if ptr.is_null() { print!("none"); return; }
-    unsafe {
-        let tag = *(ptr as *const i32);
-        if tag == 0 { print!("none"); }
-        else {
-            let val = *ptr.add(8);
-            if val != 0 { print!("some(true)"); } else { print!("some(false)"); }
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn naml_option_print_string(ptr: *const u8) {
-    if ptr.is_null() { print!("none"); return; }
-    unsafe {
-        let tag = *(ptr as *const i32);
-        if tag == 0 { print!("none"); }
-        else {
-            let str_ptr = *(ptr.add(8) as *const *const naml_std_core::NamlString);
-            if !str_ptr.is_null() {
-                print!("some(\"{}\")", (*str_ptr).as_str());
-            } else {
-                print!("some(null)");
-            }
-        }
-    }
+pub fn init() {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
 }

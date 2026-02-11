@@ -1,12 +1,17 @@
-//!
-//! Map Runtime
-//!
-//! Hash map implementation for naml map<K, V> type.
-//! Uses string keys with FNV-1a hashing and linear probing.
-//!
+///
+/// Map Runtime
+///
+/// Hash map implementation for naml map<K, V> type.
+/// Uses string keys with FNV-1a hashing and linear probing.
+///
+/// Core operations: new, set, get, contains, len, incref, decref.
+/// Typed set variants handle refcount management for heap values.
+/// Print variants handle formatted output for different value types.
+///
 
 use std::alloc::{alloc, alloc_zeroed, dealloc, Layout};
-use naml_std_core::{HeapHeader, HeapTag, NamlString, naml_string_decref};
+use crate::{HeapHeader, HeapTag, NamlString, NamlArray, NamlStruct,
+            naml_string_decref, naml_array_decref, naml_struct_decref};
 
 const INITIAL_CAPACITY: usize = 16;
 const LOAD_FACTOR: f64 = 0.75;
@@ -23,13 +28,13 @@ pub struct NamlMap {
 #[derive(Clone, Copy)]
 #[derive(Default)]
 pub struct MapEntry {
-    pub key: i64,      // Pointer to NamlString or 0 if empty
-    pub value: i64,    // The stored value
+    pub key: i64,
+    pub value: i64,
     pub occupied: bool,
 }
 
 
-fn hash_string(s: *const NamlString) -> u64 {
+pub fn hash_string(s: *const NamlString) -> u64 {
     if s.is_null() { return 0; }
     unsafe {
         let len = (*s).len;
@@ -44,7 +49,7 @@ fn hash_string(s: *const NamlString) -> u64 {
     }
 }
 
-fn string_eq(a: *const NamlString, b: *const NamlString) -> bool {
+pub fn string_eq(a: *const NamlString, b: *const NamlString) -> bool {
     if a.is_null() && b.is_null() { return true; }
     if a.is_null() || b.is_null() { return false; }
     unsafe {
@@ -125,7 +130,6 @@ pub unsafe extern "C" fn naml_map_set_string(map: *mut NamlMap, key: i64, value:
                 return;
             }
             if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
-                // Decref old string value before replacing
                 if (*entry).value != 0 {
                     naml_string_decref((*entry).value as *mut NamlString);
                 }
@@ -158,9 +162,8 @@ pub unsafe extern "C" fn naml_map_set_array(map: *mut NamlMap, key: i64, value: 
                 return;
             }
             if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
-                // Decref old array value before replacing
                 if (*entry).value != 0 {
-                    super::array::naml_array_decref((*entry).value as *mut super::array::NamlArray);
+                    naml_array_decref((*entry).value as *mut NamlArray);
                 }
                 (*entry).value = value;
                 return;
@@ -191,7 +194,6 @@ pub unsafe extern "C" fn naml_map_set_map(map: *mut NamlMap, key: i64, value: i6
                 return;
             }
             if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
-                // Decref old map value before replacing
                 if (*entry).value != 0 {
                     naml_map_decref((*entry).value as *mut NamlMap);
                 }
@@ -224,9 +226,8 @@ pub unsafe extern "C" fn naml_map_set_struct(map: *mut NamlMap, key: i64, value:
                 return;
             }
             if string_eq((*entry).key as *const NamlString, key as *const NamlString) {
-                // Decref old struct value before replacing
                 if (*entry).value != 0 {
-                    naml_std_core::naml_struct_decref((*entry).value as *mut naml_std_core::NamlStruct);
+                    naml_struct_decref((*entry).value as *mut NamlStruct);
                 }
                 (*entry).value = value;
                 return;
@@ -343,7 +344,7 @@ pub unsafe extern "C" fn naml_map_decref_arrays(map: *mut NamlMap) {
                         naml_string_decref((*entry).key as *mut NamlString);
                     }
                     if (*entry).value != 0 {
-                        super::array::naml_array_decref((*entry).value as *mut super::array::NamlArray);
+                        naml_array_decref((*entry).value as *mut NamlArray);
                     }
                 }
             }
@@ -393,7 +394,7 @@ pub unsafe extern "C" fn naml_map_decref_structs(map: *mut NamlMap) {
                         naml_string_decref((*entry).key as *mut NamlString);
                     }
                     if (*entry).value != 0 {
-                        naml_std_core::naml_struct_decref((*entry).value as *mut naml_std_core::NamlStruct);
+                        naml_struct_decref((*entry).value as *mut NamlStruct);
                     }
                 }
             }
@@ -524,9 +525,6 @@ unsafe fn resize_map(map: *mut NamlMap) {
         for i in 0..old_capacity {
             let entry = old_entries.add(i);
             if (*entry).occupied {
-                // Use internal rehash function that doesn't modify reference counts.
-                // We're moving entries to new locations - the map still owns the same
-                // references, so refcounts should remain unchanged.
                 rehash_entry(map, (*entry).key, (*entry).value);
             }
         }
@@ -536,8 +534,6 @@ unsafe fn resize_map(map: *mut NamlMap) {
     }
 }
 
-/// Internal function to insert an entry during rehashing without modifying reference counts.
-/// Used only during resize when moving existing entries to new locations.
 unsafe fn rehash_entry(map: *mut NamlMap, key: i64, value: i64) {
     unsafe {
         let hash = hash_string(key as *const NamlString);
@@ -549,7 +545,6 @@ unsafe fn rehash_entry(map: *mut NamlMap, key: i64, value: i64) {
                 (*entry).value = value;
                 (*entry).occupied = true;
                 (*map).length += 1;
-                // No incref here - we're just moving the entry, not creating a new reference
                 return;
             }
             idx = (idx + 1) % (*map).capacity;

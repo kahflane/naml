@@ -102,27 +102,9 @@ bumpalo.workspace = true
 libc.workspace = true
 
 ##
-## naml standard library crates
+## naml runtime (re-exports all naml-std-* crates)
 ##
-naml-std-core.workspace = true
-naml-std-random.workspace = true
-naml-std-io.workspace = true
-naml-std-threads.workspace = true
-naml-std-datetime.workspace = true
-naml-std-metrics.workspace = true
-naml-std-strings.workspace = true
-naml-std-collections.workspace = true
-naml-std-fs.workspace = true
-naml-std-path.workspace = true
-naml-std-encoding.workspace = true
-naml-std-net.workspace = true
-naml-std-env.workspace = true
-naml-std-os.workspace = true
-naml-std-process.workspace = true
-naml-std-testing.workspace = true
-naml-std-sqlite3.workspace = true
-naml-std-timers.workspace = true
-naml-std-crypto.workspace = true
+naml-runtime.workspace = true
 
 ##
 ## Package manager
