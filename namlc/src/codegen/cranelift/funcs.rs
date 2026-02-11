@@ -31,6 +31,9 @@ impl<'a> JitCompiler<'a> {
         if let Some(ref return_ty) = func.return_ty {
             let ty = types::naml_to_cranelift(return_ty);
             sig.returns.push(AbiParam::new(ty));
+        } else if name == "main" && self.module.is_aot() {
+            sig.returns
+                .push(AbiParam::new(cranelift::prelude::types::I32));
         }
 
         let func_id = self
@@ -127,10 +130,13 @@ impl<'a> JitCompiler<'a> {
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
-        let func_return_type = func
-            .return_ty
-            .as_ref()
-            .map(|ty| types::naml_to_cranelift(ty));
+        let func_return_type = if func.return_ty.is_some() {
+            func.return_ty.as_ref().map(|ty| types::naml_to_cranelift(ty))
+        } else if name == "main" && self.module.is_aot() {
+            Some(cranelift::prelude::types::I32)
+        } else {
+            None
+        };
 
         let mut ctx = CompileContext {
             interner: self.interner,
@@ -242,7 +248,12 @@ impl<'a> JitCompiler<'a> {
         if !ctx.block_terminated && func.return_ty.is_none() {
             emit_stack_pop(&mut ctx, &mut builder)?;
             emit_cleanup_all_vars(&mut ctx, &mut builder, None)?;
-            builder.ins().return_(&[]);
+            if let Some(ret_ty) = ctx.func_return_type {
+                let zero = builder.ins().iconst(ret_ty, 0);
+                builder.ins().return_(&[zero]);
+            } else {
+                builder.ins().return_(&[]);
+            }
         }
 
         builder.finalize();

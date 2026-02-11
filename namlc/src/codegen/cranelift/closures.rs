@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::panic;
 
 use cranelift::prelude::*;
-use cranelift_module::{FuncId, Linkage, Module};
+use cranelift_module::{FuncId, Linkage};
 
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::errors::convert_cranelift_error;

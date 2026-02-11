@@ -391,6 +391,108 @@ pub unsafe extern "C" fn naml_map_decref_structs(map: *mut NamlMap) {
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_map_print(map: *const NamlMap) {
+    if map.is_null() {
+        print!("{{}}");
+        return;
+    }
+    unsafe {
+        print!("{{");
+        let mut first = true;
+        for i in 0..(*map).capacity {
+            let entry = (*map).entries.add(i);
+            if (*entry).occupied {
+                if !first { print!(", "); }
+                first = false;
+                let key_ptr = (*entry).key as *const NamlString;
+                if !key_ptr.is_null() {
+                    print!("\"{}\": {}", (*key_ptr).as_str(), (*entry).value);
+                }
+            }
+        }
+        print!("}}");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_map_print_string_values(map: *const NamlMap) {
+    if map.is_null() {
+        print!("{{}}");
+        return;
+    }
+    unsafe {
+        print!("{{");
+        let mut first = true;
+        for i in 0..(*map).capacity {
+            let entry = (*map).entries.add(i);
+            if (*entry).occupied {
+                if !first { print!(", "); }
+                first = false;
+                let key_ptr = (*entry).key as *const NamlString;
+                let val_ptr = (*entry).value as *const NamlString;
+                let key_str = if !key_ptr.is_null() { (*key_ptr).as_str() } else { "null" };
+                if !val_ptr.is_null() {
+                    print!("\"{}\": \"{}\"", key_str, (*val_ptr).as_str());
+                } else {
+                    print!("\"{}\": null", key_str);
+                }
+            }
+        }
+        print!("}}");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_map_print_float_values(map: *const NamlMap) {
+    if map.is_null() {
+        print!("{{}}");
+        return;
+    }
+    unsafe {
+        print!("{{");
+        let mut first = true;
+        for i in 0..(*map).capacity {
+            let entry = (*map).entries.add(i);
+            if (*entry).occupied {
+                if !first { print!(", "); }
+                first = false;
+                let key_ptr = (*entry).key as *const NamlString;
+                let float_val = f64::from_bits((*entry).value as u64);
+                if !key_ptr.is_null() {
+                    print!("\"{}\": {}", (*key_ptr).as_str(), float_val);
+                }
+            }
+        }
+        print!("}}");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn naml_map_print_bool_values(map: *const NamlMap) {
+    if map.is_null() {
+        print!("{{}}");
+        return;
+    }
+    unsafe {
+        print!("{{");
+        let mut first = true;
+        for i in 0..(*map).capacity {
+            let entry = (*map).entries.add(i);
+            if (*entry).occupied {
+                if !first { print!(", "); }
+                first = false;
+                let key_ptr = (*entry).key as *const NamlString;
+                let bool_str = if (*entry).value != 0 { "true" } else { "false" };
+                if !key_ptr.is_null() {
+                    print!("\"{}\": {}", (*key_ptr).as_str(), bool_str);
+                }
+            }
+        }
+        print!("}}");
+    }
+}
+
 unsafe fn resize_map(map: *mut NamlMap) {
     unsafe {
         let old_capacity = (*map).capacity;

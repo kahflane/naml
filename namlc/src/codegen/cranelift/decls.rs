@@ -78,6 +78,34 @@ impl<'a> JitCompiler<'a> {
             &[],
             &[],
         )?;
+        declare(
+            &mut *self.module,
+            &mut self.runtime_funcs,
+            "naml_option_print_int",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut *self.module,
+            &mut self.runtime_funcs,
+            "naml_option_print_float",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut *self.module,
+            &mut self.runtime_funcs,
+            "naml_option_print_bool",
+            &[ptr],
+            &[],
+        )?;
+        declare(
+            &mut *self.module,
+            &mut self.runtime_funcs,
+            "naml_option_print_string",
+            &[ptr],
+            &[],
+        )?;
 
         // String functions
         declare(

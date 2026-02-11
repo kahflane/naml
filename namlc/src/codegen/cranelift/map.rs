@@ -35,7 +35,16 @@ pub fn compile_map_literal(
             } else {
                 compile_expression(ctx, builder, &entry.key)?
             };
-            let value = compile_expression(ctx, builder, &entry.value)?;
+            let value = if let Expression::Literal(LiteralExpr {
+                value: Literal::String(_),
+                ..
+            }) = &entry.value
+            {
+                let cstr_ptr = compile_expression(ctx, builder, &entry.value)?;
+                call_string_from_cstr(ctx, builder, cstr_ptr)?
+            } else {
+                compile_expression(ctx, builder, &entry.value)?
+            };
             let key = ensure_i64(builder, key);
             let value = ensure_i64(builder, value);
             builder.ins().call(set_func_ref, &[map_ptr, key, value]);

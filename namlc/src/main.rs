@@ -229,8 +229,15 @@ fn build_project(
     }
 
     let output_path = output.map(|p| p.to_path_buf()).unwrap_or_else(|| {
+        let build_dir = PathBuf::from("build");
+        if !build_dir.exists() {
+            std::fs::create_dir_all(&build_dir).unwrap_or_else(|e| {
+                eprintln!("Error creating build directory: {}", e);
+                std::process::exit(1);
+            });
+        }
         let stem = file.file_stem().unwrap_or_default();
-        PathBuf::from(stem)
+        build_dir.join(stem)
     });
 
     let runtime_lib = match namlc::linker::find_runtime_lib() {

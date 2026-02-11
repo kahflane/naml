@@ -84,12 +84,11 @@ fn aot_run(fixture_name: &str) -> String {
                     child.stderr.take().unwrap().read_to_string(&mut s).unwrap();
                     s
                 };
-                if !status.success() {
-                    eprintln!(
-                        "WARNING: {} exited with {} (stdout captured)\nstderr: {}",
-                        fixture_name, status, stderr,
-                    );
-                }
+                assert!(
+                    status.success(),
+                    "{} exited with non-zero status {}\nstdout: {}\nstderr: {}",
+                    fixture_name, status, stdout, stderr,
+                );
                 return stdout;
             }
             Ok(None) => {

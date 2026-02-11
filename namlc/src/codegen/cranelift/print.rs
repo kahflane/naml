@@ -5,6 +5,7 @@ use crate::codegen::cranelift::{CompileContext};
 use crate::codegen::CodegenError;
 use crate::source::Spanned;
 use crate::typechecker::Type;
+use crate::typechecker::types::StructType;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::Value;
 use cranelift_frontend::FunctionBuilder;
@@ -125,50 +126,110 @@ pub fn print_arg(
         }
         _ => {
             let val = compile_expression(ctx, builder, arg)?;
-            // Check type from annotations to call appropriate print function
             let expr_type = ctx.annotations.get_type(arg.span());
-            match expr_type {
-                Some(Type::String) => {
-                    // String variables now hold NamlString* (boxed strings)
-                    call_print_naml_string(ctx, builder, val)?;
-                }
-                Some(Type::Float) => {
-                    call_print_float(ctx, builder, val)?;
-                }
-                Some(Type::Bool) => {
-                    call_print_bool(ctx, builder, val)?;
-                }
-                Some(Type::Array(elem_type)) => {
-                    let print_fn = if matches!(elem_type.as_ref(), Type::String) {
-                        "naml_array_print_strings"
-                    } else {
-                        "naml_array_print"
-                    };
-                    let func_ref = rt_func_ref(ctx, builder, print_fn)?;
-                    builder.ins().call(func_ref, &[val]);
-                }
-                Some(Type::Map(_, val_type)) => {
-                    let print_fn = match val_type.as_ref() {
-                        Type::String => "naml_map_print_string_values",
-                        Type::Float => "naml_map_print_float_values",
-                        Type::Bool => "naml_map_print_bool_values",
-                        _ => "naml_map_print",
-                    };
-                    let func_ref = rt_func_ref(ctx, builder, print_fn)?;
-                    builder.ins().call(func_ref, &[val]);
-                }
-                _ => {
-                    // Default: check Cranelift value type for F64, otherwise int
-                    let val_type = builder.func.dfg.value_type(val);
-                    if val_type == cranelift::prelude::types::F64 {
-                        call_print_float(ctx, builder, val)?;
-                    } else {
-                        call_print_int(ctx, builder, val)?;
-                    }
-                }
+            emit_print_typed(ctx, builder, val, expr_type)?;
+        }
+    }
+    Ok(())
+}
+
+fn emit_print_typed(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    val: Value,
+    ty: Option<&Type>,
+) -> Result<(), CodegenError> {
+    match ty {
+        Some(Type::String) => {
+            call_print_naml_string(ctx, builder, val)?;
+        }
+        Some(Type::Float) => {
+            call_print_float(ctx, builder, val)?;
+        }
+        Some(Type::Bool) => {
+            call_print_bool(ctx, builder, val)?;
+        }
+        Some(Type::Array(elem_type)) => {
+            let print_fn = if matches!(elem_type.as_ref(), Type::String) {
+                "naml_array_print_strings"
+            } else {
+                "naml_array_print"
+            };
+            let func_ref = rt_func_ref(ctx, builder, print_fn)?;
+            builder.ins().call(func_ref, &[val]);
+        }
+        Some(Type::Map(_, val_type)) => {
+            let print_fn = match val_type.as_ref() {
+                Type::String => "naml_map_print_string_values",
+                Type::Float => "naml_map_print_float_values",
+                Type::Bool => "naml_map_print_bool_values",
+                _ => "naml_map_print",
+            };
+            let func_ref = rt_func_ref(ctx, builder, print_fn)?;
+            builder.ins().call(func_ref, &[val]);
+        }
+        Some(Type::Option(inner)) => {
+            let print_fn = match inner.as_ref() {
+                Type::String => "naml_option_print_string",
+                Type::Float => "naml_option_print_float",
+                Type::Bool => "naml_option_print_bool",
+                _ => "naml_option_print_int",
+            };
+            let func_ref = rt_func_ref(ctx, builder, print_fn)?;
+            builder.ins().call(func_ref, &[val]);
+        }
+        Some(Type::Struct(st)) => {
+            emit_print_struct(ctx, builder, val, st)?;
+        }
+        _ => {
+            let val_type = builder.func.dfg.value_type(val);
+            if val_type == cranelift::prelude::types::F64 {
+                call_print_float(ctx, builder, val)?;
+            } else {
+                call_print_int(ctx, builder, val)?;
             }
         }
     }
+    Ok(())
+}
+
+fn emit_print_struct(
+    ctx: &mut CompileContext<'_>,
+    builder: &mut FunctionBuilder<'_>,
+    struct_ptr: Value,
+    st: &StructType,
+) -> Result<(), CodegenError> {
+    let struct_name = ctx.interner.resolve(&st.name).to_string();
+    let header = format!("{} {{", struct_name);
+    let header_ptr = compile_string_literal(ctx, builder, &header)?;
+    call_print_str(ctx, builder, header_ptr)?;
+
+    let fields: Vec<_> = st.fields.iter().map(|f| {
+        (ctx.interner.resolve(&f.name).to_string(), f.ty.clone())
+    }).collect();
+
+    for (i, (field_name, field_ty)) in fields.iter().enumerate() {
+        let label = if i > 0 {
+            format!(", {}: ", field_name)
+        } else {
+            format!("{}: ", field_name)
+        };
+        let label_ptr = compile_string_literal(ctx, builder, &label)?;
+        call_print_str(ctx, builder, label_ptr)?;
+
+        let field_offset = 24 + (i as i32) * 8;
+        let field_val = builder.ins().load(
+            cranelift::prelude::types::I64,
+            MemFlags::new(),
+            struct_ptr,
+            field_offset,
+        );
+
+        emit_print_typed(ctx, builder, field_val, Some(&field_ty))?;
+    }
+
+    let close = compile_string_literal(ctx, builder, "}")?;
+    call_print_str(ctx, builder, close)?;
     Ok(())
 }
 

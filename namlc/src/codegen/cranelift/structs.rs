@@ -5,7 +5,6 @@ use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{FuncId, Module};
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::{CompileContext, StructDef};
-use crate::codegen::cranelift::misc::ensure_i64;
 use crate::codegen::cranelift::runtime::rt_func_ref;
 
 fn get_tls_func_ref(

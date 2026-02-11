@@ -1,8 +1,8 @@
 use std::panic;
 
 use cranelift::prelude::*;
-use cranelift_codegen::ir::{AtomicRmwOp, StackSlotData, StackSlotKind};
-use cranelift_module::{FuncId, Linkage, Module};
+use cranelift_codegen::ir::AtomicRmwOp;
+use cranelift_module::Linkage;
 use lasso::Spur;
 
 use crate::codegen::CodegenError;
@@ -42,14 +42,6 @@ impl<'a> JitCompiler<'a> {
         }
 
         Ok(())
-    }
-
-    fn is_self_ref_heap_field(ht: &HeapType, struct_name: &str, interner: &lasso::Rodeo) -> bool {
-        match ht {
-            HeapType::Struct(Some(name)) => interner.resolve(name) == struct_name,
-            HeapType::OptionOf(inner) => Self::is_self_ref_heap_field(inner, struct_name, interner),
-            _ => false,
-        }
     }
 
     fn generate_struct_decref(

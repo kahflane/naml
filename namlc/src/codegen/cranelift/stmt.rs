@@ -586,7 +586,12 @@ pub fn compile_statement(
                 } else {
                     // Void return - cleanup all heap variables
                     emit_cleanup_all_vars(ctx, builder, None)?;
-                    builder.ins().return_(&[]);
+                    if let Some(ret_ty) = ctx.func_return_type {
+                        let zero = builder.ins().iconst(ret_ty, 0);
+                        builder.ins().return_(&[zero]);
+                    } else {
+                        builder.ins().return_(&[]);
+                    }
                 }
                 ctx.block_terminated = true;
             }

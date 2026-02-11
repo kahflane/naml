@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use cranelift_module::{Linkage, Module};
+use cranelift_module::Linkage;
 use lasso::Rodeo;
 
 use crate::ast::{Expression, Item, SourceFile, Statement};

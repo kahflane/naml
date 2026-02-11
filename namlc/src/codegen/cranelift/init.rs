@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 
 use cranelift::prelude::*;
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::Module;
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use lasso::Rodeo;
 
@@ -11,15 +10,17 @@ use crate::codegen::CodegenError;
 use crate::codegen::cranelift::{BackendModule, EnumDef, EnumVariantDef, JitCompiler};
 use crate::typechecker::TypeAnnotations;
 
-fn create_isa(pic: bool) -> Result<cranelift_codegen::isa::OwnedTargetIsa, CodegenError> {
+fn create_isa(pic: bool, release: bool) -> Result<cranelift_codegen::isa::OwnedTargetIsa, CodegenError> {
     let mut flag_builder = settings::builder();
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder
         .set("is_pic", if pic { "true" } else { "false" })
         .unwrap();
-    flag_builder.set("opt_level", "speed").unwrap();
     flag_builder
-        .set("preserve_frame_pointers", "false")
+        .set("opt_level", if release { "speed" } else { "none" })
+        .unwrap();
+    flag_builder
+        .set("preserve_frame_pointers", if release { "false" } else { "true" })
         .unwrap();
 
     let isa_builder = cranelift_native::builder().map_err(|e| {
@@ -102,7 +103,7 @@ impl<'a> JitCompiler<'a> {
         release: bool,
         unsafe_mode: bool,
     ) -> Result<Self, CodegenError> {
-        let isa = create_isa(false)?;
+        let isa = create_isa(false, release)?;
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
 
         // Print builtins
@@ -111,6 +112,10 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_print_bool", super::naml_print_bool as *const u8);
         builder.symbol("naml_print_str", super::naml_print_str as *const u8);
         builder.symbol("naml_print_newline", super::naml_print_newline as *const u8);
+        builder.symbol("naml_option_print_int", super::naml_option_print_int as *const u8);
+        builder.symbol("naml_option_print_float", super::naml_option_print_float as *const u8);
+        builder.symbol("naml_option_print_bool", super::naml_option_print_bool as *const u8);
+        builder.symbol("naml_option_print_string", super::naml_option_print_string as *const u8);
 
         // Array runtime functions
         builder.symbol(
@@ -2153,7 +2158,7 @@ impl<'a> JitCompiler<'a> {
         release: bool,
         unsafe_mode: bool,
     ) -> Result<Self, CodegenError> {
-        let isa = create_isa(true)?;
+        let isa = create_isa(true, release)?;
         let obj_builder = ObjectBuilder::new(
             isa,
             "naml_output",
