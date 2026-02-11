@@ -28,7 +28,7 @@ use std::path::PathBuf;
 
 use lasso::{Rodeo, Spur};
 
-use crate::ast::{self, Item, SourceFile, UseItems};
+use crate::ast::{self, CompilationTarget, Item, Platform, SourceFile, UseItems};
 use crate::source::Span;
 
 pub use error::{TypeError, TypeResult};
@@ -66,6 +66,7 @@ pub struct TypeChecker<'a> {
     source_dir: Option<PathBuf>,
     imported_modules: Vec<ImportedModule>,
     package_manager: Option<&'a naml_pkg::PackageManager>,
+    target: CompilationTarget,
 }
 
 pub struct StdModuleFn {
@@ -75,10 +76,16 @@ pub struct StdModuleFn {
     pub return_ty: Type,
     pub throws: Vec<&'static str>,
     pub is_variadic: bool,
+    pub platforms: &'static [Platform],
 }
 
 impl StdModuleFn {
-    fn new(name: &'static str, params: Vec<(&'static str, Type)>, return_ty: Type) -> Self {
+    fn new(
+        name: &'static str,
+        params: Vec<(&'static str, Type)>,
+        return_ty: Type,
+        platforms: &'static [Platform],
+    ) -> Self {
         Self {
             name,
             type_params: vec![],
@@ -86,6 +93,7 @@ impl StdModuleFn {
             return_ty,
             throws: vec![],
             is_variadic: false,
+            platforms,
         }
     }
 
@@ -94,6 +102,7 @@ impl StdModuleFn {
         params: Vec<(&'static str, Type)>,
         return_ty: Type,
         throws: Vec<&'static str>,
+        platforms: &'static [Platform],
     ) -> Self {
         Self {
             name,
@@ -102,6 +111,7 @@ impl StdModuleFn {
             return_ty,
             throws,
             is_variadic: false,
+            platforms,
         }
     }
 
@@ -110,6 +120,7 @@ impl StdModuleFn {
         type_params: Vec<&'static str>,
         params: Vec<(&'static str, Type)>,
         return_ty: Type,
+        platforms: &'static [Platform],
     ) -> Self {
         Self {
             name,
@@ -118,6 +129,7 @@ impl StdModuleFn {
             return_ty,
             throws: vec![],
             is_variadic: false,
+            platforms,
         }
     }
 }
@@ -131,6 +143,7 @@ impl<'a> TypeChecker<'a> {
         interner: &'a mut Rodeo,
         source_dir: Option<PathBuf>,
         package_manager: Option<&'a naml_pkg::PackageManager>,
+        target: CompilationTarget,
     ) -> Self {
         let mut checker = Self {
             symbols: SymbolTable::new(),
@@ -142,6 +155,7 @@ impl<'a> TypeChecker<'a> {
             source_dir,
             imported_modules: Vec::new(),
             package_manager,
+            target,
         };
         checker.register_builtins();
         checker
@@ -801,7 +815,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_collections_array_functions() -> Vec<StdModuleFn> {
+    fn get_collections_array_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         // Use a default Spur for generic type T
         let generic_t = || Type::Generic(lasso::Spur::default(), vec![]);
         let array_of_t = || Type::Array(Box::new(generic_t()));
@@ -814,48 +828,56 @@ impl<'a> TypeChecker<'a> {
                 vec!["T"],
                 vec![("arr", array_of_t())],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::generic(
                 "reserved",
                 vec!["T"],
                 vec![("capacity", Type::Int)],
                 array_of_t(),
+                platforms,
             ),
             StdModuleFn::generic(
                 "push",
                 vec!["T"],
                 vec![("arr", array_of_t()), ("value", generic_t())],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::generic(
                 "pop",
                 vec!["T"],
                 vec![("arr", array_of_t())],
                 option_of_t(),
+                platforms,
             ),
             StdModuleFn::generic(
                 "shift",
                 vec!["T"],
                 vec![("arr", array_of_t())],
                 option_of_t(),
+                platforms,
             ),
             StdModuleFn::generic(
                 "fill",
                 vec!["T"],
                 vec![("arr", array_of_t()), ("value", generic_t())],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::generic(
                 "clear",
                 vec!["T"],
                 vec![("arr", array_of_t())],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::generic(
                 "get",
                 vec!["T"],
                 vec![("arr", array_of_t()), ("index", Type::Int)],
                 option_of_t(),
+                platforms,
             ),
             // Access functions
             StdModuleFn::generic(
@@ -863,28 +885,33 @@ impl<'a> TypeChecker<'a> {
                 vec!["T"],
                 vec![("arr", array_of_t())],
                 option_of_t(),
+                platforms,
             ),
             StdModuleFn::generic(
                 "last",
                 vec!["T"],
                 vec![("arr", array_of_t())],
                 option_of_t(),
+                platforms,
             ),
             // Aggregation - these only make sense for numeric types, keep as int for now
             StdModuleFn::new(
                 "sum",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "min",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "max",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             // Transformation - generic
             StdModuleFn::generic(
@@ -892,6 +919,7 @@ impl<'a> TypeChecker<'a> {
                 vec!["T"],
                 vec![("arr", array_of_t())],
                 array_of_t(),
+                platforms,
             ),
             // Slicing - generic
             StdModuleFn::generic(
@@ -899,18 +927,21 @@ impl<'a> TypeChecker<'a> {
                 vec!["T"],
                 vec![("arr", array_of_t()), ("n", Type::Int)],
                 array_of_t(),
+                platforms,
             ),
             StdModuleFn::generic(
                 "drop",
                 vec!["T"],
                 vec![("arr", array_of_t()), ("n", Type::Int)],
                 array_of_t(),
+                platforms,
             ),
             StdModuleFn::generic(
                 "slice",
                 vec!["T"],
                 vec![("arr", array_of_t()), ("start", Type::Int), ("end", Type::Int)],
                 array_of_t(),
+                platforms,
             ),
             // Search - generic
             StdModuleFn::generic(
@@ -918,12 +949,14 @@ impl<'a> TypeChecker<'a> {
                 vec!["T"],
                 vec![("arr", array_of_t()), ("val", generic_t())],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::generic(
                 "contains",
                 vec!["T"],
                 vec![("arr", array_of_t()), ("val", generic_t())],
                 Type::Bool,
+                platforms,
             ),
             // Lambda-based functions (predicate: fn(int) -> bool)
             StdModuleFn::new(
@@ -941,6 +974,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "all",
@@ -957,6 +991,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "count_if",
@@ -973,6 +1008,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "apply",
@@ -989,6 +1025,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "where",
@@ -1005,6 +1042,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "find",
@@ -1021,6 +1059,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "find_index",
@@ -1037,6 +1076,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "fold",
@@ -1054,6 +1094,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "flatten",
@@ -1062,11 +1103,13 @@ impl<'a> TypeChecker<'a> {
                     Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
                 )],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "sort",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "sort_by",
@@ -1083,6 +1126,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             // Mutation operations
             StdModuleFn::new(
@@ -1093,6 +1137,7 @@ impl<'a> TypeChecker<'a> {
                     ("value", Type::Int),
                 ],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::new(
                 "remove_at",
@@ -1101,6 +1146,7 @@ impl<'a> TypeChecker<'a> {
                     ("index", Type::Int),
                 ],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "remove",
@@ -1109,6 +1155,7 @@ impl<'a> TypeChecker<'a> {
                     ("value", Type::Int),
                 ],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "swap",
@@ -1118,17 +1165,20 @@ impl<'a> TypeChecker<'a> {
                     ("j", Type::Int),
                 ],
                 Type::Unit,
+                platforms,
             ),
             // Deduplication
             StdModuleFn::new(
                 "unique",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "compact",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             // Backward search
             StdModuleFn::new(
@@ -1138,6 +1188,7 @@ impl<'a> TypeChecker<'a> {
                     ("val", Type::Int),
                 ],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "find_last",
@@ -1154,6 +1205,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "find_last_index",
@@ -1170,6 +1222,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             // Array combination
             StdModuleFn::new(
@@ -1179,6 +1232,7 @@ impl<'a> TypeChecker<'a> {
                     ("arr2", Type::Array(Box::new(Type::Int))),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "zip",
@@ -1187,6 +1241,7 @@ impl<'a> TypeChecker<'a> {
                     ("arr2", Type::Array(Box::new(Type::Int))),
                 ],
                 Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                platforms,
             ),
             StdModuleFn::new(
                 "unzip",
@@ -1195,6 +1250,7 @@ impl<'a> TypeChecker<'a> {
                     Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
                 )],
                 Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                platforms,
             ),
             // Splitting
             StdModuleFn::new(
@@ -1204,6 +1260,7 @@ impl<'a> TypeChecker<'a> {
                     ("size", Type::Int),
                 ],
                 Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                platforms,
             ),
             StdModuleFn::new(
                 "partition",
@@ -1220,6 +1277,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                platforms,
             ),
             // Set operations
             StdModuleFn::new(
@@ -1229,6 +1287,7 @@ impl<'a> TypeChecker<'a> {
                     ("arr2", Type::Array(Box::new(Type::Int))),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "diff",
@@ -1237,6 +1296,7 @@ impl<'a> TypeChecker<'a> {
                     ("arr2", Type::Array(Box::new(Type::Int))),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "union",
@@ -1245,6 +1305,7 @@ impl<'a> TypeChecker<'a> {
                     ("arr2", Type::Array(Box::new(Type::Int))),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             // Advanced iteration
             StdModuleFn::new(
@@ -1262,6 +1323,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "drop_while",
@@ -1278,6 +1340,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "reject",
@@ -1294,6 +1357,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "flat_apply",
@@ -1310,6 +1374,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "scan",
@@ -1327,33 +1392,38 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             // Random
             StdModuleFn::new(
                 "shuffle",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "sample",
                 vec![("arr", Type::Array(Box::new(Type::Int)))],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "sample_n",
                 vec![("arr", Type::Array(Box::new(Type::Int))), ("n", Type::Int)],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
         ]
     }
 
-    fn get_collections_map_functions() -> Vec<StdModuleFn> {
+    fn get_collections_map_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             // Basic operations
             StdModuleFn::new(
                 "count",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "contains_key",
@@ -1362,6 +1432,7 @@ impl<'a> TypeChecker<'a> {
                     ("key", Type::String),
                 ],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "remove",
@@ -1370,38 +1441,45 @@ impl<'a> TypeChecker<'a> {
                     ("key", Type::String),
                 ],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "clear",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Unit,
+                platforms,
             ),
             // Extraction
             StdModuleFn::new(
                 "keys",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Array(Box::new(Type::String)),
+                platforms,
             ),
             StdModuleFn::new(
                 "values",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Array(Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "entries",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
+                platforms,
             ),
             // Lookup
             StdModuleFn::new(
                 "first_key",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Option(Box::new(Type::String)),
+                platforms,
             ),
             StdModuleFn::new(
                 "first_value",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Option(Box::new(Type::Int)),
+                platforms,
             ),
             // Lambda-based functions
             StdModuleFn::new(
@@ -1419,6 +1497,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "all",
@@ -1435,6 +1514,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "count_if",
@@ -1451,6 +1531,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "fold",
@@ -1468,6 +1549,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Int,
+                platforms,
             ),
             // Transformation
             StdModuleFn::new(
@@ -1485,6 +1567,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             // Filtering
             StdModuleFn::new(
@@ -1502,6 +1585,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "reject",
@@ -1518,6 +1602,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             // Combining
             StdModuleFn::new(
@@ -1527,6 +1612,7 @@ impl<'a> TypeChecker<'a> {
                     ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "defaults",
@@ -1538,6 +1624,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "intersect",
@@ -1546,6 +1633,7 @@ impl<'a> TypeChecker<'a> {
                     ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "diff",
@@ -1554,12 +1642,14 @@ impl<'a> TypeChecker<'a> {
                     ("b", Type::Map(Box::new(Type::String), Box::new(Type::Int))),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             // Conversion
             StdModuleFn::new(
                 "invert",
                 vec![("m", Type::Map(Box::new(Type::String), Box::new(Type::Int)))],
                 Type::Map(Box::new(Type::Int), Box::new(Type::String)),
+                platforms,
             ),
             StdModuleFn::new(
                 "from_arrays",
@@ -1568,6 +1658,7 @@ impl<'a> TypeChecker<'a> {
                     ("values", Type::Array(Box::new(Type::Int))),
                 ],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
             StdModuleFn::new(
                 "from_entries",
@@ -1576,11 +1667,12 @@ impl<'a> TypeChecker<'a> {
                     Type::Array(Box::new(Type::Array(Box::new(Type::Int)))),
                 )],
                 Type::Map(Box::new(Type::String), Box::new(Type::Int)),
+                platforms,
             ),
         ]
     }
 
-    fn get_fs_functions() -> Vec<StdModuleFn> {
+    fn get_fs_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             // File reading
             StdModuleFn::throwing(
@@ -1588,12 +1680,14 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String)],
                 Type::String,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "read_bytes",
                 vec![("path", Type::String)],
                 Type::Bytes,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // File writing
             StdModuleFn::throwing(
@@ -1601,47 +1695,54 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String), ("content", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "write_bytes",
                 vec![("path", Type::String), ("content", Type::Bytes)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "append",
                 vec![("path", Type::String), ("content", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "append_bytes",
                 vec![("path", Type::String), ("content", Type::Bytes)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Existence checks (non-throwing)
-            StdModuleFn::new("exists", vec![("path", Type::String)], Type::Bool),
-            StdModuleFn::new("is_file", vec![("path", Type::String)], Type::Bool),
-            StdModuleFn::new("is_dir", vec![("path", Type::String)], Type::Bool),
+            StdModuleFn::new("exists", vec![("path", Type::String)], Type::Bool, platforms),
+            StdModuleFn::new("is_file", vec![("path", Type::String)], Type::Bool, platforms),
+            StdModuleFn::new("is_dir", vec![("path", Type::String)], Type::Bool, platforms),
             // Directory operations
             StdModuleFn::throwing(
                 "list_dir",
                 vec![("path", Type::String)],
                 Type::Array(Box::new(Type::String)),
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mkdir",
                 vec![("path", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mkdir_all",
                 vec![("path", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Delete operations
             StdModuleFn::throwing(
@@ -1649,27 +1750,31 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "remove_all",
                 vec![("path", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Path operations (non-throwing)
             StdModuleFn::new(
                 "join",
                 vec![("parts", Type::Array(Box::new(Type::String)))],
                 Type::String,
+                platforms,
             ),
-            StdModuleFn::new("dirname", vec![("path", Type::String)], Type::String),
-            StdModuleFn::new("basename", vec![("path", Type::String)], Type::String),
-            StdModuleFn::new("extension", vec![("path", Type::String)], Type::String),
+            StdModuleFn::new("dirname", vec![("path", Type::String)], Type::String, platforms),
+            StdModuleFn::new("basename", vec![("path", Type::String)], Type::String, platforms),
+            StdModuleFn::new("extension", vec![("path", Type::String)], Type::String, platforms),
             StdModuleFn::throwing(
                 "absolute",
                 vec![("path", Type::String)],
                 Type::String,
                 vec!["IOError"],
+                platforms,
             ),
             // Metadata
             StdModuleFn::throwing(
@@ -1677,12 +1782,14 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "modified",
                 vec![("path", Type::String)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             // Copy/rename
             StdModuleFn::throwing(
@@ -1690,12 +1797,14 @@ impl<'a> TypeChecker<'a> {
                 vec![("src", Type::String), ("dst", Type::String)],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "rename",
                 vec![("src", Type::String), ("dst", Type::String)],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             // Memory-mapped file operations
             StdModuleFn::throwing(
@@ -1703,18 +1812,21 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String), ("writable", Type::Bool)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mmap_len",
                 vec![("handle", Type::Int)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mmap_read_byte",
                 vec![("handle", Type::Int), ("offset", Type::Int)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mmap_write_byte",
@@ -1725,6 +1837,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mmap_read",
@@ -1735,6 +1848,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Bytes,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mmap_write",
@@ -1745,18 +1859,21 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mmap_flush",
                 vec![("handle", Type::Int)],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mmap_close",
                 vec![("handle", Type::Int)],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             // File handle operations
             StdModuleFn::throwing(
@@ -1764,48 +1881,56 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String), ("mode", Type::String)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_close",
                 vec![("handle", Type::Int)],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_read",
                 vec![("handle", Type::Int), ("count", Type::Int)],
                 Type::String,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_read_line",
                 vec![("handle", Type::Int)],
                 Type::String,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_read_all",
                 vec![("handle", Type::Int)],
                 Type::String,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_write",
                 vec![("handle", Type::Int), ("content", Type::String)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_write_line",
                 vec![("handle", Type::Int), ("content", Type::String)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_flush",
                 vec![("handle", Type::Int)],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_seek",
@@ -1816,32 +1941,37 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_tell",
                 vec![("handle", Type::Int)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_eof",
                 vec![("handle", Type::Int)],
                 Type::Bool,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_size",
                 vec![("handle", Type::Int)],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             // Working directory operations
-            StdModuleFn::throwing("getwd", vec![], Type::String, vec!["IOError"]),
+            StdModuleFn::throwing("getwd", vec![], Type::String, vec!["IOError"], platforms),
             StdModuleFn::throwing(
                 "chdir",
                 vec![("path", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Temp file/directory creation
             StdModuleFn::throwing(
@@ -1849,12 +1979,14 @@ impl<'a> TypeChecker<'a> {
                 vec![("prefix", Type::String)],
                 Type::String,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "mkdir_temp",
                 vec![("prefix", Type::String)],
                 Type::String,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Permission and size operations
             StdModuleFn::throwing(
@@ -1862,12 +1994,14 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String), ("mode", Type::Int)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "truncate",
                 vec![("path", Type::String), ("size", Type::Int)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // File metadata (stat)
             // Returns [size, mode, modified, created, is_dir, is_file, is_symlink]
@@ -1876,6 +2010,7 @@ impl<'a> TypeChecker<'a> {
                 vec![("path", Type::String)],
                 Type::Array(Box::new(Type::Int)),
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Link operations
             StdModuleFn::throwing(
@@ -1883,24 +2018,28 @@ impl<'a> TypeChecker<'a> {
                 vec![("target", Type::String), ("link_path", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "readlink",
                 vec![("path", Type::String)],
                 Type::String,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "lstat",
                 vec![("path", Type::String)],
                 Type::Array(Box::new(Type::Int)),
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "link",
                 vec![("src", Type::String), ("dst", Type::String)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Timestamps
             StdModuleFn::throwing(
@@ -1912,6 +2051,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // Ownership
             StdModuleFn::throwing(
@@ -1923,6 +2063,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "lchown",
@@ -1933,6 +2074,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             // File comparison
             StdModuleFn::throwing(
@@ -1940,6 +2082,7 @@ impl<'a> TypeChecker<'a> {
                 vec![("path1", Type::String), ("path2", Type::String)],
                 Type::Bool,
                 vec!["IOError"],
+                platforms,
             ),
             // Additional file handle operations
             StdModuleFn::throwing(
@@ -1951,6 +2094,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::String,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_write_at",
@@ -1961,30 +2105,35 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Int,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_name",
                 vec![("handle", Type::Int)],
                 Type::String,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_stat",
                 vec![("handle", Type::Int)],
                 Type::Array(Box::new(Type::Int)),
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_truncate",
                 vec![("handle", Type::Int), ("size", Type::Int)],
                 Type::Unit,
                 vec!["IOError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_chmod",
                 vec![("handle", Type::Int), ("mode", Type::Int)],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "file_chown",
@@ -1995,251 +2144,273 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["IOError", "PermissionError"],
+                platforms,
             ),
         ]
     }
 
-    fn get_encoding_utf8_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_utf8_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("encode", vec![("s", Type::String)], Type::Bytes),
+            StdModuleFn::new("encode", vec![("s", Type::String)], Type::Bytes, platforms),
             StdModuleFn::throwing(
                 "decode",
                 vec![("data", Type::Bytes)],
                 Type::String,
                 vec!["DecodeError"],
+                platforms,
             ),
-            StdModuleFn::new("is_valid", vec![("data", Type::Bytes)], Type::Bool),
+            StdModuleFn::new("is_valid", vec![("data", Type::Bytes)], Type::Bool, platforms),
         ]
     }
 
-    fn get_encoding_hex_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_hex_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String, platforms),
             StdModuleFn::throwing(
                 "decode",
                 vec![("s", Type::String)],
                 Type::Bytes,
                 vec!["DecodeError"],
+                platforms,
             ),
         ]
     }
 
-    fn get_encoding_base64_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_base64_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::new("encode", vec![("data", Type::Bytes)], Type::String, platforms),
             StdModuleFn::throwing(
                 "decode",
                 vec![("s", Type::String)],
                 Type::Bytes,
                 vec!["DecodeError"],
+                platforms,
             ),
         ]
     }
 
-    fn get_encoding_url_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_url_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("encode", vec![("s", Type::String)], Type::String),
+            StdModuleFn::new("encode", vec![("s", Type::String)], Type::String, platforms),
             StdModuleFn::throwing(
                 "decode",
                 vec![("s", Type::String)],
                 Type::String,
                 vec!["DecodeError"],
+                platforms,
             ),
         ]
     }
 
-    fn get_encoding_json_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_json_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "decode",
                 vec![("s", Type::String)],
                 Type::Json,
                 vec!["DecodeError"],
+                platforms,
             ),
-            StdModuleFn::new("encode", vec![("value", Type::Json)], Type::String),
-            StdModuleFn::new("encode_pretty", vec![("value", Type::Json)], Type::String),
+            StdModuleFn::new("encode", vec![("value", Type::Json)], Type::String, platforms),
+            StdModuleFn::new("encode_pretty", vec![("value", Type::Json)], Type::String, platforms),
             StdModuleFn::new(
                 "exists",
                 vec![("data", Type::Json), ("key", Type::String)],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::throwing(
                 "path",
                 vec![("data", Type::Json), ("jq_path", Type::String)],
                 Type::Json,
                 vec!["PathError"],
+                platforms,
             ),
             StdModuleFn::new(
                 "keys",
                 vec![("data", Type::Json)],
                 Type::Array(Box::new(Type::String)),
+                platforms,
             ),
-            StdModuleFn::new("count", vec![("data", Type::Json)], Type::Int),
-            StdModuleFn::new("get_type", vec![("data", Type::Json)], Type::Int),
-            StdModuleFn::new("type_name", vec![("data", Type::Json)], Type::String),
-            StdModuleFn::new("is_null", vec![("data", Type::Json)], Type::Bool),
+            StdModuleFn::new("count", vec![("data", Type::Json)], Type::Int, platforms),
+            StdModuleFn::new("get_type", vec![("data", Type::Json)], Type::Int, platforms),
+            StdModuleFn::new("type_name", vec![("data", Type::Json)], Type::String, platforms),
+            StdModuleFn::new("is_null", vec![("data", Type::Json)], Type::Bool, platforms),
         ]
     }
 
-    fn get_encoding_toml_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_toml_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "decode",
                 vec![("s", Type::String)],
                 Type::Json,
                 vec!["DecodeError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "encode",
                 vec![("value", Type::Json)],
                 Type::String,
                 vec!["EncodeError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "encode_pretty",
                 vec![("value", Type::Json)],
                 Type::String,
                 vec!["EncodeError"],
+                platforms,
             ),
         ]
     }
 
-    fn get_encoding_yaml_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_yaml_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "decode",
                 vec![("s", Type::String)],
                 Type::Json,
                 vec!["DecodeError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "encode",
                 vec![("value", Type::Json)],
                 Type::String,
                 vec!["EncodeError"],
+                platforms,
             ),
         ]
     }
 
-    fn get_encoding_binary_functions() -> Vec<StdModuleFn> {
+    fn get_encoding_binary_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("read_u8", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_i8", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_u16_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_u16_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_i16_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_i16_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_u32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_u32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_i32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_i32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_u64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_u64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_i64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_i64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int),
-            StdModuleFn::new("read_f32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
-            StdModuleFn::new("read_f32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
-            StdModuleFn::new("read_f64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
-            StdModuleFn::new("read_f64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float),
-            StdModuleFn::new("write_u8", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_i8", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_u16_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_u16_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_i16_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_i16_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_u32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_u32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_i32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_i32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_u64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_u64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_i64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_i64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("write_f32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
-            StdModuleFn::new("write_f32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
-            StdModuleFn::new("write_f64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
-            StdModuleFn::new("write_f64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit),
-            StdModuleFn::new("alloc", vec![("capacity", Type::Int)], Type::Bytes),
-            StdModuleFn::new("from_string", vec![("s", Type::String)], Type::Bytes),
-            StdModuleFn::new("len", vec![("buf", Type::Bytes)], Type::Int),
-            StdModuleFn::new("capacity", vec![("buf", Type::Bytes)], Type::Int),
-            StdModuleFn::new("slice", vec![("buf", Type::Bytes), ("start", Type::Int), ("end", Type::Int)], Type::Bytes),
-            StdModuleFn::new("concat", vec![("a", Type::Bytes), ("b", Type::Bytes)], Type::Bytes),
-            StdModuleFn::new("append", vec![("dst", Type::Bytes), ("src", Type::Bytes)], Type::Unit),
-            StdModuleFn::new("copy_within", vec![("buf", Type::Bytes), ("src_start", Type::Int), ("src_end", Type::Int), ("dst_start", Type::Int)], Type::Unit),
-            StdModuleFn::new("clear", vec![("buf", Type::Bytes)], Type::Unit),
-            StdModuleFn::new("resize", vec![("buf", Type::Bytes), ("new_len", Type::Int)], Type::Unit),
-            StdModuleFn::new("fill", vec![("buf", Type::Bytes), ("value", Type::Int)], Type::Unit),
-            StdModuleFn::new("index_of", vec![("haystack", Type::Bytes), ("needle", Type::Bytes)], Type::Int),
-            StdModuleFn::new("contains", vec![("haystack", Type::Bytes), ("needle", Type::Bytes)], Type::Bool),
-            StdModuleFn::new("starts_with", vec![("buf", Type::Bytes), ("prefix", Type::Bytes)], Type::Bool),
-            StdModuleFn::new("ends_with", vec![("buf", Type::Bytes), ("suffix", Type::Bytes)], Type::Bool),
-            StdModuleFn::new("equals", vec![("a", Type::Bytes), ("b", Type::Bytes)], Type::Bool),
+            StdModuleFn::new("read_u8", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_i8", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_u16_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_u16_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_i16_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_i16_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_u32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_u32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_i32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_i32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_u64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_u64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_i64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_i64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("read_f32_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float, platforms),
+            StdModuleFn::new("read_f32_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float, platforms),
+            StdModuleFn::new("read_f64_be", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float, platforms),
+            StdModuleFn::new("read_f64_le", vec![("buf", Type::Bytes), ("offset", Type::Int)], Type::Float, platforms),
+            StdModuleFn::new("write_u8", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_i8", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_u16_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_u16_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_i16_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_i16_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_u32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_u32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_i32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_i32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_u64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_u64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_i64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_i64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("write_f32_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit, platforms),
+            StdModuleFn::new("write_f32_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit, platforms),
+            StdModuleFn::new("write_f64_be", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit, platforms),
+            StdModuleFn::new("write_f64_le", vec![("buf", Type::Bytes), ("offset", Type::Int), ("value", Type::Float)], Type::Unit, platforms),
+            StdModuleFn::new("alloc", vec![("capacity", Type::Int)], Type::Bytes, platforms),
+            StdModuleFn::new("from_string", vec![("s", Type::String)], Type::Bytes, platforms),
+            StdModuleFn::new("len", vec![("buf", Type::Bytes)], Type::Int, platforms),
+            StdModuleFn::new("capacity", vec![("buf", Type::Bytes)], Type::Int, platforms),
+            StdModuleFn::new("slice", vec![("buf", Type::Bytes), ("start", Type::Int), ("end", Type::Int)], Type::Bytes, platforms),
+            StdModuleFn::new("concat", vec![("a", Type::Bytes), ("b", Type::Bytes)], Type::Bytes, platforms),
+            StdModuleFn::new("append", vec![("dst", Type::Bytes), ("src", Type::Bytes)], Type::Unit, platforms),
+            StdModuleFn::new("copy_within", vec![("buf", Type::Bytes), ("src_start", Type::Int), ("src_end", Type::Int), ("dst_start", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("clear", vec![("buf", Type::Bytes)], Type::Unit, platforms),
+            StdModuleFn::new("resize", vec![("buf", Type::Bytes), ("new_len", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("fill", vec![("buf", Type::Bytes), ("value", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("index_of", vec![("haystack", Type::Bytes), ("needle", Type::Bytes)], Type::Int, platforms),
+            StdModuleFn::new("contains", vec![("haystack", Type::Bytes), ("needle", Type::Bytes)], Type::Bool, platforms),
+            StdModuleFn::new("starts_with", vec![("buf", Type::Bytes), ("prefix", Type::Bytes)], Type::Bool, platforms),
+            StdModuleFn::new("ends_with", vec![("buf", Type::Bytes), ("suffix", Type::Bytes)], Type::Bool, platforms),
+            StdModuleFn::new("equals", vec![("a", Type::Bytes), ("b", Type::Bytes)], Type::Bool, platforms),
         ]
     }
 
-    fn get_net_tcp_server_functions() -> Vec<StdModuleFn> {
+    fn get_net_tcp_server_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "listen",
                 vec![("address", Type::String)],
                 Type::Int,
                 vec!["NetworkError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "accept",
                 vec![("listener", Type::Int)],
                 Type::Int,
                 vec!["NetworkError"],
+                platforms,
             ),
-            StdModuleFn::new("close", vec![("listener", Type::Int)], Type::Unit),
-            StdModuleFn::new("local_addr", vec![("listener", Type::Int)], Type::String),
+            StdModuleFn::new("close", vec![("listener", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("local_addr", vec![("listener", Type::Int)], Type::String, platforms),
         ]
     }
 
-    fn get_net_tcp_client_functions() -> Vec<StdModuleFn> {
+    fn get_net_tcp_client_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "connect",
                 vec![("address", Type::String)],
                 Type::Int,
                 vec!["NetworkError", "TimeoutError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "read",
                 vec![("socket", Type::Int), ("size", Type::Int)],
                 Type::Bytes,
                 vec!["NetworkError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "read_all",
                 vec![("socket", Type::Int)],
                 Type::Bytes,
                 vec!["NetworkError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "write",
                 vec![("socket", Type::Int), ("data", Type::Bytes)],
                 Type::Unit,
                 vec!["NetworkError"],
+                platforms,
             ),
-            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
+            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit, platforms),
             StdModuleFn::new(
                 "set_timeout",
                 vec![("socket", Type::Int), ("ms", Type::Int)],
                 Type::Unit,
+                platforms,
             ),
-            StdModuleFn::new("peer_addr", vec![("socket", Type::Int)], Type::String),
+            StdModuleFn::new("peer_addr", vec![("socket", Type::Int)], Type::String, platforms),
         ]
     }
 
-    fn get_net_udp_functions() -> Vec<StdModuleFn> {
+    fn get_net_udp_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "bind",
                 vec![("address", Type::String)],
                 Type::Int,
                 vec!["NetworkError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "send",
@@ -2250,19 +2421,21 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["NetworkError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "receive",
                 vec![("socket", Type::Int), ("size", Type::Int)],
                 Type::Bytes,
                 vec!["NetworkError"],
+                platforms,
             ),
-            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
-            StdModuleFn::new("local_addr", vec![("socket", Type::Int)], Type::String),
+            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("local_addr", vec![("socket", Type::Int)], Type::String, platforms),
         ]
     }
 
-    fn get_net_http_client_functions() -> Vec<StdModuleFn> {
+    fn get_net_http_client_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         // Headers type: option<map<string, string>>
         let headers_type = Type::Option(Box::new(Type::Map(
             Box::new(Type::String),
@@ -2274,6 +2447,7 @@ impl<'a> TypeChecker<'a> {
                 vec![("url", Type::String), ("headers", headers_type.clone())],
                 Type::Int,
                 vec!["NetworkError", "TimeoutError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "post",
@@ -2284,6 +2458,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Int,
                 vec!["NetworkError", "TimeoutError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "put",
@@ -2294,6 +2469,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Int,
                 vec!["NetworkError", "TimeoutError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "patch",
@@ -2304,29 +2480,32 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Int,
                 vec!["NetworkError", "TimeoutError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "delete",
                 vec![("url", Type::String), ("headers", headers_type)],
                 Type::Int,
                 vec!["NetworkError", "TimeoutError"],
+                platforms,
             ),
-            StdModuleFn::new("set_timeout", vec![("ms", Type::Int)], Type::Unit),
+            StdModuleFn::new("set_timeout", vec![("ms", Type::Int)], Type::Unit, platforms),
             StdModuleFn::throwing(
                 "get_tls",
                 vec![("url", Type::String), ("ca_path", Type::String)],
                 Type::Int,
                 vec!["NetworkError", "TlsError"],
+                platforms,
             ),
             // Response accessors
-            StdModuleFn::new("status", vec![("response", Type::Int)], Type::Int),
-            StdModuleFn::new("body", vec![("response", Type::Int)], Type::Bytes),
+            StdModuleFn::new("status", vec![("response", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("body", vec![("response", Type::Int)], Type::Bytes, platforms),
         ]
     }
 
-    fn get_net_http_server_functions() -> Vec<StdModuleFn> {
+    fn get_net_http_server_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("open_router", vec![], Type::Int),
+            StdModuleFn::new("open_router", vec![], Type::Int, platforms),
             StdModuleFn::new(
                 "get",
                 vec![
@@ -2340,6 +2519,7 @@ impl<'a> TypeChecker<'a> {
                     })),
                 ],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::new(
                 "post",
@@ -2354,6 +2534,7 @@ impl<'a> TypeChecker<'a> {
                     })),
                 ],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::new(
                 "put",
@@ -2368,6 +2549,7 @@ impl<'a> TypeChecker<'a> {
                     })),
                 ],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::new(
                 "patch",
@@ -2382,6 +2564,7 @@ impl<'a> TypeChecker<'a> {
                     })),
                 ],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::new(
                 "delete",
@@ -2396,16 +2579,19 @@ impl<'a> TypeChecker<'a> {
                     })),
                 ],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::new(
                 "with",
                 vec![("router", Type::Int), ("middleware", Type::Int)],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::new(
                 "group",
                 vec![("router", Type::Int), ("prefix", Type::String)],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "mount",
@@ -2415,17 +2601,20 @@ impl<'a> TypeChecker<'a> {
                     ("sub_router", Type::Int),
                 ],
                 Type::Unit,
+                platforms,
             ),
             StdModuleFn::throwing(
                 "serve",
                 vec![("address", Type::String), ("router", Type::Int)],
                 Type::Unit,
                 vec!["NetworkError"],
+                platforms,
             ),
             StdModuleFn::new(
                 "text_response",
                 vec![("status", Type::Int), ("body", Type::String)],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::throwing(
                 "serve_tls",
@@ -2437,63 +2626,71 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["NetworkError", "TlsError"],
+                platforms,
             ),
         ]
     }
 
-    fn get_net_http_middleware_functions() -> Vec<StdModuleFn> {
+    fn get_net_http_middleware_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("logger", vec![], Type::Int),
-            StdModuleFn::new("timeout", vec![("ms", Type::Int)], Type::Int),
-            StdModuleFn::new("recover", vec![], Type::Int),
+            StdModuleFn::new("logger", vec![], Type::Int, platforms),
+            StdModuleFn::new("timeout", vec![("ms", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("recover", vec![], Type::Int, platforms),
             StdModuleFn::new(
                 "cors",
                 vec![("origins", Type::Array(Box::new(Type::String)))],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "rate_limit",
                 vec![("requests_per_second", Type::Int)],
                 Type::Int,
+                platforms,
             ),
-            StdModuleFn::new("compress", vec![], Type::Int),
-            StdModuleFn::new("request_id", vec![], Type::Int),
+            StdModuleFn::new("compress", vec![], Type::Int, platforms),
+            StdModuleFn::new("request_id", vec![], Type::Int, platforms),
         ]
     }
 
-    fn get_net_tls_functions() -> Vec<StdModuleFn> {
+    fn get_net_tls_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "connect",
                 vec![("address", Type::String)],
                 Type::Int,
                 vec!["NetworkError", "TlsError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "read",
                 vec![("socket", Type::Int), ("size", Type::Int)],
                 Type::Bytes,
                 vec!["NetworkError", "TlsError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "read_all",
                 vec![("socket", Type::Int)],
                 Type::Bytes,
                 vec!["NetworkError", "TlsError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "write",
                 vec![("socket", Type::Int), ("data", Type::Bytes)],
                 Type::Unit,
                 vec!["NetworkError", "TlsError"],
+                platforms,
             ),
-            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit),
+            StdModuleFn::new("close", vec![("socket", Type::Int)], Type::Unit, platforms),
             StdModuleFn::new(
                 "set_timeout",
                 vec![("socket", Type::Int), ("ms", Type::Int)],
                 Type::Unit,
+                platforms,
             ),
-            StdModuleFn::new("peer_addr", vec![("socket", Type::Int)], Type::String),
+            StdModuleFn::new("peer_addr", vec![("socket", Type::Int)], Type::String, platforms),
             StdModuleFn::throwing(
                 "wrap_listener",
                 vec![
@@ -2503,49 +2700,58 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Int,
                 vec!["TlsError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "accept",
                 vec![("tls_listener", Type::Int)],
                 Type::Int,
                 vec!["NetworkError", "TlsError"],
+                platforms,
             ),
-            StdModuleFn::new("close_listener", vec![("tls_listener", Type::Int)], Type::Unit),
+            StdModuleFn::new("close_listener", vec![("tls_listener", Type::Int)], Type::Unit, platforms),
         ]
     }
 
     fn get_std_module_functions_impl(module: &str) -> Option<Vec<StdModuleFn>> {
+        const ALL_PLATFORMS: &[Platform] = &[Platform::Native, Platform::Edge, Platform::Browser];
+        const NATIVE_ONLY: &[Platform] = &[Platform::Native];
+        const NATIVE_EDGE: &[Platform] = &[Platform::Native, Platform::Edge];
+
         match module {
             "random" => Some(vec![
                 StdModuleFn::new(
                     "random",
                     vec![("min", Type::Int), ("max", Type::Int)],
                     Type::Int,
+                    ALL_PLATFORMS,
                 ),
-                StdModuleFn::new("random_float", vec![], Type::Float),
+                StdModuleFn::new("random_float", vec![], Type::Float, ALL_PLATFORMS),
             ]),
             "io" => Some(vec![
-                StdModuleFn::new("read_line", vec![], Type::String),
-                StdModuleFn::new("read_key", vec![], Type::Int),
-                StdModuleFn::new("clear_screen", vec![], Type::Unit),
+                StdModuleFn::new("read_line", vec![], Type::String, NATIVE_ONLY),
+                StdModuleFn::new("read_key", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("clear_screen", vec![], Type::Unit, NATIVE_ONLY),
                 StdModuleFn::new(
                     "set_cursor",
                     vec![("x", Type::Int), ("y", Type::Int)],
                     Type::Unit,
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("hide_cursor", vec![], Type::Unit),
-                StdModuleFn::new("show_cursor", vec![], Type::Unit),
-                StdModuleFn::new("terminal_width", vec![], Type::Int),
-                StdModuleFn::new("terminal_height", vec![], Type::Int),
+                StdModuleFn::new("hide_cursor", vec![], Type::Unit, NATIVE_ONLY),
+                StdModuleFn::new("show_cursor", vec![], Type::Unit, NATIVE_ONLY),
+                StdModuleFn::new("terminal_width", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("terminal_height", vec![], Type::Int, NATIVE_ONLY),
             ]),
             "threads" => Some(vec![
-                StdModuleFn::new("sleep", vec![("ms", Type::Int)], Type::Unit),
-                StdModuleFn::new("join", vec![], Type::Unit),
+                StdModuleFn::new("sleep", vec![("ms", Type::Int)], Type::Unit, NATIVE_ONLY),
+                StdModuleFn::new("join", vec![], Type::Unit, NATIVE_ONLY),
                 StdModuleFn::generic(
                     "open_channel",
                     vec!["T"],
                     vec![("capacity", Type::Int)],
                     Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "send",
@@ -2558,6 +2764,7 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Int,
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "receive",
@@ -2567,6 +2774,7 @@ impl<'a> TypeChecker<'a> {
                         Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
                     )],
                     Type::Option(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "close",
@@ -2576,30 +2784,35 @@ impl<'a> TypeChecker<'a> {
                         Type::Channel(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
                     )],
                     Type::Unit,
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "with_mutex",
                     vec!["T"],
                     vec![("value", Type::Generic(lasso::Spur::default(), vec![]))],
                     Type::Mutex(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "with_rwlock",
                     vec!["T"],
                     vec![("value", Type::Generic(lasso::Spur::default(), vec![]))],
                     Type::Rwlock(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "with_atomic",
                     vec!["T"],
                     vec![("value", Type::Generic(lasso::Spur::default(), vec![]))],
                     Type::Atomic(Box::new(Type::Generic(lasso::Spur::default(), vec![]))),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_load",
                     vec!["T"],
                     vec![("a", Type::Atomic(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_store",
@@ -2609,6 +2822,7 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Unit,
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_add",
@@ -2618,6 +2832,7 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_sub",
@@ -2627,18 +2842,21 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_inc",
                     vec!["T"],
                     vec![("a", Type::Atomic(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_dec",
                     vec!["T"],
                     vec![("a", Type::Atomic(Box::new(Type::Generic(lasso::Spur::default(), vec![]))))],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_cas",
@@ -2649,6 +2867,7 @@ impl<'a> TypeChecker<'a> {
                         ("new", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Bool,
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_swap",
@@ -2658,6 +2877,7 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_and",
@@ -2667,6 +2887,7 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_or",
@@ -2676,6 +2897,7 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::generic(
                     "atomic_xor",
@@ -2685,29 +2907,31 @@ impl<'a> TypeChecker<'a> {
                         ("value", Type::Generic(lasso::Spur::default(), vec![])),
                     ],
                     Type::Generic(lasso::Spur::default(), vec![]),
+                    NATIVE_ONLY,
                 ),
             ]),
             "datetime" => Some(vec![
-                StdModuleFn::new("now_ms", vec![], Type::Int),
-                StdModuleFn::new("now_s", vec![], Type::Int),
-                StdModuleFn::new("year", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("month", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("day", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("hour", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("minute", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("second", vec![("timestamp_ms", Type::Int)], Type::Int),
-                StdModuleFn::new("day_of_week", vec![("timestamp_ms", Type::Int)], Type::Int),
+                StdModuleFn::new("now_ms", vec![], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("now_s", vec![], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("year", vec![("timestamp_ms", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("month", vec![("timestamp_ms", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("day", vec![("timestamp_ms", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("hour", vec![("timestamp_ms", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("minute", vec![("timestamp_ms", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("second", vec![("timestamp_ms", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("day_of_week", vec![("timestamp_ms", Type::Int)], Type::Int, ALL_PLATFORMS),
                 StdModuleFn::new(
                     "format_date",
                     vec![("timestamp_ms", Type::Int), ("fmt", Type::String)],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
             ]),
             "metrics" => Some(vec![
-                StdModuleFn::new("perf_now", vec![], Type::Int),
-                StdModuleFn::new("elapsed_ms", vec![("start_ns", Type::Int)], Type::Int),
-                StdModuleFn::new("elapsed_us", vec![("start_ns", Type::Int)], Type::Int),
-                StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int),
+                StdModuleFn::new("perf_now", vec![], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("elapsed_ms", vec![("start_ns", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("elapsed_us", vec![("start_ns", Type::Int)], Type::Int, ALL_PLATFORMS),
+                StdModuleFn::new("elapsed_ns", vec![("start_ns", Type::Int)], Type::Int, ALL_PLATFORMS),
             ]),
             "timers" => Some(vec![
                 StdModuleFn::new(
@@ -2725,8 +2949,9 @@ impl<'a> TypeChecker<'a> {
                         ("ms", Type::Int),
                     ],
                     Type::Int,
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("cancel_timeout", vec![("handle", Type::Int)], Type::Unit),
+                StdModuleFn::new("cancel_timeout", vec![("handle", Type::Int)], Type::Unit, NATIVE_ONLY),
                 StdModuleFn::new(
                     "set_interval",
                     vec![
@@ -2742,8 +2967,9 @@ impl<'a> TypeChecker<'a> {
                         ("ms", Type::Int),
                     ],
                     Type::Int,
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("cancel_interval", vec![("handle", Type::Int)], Type::Unit),
+                StdModuleFn::new("cancel_interval", vec![("handle", Type::Int)], Type::Unit, NATIVE_ONLY),
                 StdModuleFn::throwing(
                     "schedule",
                     vec![
@@ -2760,23 +2986,26 @@ impl<'a> TypeChecker<'a> {
                     ],
                     Type::Int,
                     vec!["ScheduleError"],
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("cancel_schedule", vec![("handle", Type::Int)], Type::Unit),
-                StdModuleFn::new("next_run", vec![("handle", Type::Int)], Type::Int),
+                StdModuleFn::new("cancel_schedule", vec![("handle", Type::Int)], Type::Unit, NATIVE_ONLY),
+                StdModuleFn::new("next_run", vec![("handle", Type::Int)], Type::Int, NATIVE_ONLY),
             ]),
             "strings" => Some(vec![
-                StdModuleFn::new("len", vec![("s", Type::String)], Type::Int),
+                StdModuleFn::new("len", vec![("s", Type::String)], Type::Int, ALL_PLATFORMS),
                 StdModuleFn::new(
                     "char_at",
                     vec![("s", Type::String), ("index", Type::Int)],
                     Type::Int,
+                    ALL_PLATFORMS,
                 ),
-                StdModuleFn::new("upper", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("lower", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("upper", vec![("s", Type::String)], Type::String, ALL_PLATFORMS),
+                StdModuleFn::new("lower", vec![("s", Type::String)], Type::String, ALL_PLATFORMS),
                 StdModuleFn::new(
                     "split",
                     vec![("s", Type::String), ("delim", Type::String)],
                     Type::Array(Box::new(Type::String)),
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "concat",
@@ -2785,21 +3014,25 @@ impl<'a> TypeChecker<'a> {
                         ("delim", Type::String),
                     ],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "has",
                     vec![("s", Type::String), ("substr", Type::String)],
                     Type::Bool,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "starts_with",
                     vec![("s", Type::String), ("prefix", Type::String)],
                     Type::Bool,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "ends_with",
                     vec![("s", Type::String), ("suffix", Type::String)],
                     Type::Bool,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "replace",
@@ -2809,6 +3042,7 @@ impl<'a> TypeChecker<'a> {
                         ("new", Type::String),
                     ],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "replace_all",
@@ -2818,9 +3052,10 @@ impl<'a> TypeChecker<'a> {
                         ("new", Type::String),
                     ],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
-                StdModuleFn::new("ltrim", vec![("s", Type::String)], Type::String),
-                StdModuleFn::new("rtrim", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("ltrim", vec![("s", Type::String)], Type::String, ALL_PLATFORMS),
+                StdModuleFn::new("rtrim", vec![("s", Type::String)], Type::String, ALL_PLATFORMS),
                 StdModuleFn::new(
                     "substr",
                     vec![
@@ -2829,6 +3064,7 @@ impl<'a> TypeChecker<'a> {
                         ("end", Type::Int),
                     ],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "lpad",
@@ -2838,6 +3074,7 @@ impl<'a> TypeChecker<'a> {
                         ("char", Type::String),
                     ],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "rpad",
@@ -2847,53 +3084,61 @@ impl<'a> TypeChecker<'a> {
                         ("char", Type::String),
                     ],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "repeat",
                     vec![("s", Type::String), ("n", Type::Int)],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "lines",
                     vec![("s", Type::String)],
                     Type::Array(Box::new(Type::String)),
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "chars",
                     vec![("s", Type::String)],
                     Type::Array(Box::new(Type::String)),
+                    ALL_PLATFORMS,
                 ),
             ]),
             "collections" => Some(vec![]),
-            "collections::arrays" => Some(Self::get_collections_array_functions()),
-            "collections::maps" => Some(Self::get_collections_map_functions()),
+            "collections::arrays" => Some(Self::get_collections_array_functions(ALL_PLATFORMS)),
+            "collections::maps" => Some(Self::get_collections_map_functions(ALL_PLATFORMS)),
             "env" => Some(vec![
-                StdModuleFn::new("getenv", vec![("key", Type::String)], Type::String),
+                StdModuleFn::new("getenv", vec![("key", Type::String)], Type::String, NATIVE_EDGE),
                 StdModuleFn::new(
                     "lookup_env",
                     vec![("key", Type::String)],
                     Type::Option(Box::new(Type::String)),
+                    NATIVE_EDGE,
                 ),
                 StdModuleFn::throwing(
                     "setenv",
                     vec![("key", Type::String), ("value", Type::String)],
                     Type::Unit,
                     vec!["EnvError"],
+                    NATIVE_EDGE,
                 ),
                 StdModuleFn::throwing(
                     "unsetenv",
                     vec![("key", Type::String)],
                     Type::Unit,
                     vec!["EnvError"],
+                    NATIVE_EDGE,
                 ),
                 StdModuleFn::throwing(
                     "clearenv",
                     vec![],
                     Type::Unit,
                     vec!["EnvError"],
+                    NATIVE_EDGE,
                 ),
-                StdModuleFn::new("environ", vec![], Type::Array(Box::new(Type::String))),
-                StdModuleFn::new("expand_env", vec![("s", Type::String)], Type::String),
+                StdModuleFn::new("environ", vec![], Type::Array(Box::new(Type::String)), NATIVE_EDGE),
+                StdModuleFn::new("expand_env", vec![("s", Type::String)], Type::String, NATIVE_EDGE),
             ]),
             "os" => Some(vec![
                 StdModuleFn::throwing(
@@ -2901,164 +3146,190 @@ impl<'a> TypeChecker<'a> {
                     vec![],
                     Type::String,
                     vec!["OSError"],
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("temp_dir", vec![], Type::String),
+                StdModuleFn::new("temp_dir", vec![], Type::String, NATIVE_ONLY),
                 StdModuleFn::throwing(
                     "home_dir",
                     vec![],
                     Type::String,
                     vec!["OSError"],
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::throwing(
                     "cache_dir",
                     vec![],
                     Type::String,
                     vec!["OSError"],
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::throwing(
                     "config_dir",
                     vec![],
                     Type::String,
                     vec!["OSError"],
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::throwing(
                     "executable",
                     vec![],
                     Type::String,
                     vec!["OSError"],
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("pagesize", vec![], Type::Int),
-                StdModuleFn::new("getuid", vec![], Type::Int),
-                StdModuleFn::new("geteuid", vec![], Type::Int),
-                StdModuleFn::new("getgid", vec![], Type::Int),
-                StdModuleFn::new("getegid", vec![], Type::Int),
+                StdModuleFn::new("pagesize", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("getuid", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("geteuid", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("getgid", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("getegid", vec![], Type::Int, NATIVE_ONLY),
                 StdModuleFn::throwing(
                     "getgroups",
                     vec![],
                     Type::Array(Box::new(Type::Int)),
                     vec!["OSError"],
+                    NATIVE_ONLY,
                 ),
             ]),
             "process" => Some(vec![
-                StdModuleFn::new("getpid", vec![], Type::Int),
-                StdModuleFn::new("getppid", vec![], Type::Int),
-                StdModuleFn::new("exit", vec![("code", Type::Int)], Type::Unit),
+                StdModuleFn::new("getpid", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("getppid", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("exit", vec![("code", Type::Int)], Type::Unit, NATIVE_ONLY),
                 StdModuleFn::throwing(
                     "pipe_read",
                     vec![],
                     Type::Int,
                     vec!["ProcessError"],
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("pipe_write", vec![], Type::Int),
+                StdModuleFn::new("pipe_write", vec![], Type::Int, NATIVE_ONLY),
                 StdModuleFn::throwing(
                     "start_process",
                     vec![("name", Type::String), ("args", Type::Array(Box::new(Type::String)))],
                     Type::Int,
                     vec!["ProcessError"],
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::throwing(
                     "find_process",
                     vec![("pid", Type::Int)],
                     Type::Int,
                     vec!["ProcessError"],
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::throwing(
                     "wait",
                     vec![("handle", Type::Int)],
                     Type::Array(Box::new(Type::Int)),
                     vec!["ProcessError"],
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::throwing(
                     "signal",
                     vec![("handle", Type::Int), ("sig", Type::Int)],
                     Type::Unit,
                     vec!["ProcessError"],
+                    NATIVE_ONLY,
                 ),
                 StdModuleFn::throwing(
                     "kill",
                     vec![("handle", Type::Int)],
                     Type::Unit,
                     vec!["ProcessError"],
+                    NATIVE_ONLY,
                 ),
-                StdModuleFn::new("release", vec![("handle", Type::Int)], Type::Unit),
-                StdModuleFn::new("SIGHUP", vec![], Type::Int),
-                StdModuleFn::new("SIGINT", vec![], Type::Int),
-                StdModuleFn::new("SIGQUIT", vec![], Type::Int),
-                StdModuleFn::new("SIGKILL", vec![], Type::Int),
-                StdModuleFn::new("SIGTERM", vec![], Type::Int),
-                StdModuleFn::new("SIGSTOP", vec![], Type::Int),
-                StdModuleFn::new("SIGCONT", vec![], Type::Int),
+                StdModuleFn::new("release", vec![("handle", Type::Int)], Type::Unit, NATIVE_ONLY),
+                StdModuleFn::new("SIGHUP", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("SIGINT", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("SIGQUIT", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("SIGKILL", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("SIGTERM", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("SIGSTOP", vec![], Type::Int, NATIVE_ONLY),
+                StdModuleFn::new("SIGCONT", vec![], Type::Int, NATIVE_ONLY),
             ]),
             "testing" => Some(vec![
                 StdModuleFn::new(
                     "assert",
                     vec![("condition", Type::Bool), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_eq",
                     vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_eq_float",
                     vec![("actual", Type::Float), ("expected", Type::Float), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_eq_string",
                     vec![("actual", Type::String), ("expected", Type::String), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_eq_bool",
                     vec![("actual", Type::Bool), ("expected", Type::Bool), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_neq",
                     vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_neq_string",
                     vec![("actual", Type::String), ("expected", Type::String), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_true",
                     vec![("condition", Type::Bool), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_false",
                     vec![("condition", Type::Bool), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_gt",
                     vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_gte",
                     vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_lt",
                     vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_lte",
                     vec![("actual", Type::Int), ("expected", Type::Int), ("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "fail",
                     vec![("message", Type::String)],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_approx",
@@ -3069,6 +3340,7 @@ impl<'a> TypeChecker<'a> {
                         ("message", Type::String),
                     ],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_contains",
@@ -3078,6 +3350,7 @@ impl<'a> TypeChecker<'a> {
                         ("message", Type::String),
                     ],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_starts_with",
@@ -3087,6 +3360,7 @@ impl<'a> TypeChecker<'a> {
                         ("message", Type::String),
                     ],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "assert_ends_with",
@@ -3096,113 +3370,123 @@ impl<'a> TypeChecker<'a> {
                         ("message", Type::String),
                     ],
                     Type::Unit,
+                    ALL_PLATFORMS,
                 ),
             ]),
-            "fs" => Some(Self::get_fs_functions()),
+            "fs" => Some(Self::get_fs_functions(NATIVE_EDGE)),
             "path" => Some(vec![
                 // Path joining and construction
                 StdModuleFn::new(
                     "join",
                     vec![("parts", Type::Array(Box::new(Type::String)))],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 // Path normalization
-                StdModuleFn::new("normalize", vec![("path", Type::String)], Type::String),
+                StdModuleFn::new("normalize", vec![("path", Type::String)], Type::String, ALL_PLATFORMS),
                 // Path type checks
-                StdModuleFn::new("is_absolute", vec![("path", Type::String)], Type::Bool),
-                StdModuleFn::new("is_relative", vec![("path", Type::String)], Type::Bool),
-                StdModuleFn::new("has_root", vec![("path", Type::String)], Type::Bool),
+                StdModuleFn::new("is_absolute", vec![("path", Type::String)], Type::Bool, ALL_PLATFORMS),
+                StdModuleFn::new("is_relative", vec![("path", Type::String)], Type::Bool, ALL_PLATFORMS),
+                StdModuleFn::new("has_root", vec![("path", Type::String)], Type::Bool, ALL_PLATFORMS),
                 // Path component extraction
-                StdModuleFn::new("dirname", vec![("path", Type::String)], Type::String),
-                StdModuleFn::new("basename", vec![("path", Type::String)], Type::String),
-                StdModuleFn::new("extension", vec![("path", Type::String)], Type::String),
-                StdModuleFn::new("stem", vec![("path", Type::String)], Type::String),
+                StdModuleFn::new("dirname", vec![("path", Type::String)], Type::String, ALL_PLATFORMS),
+                StdModuleFn::new("basename", vec![("path", Type::String)], Type::String, ALL_PLATFORMS),
+                StdModuleFn::new("extension", vec![("path", Type::String)], Type::String, ALL_PLATFORMS),
+                StdModuleFn::new("stem", vec![("path", Type::String)], Type::String, ALL_PLATFORMS),
                 // Path modification
                 StdModuleFn::new(
                     "with_extension",
                     vec![("path", Type::String), ("ext", Type::String)],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
                 // Path component splitting
                 StdModuleFn::new(
                     "components",
                     vec![("path", Type::String)],
                     Type::Array(Box::new(Type::String)),
+                    ALL_PLATFORMS,
                 ),
                 // Platform info
-                StdModuleFn::new("separator", vec![], Type::String),
+                StdModuleFn::new("separator", vec![], Type::String, ALL_PLATFORMS),
                 // Slash conversion
-                StdModuleFn::new("to_slash", vec![("path", Type::String)], Type::String),
-                StdModuleFn::new("from_slash", vec![("path", Type::String)], Type::String),
+                StdModuleFn::new("to_slash", vec![("path", Type::String)], Type::String, ALL_PLATFORMS),
+                StdModuleFn::new("from_slash", vec![("path", Type::String)], Type::String, ALL_PLATFORMS),
                 // Path comparison
                 StdModuleFn::new(
                     "starts_with",
                     vec![("path", Type::String), ("prefix", Type::String)],
                     Type::Bool,
+                    ALL_PLATFORMS,
                 ),
                 StdModuleFn::new(
                     "ends_with",
                     vec![("path", Type::String), ("suffix", Type::String)],
                     Type::Bool,
+                    ALL_PLATFORMS,
                 ),
                 // Path manipulation
                 StdModuleFn::new(
                     "strip_prefix",
                     vec![("path", Type::String), ("prefix", Type::String)],
                     Type::String,
+                    ALL_PLATFORMS,
                 ),
             ]),
             // Encoding module and submodules
             "encoding" => Some(vec![]),
-            "encoding::utf8" => Some(Self::get_encoding_utf8_functions()),
-            "encoding::hex" => Some(Self::get_encoding_hex_functions()),
-            "encoding::base64" => Some(Self::get_encoding_base64_functions()),
-            "encoding::url" => Some(Self::get_encoding_url_functions()),
-            "encoding::json" => Some(Self::get_encoding_json_functions()),
-            "encoding::toml" => Some(Self::get_encoding_toml_functions()),
-            "encoding::yaml" => Some(Self::get_encoding_yaml_functions()),
-            "encoding::binary" => Some(Self::get_encoding_binary_functions()),
+            "encoding::utf8" => Some(Self::get_encoding_utf8_functions(ALL_PLATFORMS)),
+            "encoding::hex" => Some(Self::get_encoding_hex_functions(ALL_PLATFORMS)),
+            "encoding::base64" => Some(Self::get_encoding_base64_functions(ALL_PLATFORMS)),
+            "encoding::url" => Some(Self::get_encoding_url_functions(ALL_PLATFORMS)),
+            "encoding::json" => Some(Self::get_encoding_json_functions(ALL_PLATFORMS)),
+            "encoding::toml" => Some(Self::get_encoding_toml_functions(ALL_PLATFORMS)),
+            "encoding::yaml" => Some(Self::get_encoding_yaml_functions(ALL_PLATFORMS)),
+            "encoding::binary" => Some(Self::get_encoding_binary_functions(ALL_PLATFORMS)),
             // Net module hierarchy - strict: parent modules expose only submodules, not functions
             // Parent modules - no functions, only submodules
             "net" => Some(vec![]),
             "net::tcp" => Some(vec![]),
             "net::http" => Some(vec![]),
             // Leaf modules - specific functions only
-            "net::udp" => Some(Self::get_net_udp_functions()),
-            "net::tcp::server" => Some(Self::get_net_tcp_server_functions()),
-            "net::tcp::client" => Some(Self::get_net_tcp_client_functions()),
-            "net::http::client" => Some(Self::get_net_http_client_functions()),
-            "net::http::server" => Some(Self::get_net_http_server_functions()),
-            "net::http::middleware" => Some(Self::get_net_http_middleware_functions()),
-            "net::tls" => Some(Self::get_net_tls_functions()),
+            "net::udp" => Some(Self::get_net_udp_functions(NATIVE_EDGE)),
+            "net::tcp::server" => Some(Self::get_net_tcp_server_functions(NATIVE_EDGE)),
+            "net::tcp::client" => Some(Self::get_net_tcp_client_functions(NATIVE_EDGE)),
+            "net::http::client" => Some(Self::get_net_http_client_functions(NATIVE_EDGE)),
+            "net::http::server" => Some(Self::get_net_http_server_functions(NATIVE_EDGE)),
+            "net::http::middleware" => Some(Self::get_net_http_middleware_functions(NATIVE_EDGE)),
+            "net::tls" => Some(Self::get_net_tls_functions(NATIVE_EDGE)),
             "db" => Some(vec![]),
-            "db::sqlite" => Some(Self::get_db_sqlite_functions()),
+            "db::sqlite" => Some(Self::get_db_sqlite_functions(NATIVE_EDGE)),
             // Crypto module
-            "crypto" => Some(Self::get_crypto_functions()),
+            "crypto" => Some(Self::get_crypto_functions(NATIVE_EDGE)),
             _ => None,
         }
     }
 
-    fn get_db_sqlite_functions() -> Vec<StdModuleFn> {
+    fn get_db_sqlite_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
             StdModuleFn::throwing(
                 "open",
                 vec![("path", Type::String)],
                 Type::Int,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "open_memory",
                 vec![],
                 Type::Int,
                 vec!["DBError"],
+                platforms,
             ),
-            StdModuleFn::new("close", vec![("db", Type::Int)], Type::Unit),
+            StdModuleFn::new("close", vec![("db", Type::Int)], Type::Unit, platforms),
             StdModuleFn::throwing(
                 "exec",
                 vec![("db", Type::Int), ("sql", Type::String)],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "query",
@@ -3213,63 +3497,74 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Int,
                 vec!["DBError"],
+                platforms,
             ),
-            StdModuleFn::new("row_count", vec![("rows", Type::Int)], Type::Int),
+            StdModuleFn::new("row_count", vec![("rows", Type::Int)], Type::Int, platforms),
             StdModuleFn::new(
                 "row_at",
                 vec![("rows", Type::Int), ("index", Type::Int)],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "get_string",
                 vec![("row", Type::Int), ("col", Type::String)],
                 Type::String,
+                platforms,
             ),
             StdModuleFn::new(
                 "get_int",
                 vec![("row", Type::Int), ("col", Type::String)],
                 Type::Int,
+                platforms,
             ),
             StdModuleFn::new(
                 "get_float",
                 vec![("row", Type::Int), ("col", Type::String)],
                 Type::Float,
+                platforms,
             ),
             StdModuleFn::new(
                 "get_bool",
                 vec![("row", Type::Int), ("col", Type::String)],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "is_null",
                 vec![("row", Type::Int), ("col", Type::String)],
                 Type::Bool,
+                platforms,
             ),
-            StdModuleFn::new("columns", vec![("rows", Type::Int)], Type::String),
-            StdModuleFn::new("column_count", vec![("rows", Type::Int)], Type::Int),
+            StdModuleFn::new("columns", vec![("rows", Type::Int)], Type::String, platforms),
+            StdModuleFn::new("column_count", vec![("rows", Type::Int)], Type::Int, platforms),
             StdModuleFn::throwing(
                 "begin",
                 vec![("db", Type::Int)],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "commit",
                 vec![("db", Type::Int)],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "rollback",
                 vec![("db", Type::Int)],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "prepare",
                 vec![("db", Type::Int), ("sql", Type::String)],
                 Type::Int,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "bind_string",
@@ -3280,6 +3575,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "bind_int",
@@ -3290,6 +3586,7 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "bind_float",
@@ -3300,65 +3597,74 @@ impl<'a> TypeChecker<'a> {
                 ],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "step",
                 vec![("stmt", Type::Int)],
                 Type::Unit,
                 vec!["DBError"],
+                platforms,
             ),
             StdModuleFn::throwing(
                 "step_query",
                 vec![("stmt", Type::Int)],
                 Type::Int,
                 vec!["DBError"],
+                platforms,
             ),
-            StdModuleFn::new("reset", vec![("stmt", Type::Int)], Type::Unit),
-            StdModuleFn::new("finalize", vec![("stmt", Type::Int)], Type::Unit),
-            StdModuleFn::new("changes", vec![("db", Type::Int)], Type::Int),
-            StdModuleFn::new("last_insert_id", vec![("db", Type::Int)], Type::Int),
+            StdModuleFn::new("reset", vec![("stmt", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("finalize", vec![("stmt", Type::Int)], Type::Unit, platforms),
+            StdModuleFn::new("changes", vec![("db", Type::Int)], Type::Int, platforms),
+            StdModuleFn::new("last_insert_id", vec![("db", Type::Int)], Type::Int, platforms),
         ]
     }
 
-    fn get_crypto_functions() -> Vec<StdModuleFn> {
+    fn get_crypto_functions(platforms: &'static [Platform]) -> Vec<StdModuleFn> {
         vec![
-            StdModuleFn::new("md5", vec![("data", Type::Bytes)], Type::Bytes),
-            StdModuleFn::new("md5_hex", vec![("data", Type::Bytes)], Type::String),
-            StdModuleFn::new("sha1", vec![("data", Type::Bytes)], Type::Bytes),
-            StdModuleFn::new("sha1_hex", vec![("data", Type::Bytes)], Type::String),
-            StdModuleFn::new("sha256", vec![("data", Type::Bytes)], Type::Bytes),
-            StdModuleFn::new("sha256_hex", vec![("data", Type::Bytes)], Type::String),
-            StdModuleFn::new("sha512", vec![("data", Type::Bytes)], Type::Bytes),
-            StdModuleFn::new("sha512_hex", vec![("data", Type::Bytes)], Type::String),
+            StdModuleFn::new("md5", vec![("data", Type::Bytes)], Type::Bytes, platforms),
+            StdModuleFn::new("md5_hex", vec![("data", Type::Bytes)], Type::String, platforms),
+            StdModuleFn::new("sha1", vec![("data", Type::Bytes)], Type::Bytes, platforms),
+            StdModuleFn::new("sha1_hex", vec![("data", Type::Bytes)], Type::String, platforms),
+            StdModuleFn::new("sha256", vec![("data", Type::Bytes)], Type::Bytes, platforms),
+            StdModuleFn::new("sha256_hex", vec![("data", Type::Bytes)], Type::String, platforms),
+            StdModuleFn::new("sha512", vec![("data", Type::Bytes)], Type::Bytes, platforms),
+            StdModuleFn::new("sha512_hex", vec![("data", Type::Bytes)], Type::String, platforms),
             StdModuleFn::new(
                 "hmac_sha256",
                 vec![("key", Type::Bytes), ("data", Type::Bytes)],
                 Type::Bytes,
+                platforms,
             ),
             StdModuleFn::new(
                 "hmac_sha256_hex",
                 vec![("key", Type::Bytes), ("data", Type::Bytes)],
                 Type::String,
+                platforms,
             ),
             StdModuleFn::new(
                 "hmac_sha512",
                 vec![("key", Type::Bytes), ("data", Type::Bytes)],
                 Type::Bytes,
+                platforms,
             ),
             StdModuleFn::new(
                 "hmac_sha512_hex",
                 vec![("key", Type::Bytes), ("data", Type::Bytes)],
                 Type::String,
+                platforms,
             ),
             StdModuleFn::new(
                 "hmac_verify_sha256",
                 vec![("key", Type::Bytes), ("data", Type::Bytes), ("mac", Type::Bytes)],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "hmac_verify_sha512",
                 vec![("key", Type::Bytes), ("data", Type::Bytes), ("mac", Type::Bytes)],
                 Type::Bool,
+                platforms,
             ),
             StdModuleFn::new(
                 "pbkdf2_sha256",
@@ -3369,8 +3675,9 @@ impl<'a> TypeChecker<'a> {
                     ("key_len", Type::Int),
                 ],
                 Type::Bytes,
+                platforms,
             ),
-            StdModuleFn::new("random_bytes", vec![("n", Type::Int)], Type::Bytes),
+            StdModuleFn::new("random_bytes", vec![("n", Type::Int)], Type::Bytes, platforms),
         ]
     }
 
@@ -4351,7 +4658,17 @@ pub fn check_with_types(
     source_dir: Option<PathBuf>,
     package_manager: Option<&naml_pkg::PackageManager>,
 ) -> TypeCheckResult {
-    let mut checker = TypeChecker::new(interner, source_dir, package_manager);
+    check_with_types_for_target(file, interner, source_dir, package_manager, CompilationTarget::Native)
+}
+
+pub fn check_with_types_for_target(
+    file: &SourceFile,
+    interner: &mut Rodeo,
+    source_dir: Option<PathBuf>,
+    package_manager: Option<&naml_pkg::PackageManager>,
+    target: CompilationTarget,
+) -> TypeCheckResult {
+    let mut checker = TypeChecker::new(interner, source_dir, package_manager, target);
     checker.collect_definitions(file);
     checker.validate_interface_implementations();
     checker.check_items(file);

@@ -6,6 +6,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use lasso::Rodeo;
 
+use crate::ast::CompilationTarget;
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::{BackendModule, EnumDef, EnumVariantDef, JitCompiler};
 use crate::typechecker::TypeAnnotations;
@@ -40,6 +41,7 @@ impl<'a> JitCompiler<'a> {
         module: BackendModule,
         release: bool,
         unsafe_mode: bool,
+        target: CompilationTarget,
     ) -> Result<Self, CodegenError> {
         let ctx = module.make_context();
 
@@ -90,6 +92,7 @@ impl<'a> JitCompiler<'a> {
             inline_functions: HashMap::new(),
             release_mode: release,
             unsafe_mode,
+            target,
         };
         compiler.declare_runtime_functions()?;
         compiler.register_builtin_exceptions();
@@ -102,6 +105,7 @@ impl<'a> JitCompiler<'a> {
         source_info: &'a crate::source::SourceFile,
         release: bool,
         unsafe_mode: bool,
+        target: CompilationTarget,
     ) -> Result<Self, CodegenError> {
         let isa = create_isa(false, release)?;
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
@@ -2148,7 +2152,7 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_db_sqlite_last_insert_id", crate::runtime::naml_db_sqlite_last_insert_id as *const u8);
 
         let module = BackendModule::Jit(JITModule::new(builder));
-        Self::build_compiler(interner, annotations, source_info, module, release, unsafe_mode)
+        Self::build_compiler(interner, annotations, source_info, module, release, unsafe_mode, target)
     }
 
     pub fn new_aot(
@@ -2157,6 +2161,7 @@ impl<'a> JitCompiler<'a> {
         source_info: &'a crate::source::SourceFile,
         release: bool,
         unsafe_mode: bool,
+        target: CompilationTarget,
     ) -> Result<Self, CodegenError> {
         let isa = create_isa(true, release)?;
         let obj_builder = ObjectBuilder::new(
@@ -2166,6 +2171,6 @@ impl<'a> JitCompiler<'a> {
         )
         .map_err(|e| CodegenError::JitCompile(format!("Failed to create ObjectBuilder: {}", e)))?;
         let module = BackendModule::Object(ObjectModule::new(obj_builder));
-        Self::build_compiler(interner, annotations, source_info, module, release, unsafe_mode)
+        Self::build_compiler(interner, annotations, source_info, module, release, unsafe_mode, target)
     }
 }

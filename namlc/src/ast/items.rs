@@ -68,6 +68,24 @@ pub enum Platform {
     All,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CompilationTarget {
+    Native,
+    Edge,
+    Browser,
+}
+
+impl CompilationTarget {
+    pub fn matches_platform(&self, platform: &Platform) -> bool {
+        match platform {
+            Platform::All => true,
+            Platform::Native => *self == CompilationTarget::Native,
+            Platform::Edge => *self == CompilationTarget::Edge,
+            Platform::Browser => *self == CompilationTarget::Browser,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Platforms {
     pub platforms: Vec<Platform>,

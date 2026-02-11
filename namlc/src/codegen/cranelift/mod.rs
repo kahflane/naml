@@ -97,7 +97,7 @@ impl std::ops::DerefMut for BackendModule {
     }
 }
 
-use crate::ast::{Expression, FunctionItem, Statement};
+use crate::ast::{CompilationTarget, Expression, FunctionItem, Statement};
 use crate::codegen::cranelift::heap::HeapType;
 use crate::typechecker::TypeAnnotations;
 
@@ -309,6 +309,7 @@ pub struct JitCompiler<'a> {
     inline_functions: HashMap<String, InlineFuncInfo>,
     release_mode: bool,
     unsafe_mode: bool,
+    target: CompilationTarget,
 }
 
 #[cfg(test)]

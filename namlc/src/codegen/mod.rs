@@ -15,7 +15,7 @@ pub mod cranelift;
 use lasso::Rodeo;
 use thiserror::Error;
 
-use crate::ast::SourceFile;
+use crate::ast::{CompilationTarget, SourceFile};
 use crate::source::SourceFile as SourceInfo;
 use crate::typechecker::{ImportedModule, TypeAnnotations};
 
@@ -42,8 +42,9 @@ pub fn compile_and_run(
     source_info: &SourceInfo,
     release: bool,
     unsafe_mode: bool,
+    target: CompilationTarget,
 ) -> Result<(), CodegenError> {
-    let mut jit = cranelift::JitCompiler::new(interner, annotations, source_info, release, unsafe_mode)?;
+    let mut jit = cranelift::JitCompiler::new(interner, annotations, source_info, release, unsafe_mode, target)?;
     for module in imported_modules {
         jit.compile_module_source(&module.source_text)?;
     }
@@ -60,9 +61,10 @@ pub fn compile_to_object(
     output: &std::path::Path,
     release: bool,
     unsafe_mode: bool,
+    target: CompilationTarget,
 ) -> Result<(), CodegenError> {
     let mut compiler = cranelift::JitCompiler::new_aot(
-        interner, annotations, source_info, release, unsafe_mode,
+        interner, annotations, source_info, release, unsafe_mode, target,
     )?;
     for module in imported_modules {
         compiler.compile_module_source(&module.source_text)?;
@@ -106,6 +108,7 @@ mod tests {
             &output,
             false,
             false,
+            CompilationTarget::Native,
         )
         .expect("AOT compilation failed");
 

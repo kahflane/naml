@@ -12,7 +12,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use namlc::{check_with_types, compile_and_run, compile_to_object, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
+use namlc::{check_with_types, check_with_types_for_target, compile_and_run, compile_to_object, parse, tokenize, AstArena, CompilationTarget, DiagnosticReporter, SourceFile};
 
 #[derive(Parser)]
 #[command(name = "naml")]
@@ -146,10 +146,23 @@ fn run_file(file: &PathBuf, cached: bool, release: bool, unsafe_mode: bool) {
         &source_file,
         release,
         unsafe_mode,
+        CompilationTarget::Native,
     ) {
         Ok(()) => {}
         Err(e) => {
             eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn parse_target(target: &str) -> CompilationTarget {
+    match target {
+        "native" => CompilationTarget::Native,
+        "edge" => CompilationTarget::Edge,
+        "browser" => CompilationTarget::Browser,
+        _ => {
+            eprintln!("Error: unknown target '{}'. Valid targets: native, edge, browser", target);
             std::process::exit(1);
         }
     }
@@ -162,8 +175,10 @@ fn build_project(
     release: bool,
     unsafe_mode: bool,
 ) {
-    if target != "native" {
-        eprintln!("Error: only 'native' target is currently supported");
+    let compilation_target = parse_target(target);
+
+    if compilation_target != CompilationTarget::Native {
+        eprintln!("Error: '{}' target is not yet implemented", target);
         std::process::exit(1);
     }
 
@@ -196,11 +211,12 @@ fn build_project(
     let source_dir = std::path::Path::new(&file_name).parent().map(|p| p.to_path_buf());
     let pkg_manager = create_package_manager(source_dir.as_deref());
 
-    let type_result = check_with_types(
+    let type_result = check_with_types_for_target(
         &parse_result.ast,
         &mut interner,
         source_dir,
         pkg_manager.as_ref(),
+        compilation_target,
     );
 
     if !type_result.errors.is_empty() {
@@ -220,6 +236,7 @@ fn build_project(
         &obj_file,
         release,
         unsafe_mode,
+        compilation_target,
     ) {
         Ok(()) => {}
         Err(e) => {
