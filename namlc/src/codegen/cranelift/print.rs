@@ -147,6 +147,16 @@ pub fn print_arg(
                     let func_ref = rt_func_ref(ctx, builder, print_fn)?;
                     builder.ins().call(func_ref, &[val]);
                 }
+                Some(Type::Map(_, val_type)) => {
+                    let print_fn = match val_type.as_ref() {
+                        Type::String => "naml_map_print_string_values",
+                        Type::Float => "naml_map_print_float_values",
+                        Type::Bool => "naml_map_print_bool_values",
+                        _ => "naml_map_print",
+                    };
+                    let func_ref = rt_func_ref(ctx, builder, print_fn)?;
+                    builder.ins().call(func_ref, &[val]);
+                }
                 _ => {
                     // Default: check Cranelift value type for F64, otherwise int
                     let val_type = builder.func.dfg.value_type(val);

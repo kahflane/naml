@@ -1,0 +1,35 @@
+struct Counter {
+    value: int
+}
+
+pub fn (self: Counter) get() -> int {
+    return self.value;
+}
+
+pub fn (self: Counter) increment() {
+    self.value = self.value + 1;
+}
+
+struct Point {
+    x: int,
+    y: int
+}
+
+pub fn (self: Point) sum() -> int {
+    return self.x + self.y;
+}
+
+fn main() {
+    var c: Counter = Counter { value: 0 };
+    if (c.get() != 0) { panic("initial"); }
+
+    c.increment();
+    c.increment();
+    c.increment();
+    if (c.get() != 3) { panic("after increment"); }
+
+    var p: Point = Point { x: 3, y: 4 };
+    if (p.sum() != 7) { panic("point sum"); }
+
+    println("OK");
+}

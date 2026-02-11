@@ -1,0 +1,29 @@
+use std::collections::arrays::{push, count};
+
+fn main() {
+    var nums: [int] = [10, 20, 30];
+    if (count(nums) != 3) { panic("initial count"); }
+
+    push(nums, 40);
+    if (count(nums) != 4) { panic("after push"); }
+
+    var first: int = nums[0]!;
+    if (first != 10) { panic("index 0"); }
+
+    var last: int = nums[3]!;
+    if (last != 40) { panic("index 3"); }
+
+    var sum: int = 0;
+    for (n: int in nums) {
+        sum = sum + n;
+    }
+    if (sum != 100) { panic("sum"); }
+
+    var idx_sum: int = 0;
+    for (i: int, n: int in nums) {
+        idx_sum = idx_sum + i;
+    }
+    if (idx_sum != 6) { panic("idx sum"); }
+
+    println("OK");
+}

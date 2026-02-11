@@ -1,0 +1,27 @@
+fn fib(n: int) -> int {
+    if (n <= 1) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn greet(name: string) -> string {
+    return fmt("Hello, {}", name);
+}
+
+fn main() {
+    var result: int = fib(10);
+    println(result);
+    if (result != 55) { panic("fib(10)"); }
+
+    if (add(3, 4) != 7) { panic("add"); }
+
+    var msg: string = greet("World");
+    if (msg != "Hello, World") { panic("greet"); }
+
+    println("OK");
+}

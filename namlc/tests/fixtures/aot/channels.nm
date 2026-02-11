@@ -1,0 +1,33 @@
+use std::threads::*;
+
+fn main() {
+    var ch: channel<int> = open_channel(5);
+
+    send(ch, 10);
+    send(ch, 20);
+    send(ch, 30);
+
+    var v1: int = receive(ch) ?? 0;
+    var v2: int = receive(ch) ?? 0;
+    var v3: int = receive(ch) ?? 0;
+
+    if (v1 != 10) { panic("v1"); }
+    if (v2 != 20) { panic("v2"); }
+    if (v3 != 30) { panic("v3"); }
+
+    var i: int = 0;
+    while (i < 5) {
+        send(ch, i * 10);
+        i = i + 1;
+    }
+    var sum: int = 0;
+    i = 0;
+    while (i < 5) {
+        sum = sum + (receive(ch) ?? 0);
+        i = i + 1;
+    }
+    if (sum != 100) { panic(fmt("loop sum expected 100, got {}", sum)); }
+
+    close(ch);
+    println("OK");
+}

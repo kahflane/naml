@@ -1,0 +1,7 @@
+use std::datetime::*;
+
+fn main() {
+    var ms: int = now_ms();
+    var positive: bool = ms > 0;
+    println(positive);
+}

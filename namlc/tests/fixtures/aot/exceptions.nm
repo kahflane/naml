@@ -1,0 +1,27 @@
+exception DivideByZero {
+    dividend: int,
+}
+
+fn divide(a: int, b: int) -> int throws DivideByZero {
+    if (b == 0) {
+        var ex: DivideByZero = DivideByZero("cannot divide by zero");
+        ex.dividend = a;
+        throw ex;
+    }
+    return a / b;
+}
+
+fn main() {
+    var ok: int = divide(10, 2) catch e { };
+    if (ok != 5) { panic("normal divide"); }
+
+    var caught: int = divide(10, 0) catch e {
+        println(e.message);
+    };
+    if (caught != 0) { panic("caught default"); }
+
+    var tried: int = try divide(10, 0) ?? -1;
+    if (tried != -1) { panic("try default"); }
+
+    println("OK");
+}

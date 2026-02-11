@@ -1,0 +1,16 @@
+fn main() {
+    var name: string = "World";
+    var greeting: string = fmt("Hello, {}", name);
+    if (greeting != "Hello, World") { panic("fmt"); }
+
+    var combined: string = fmt("{} and {}", "foo", "bar");
+    if (combined != "foo and bar") { panic("concat"); }
+
+    var num_str: string = fmt("{}", 42);
+    if (num_str != "42") { panic("int fmt"); }
+
+    var multi: string = fmt("{} + {} = {}", 1, 2, 3);
+    if (multi != "1 + 2 = 3") { panic("multi fmt"); }
+
+    println("OK");
+}

@@ -65,6 +65,9 @@ fn main() {
         "eve": 88
     };
     println("Scores:", scores);
+    println("Alice Score: ", scores["alice"]!);
+    scores["alice"] = 96;
+    println("Alice Score: ", scores["alice"]!);
     println("maps::count:", maps::count(scores));
     assert_eq(maps::count(scores), 5, "scores map count should be 5");
 
@@ -109,7 +112,7 @@ fn main() {
     var sum_scores: int = maps::fold(scores, 0, fn(acc: int, k: string, v: int) -> int { return acc + v; });
     print("maps::fold (sum): ");
     println(sum_scores);
-    assert_eq(sum_scores, 440, "fold sum should be 440");
+    assert_eq(sum_scores, 441, "fold sum should be 441");
 
     // ============================================
     // Combining Maps

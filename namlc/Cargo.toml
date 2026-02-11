@@ -35,6 +35,7 @@ cranelift-frontend.workspace = true
 cranelift-jit.workspace = true
 cranelift-module.workspace = true
 cranelift-native.workspace = true
+cranelift-object.workspace = true
 
 ##
 ## Error handling
@@ -130,6 +131,7 @@ naml-pkg.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+tempfile.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true

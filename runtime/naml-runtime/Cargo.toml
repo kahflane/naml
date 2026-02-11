@@ -1,0 +1,39 @@
+##
+## naml-runtime - Runtime static library for AOT-compiled naml programs
+##
+## Produces a static library (libnaml_runtime.a) containing all runtime
+## functions needed by naml programs compiled with `naml build`.
+##
+
+[package]
+name = "naml-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Runtime static library for AOT-compiled naml programs"
+
+[lib]
+name = "naml_runtime"
+crate-type = ["staticlib"]
+
+[dependencies]
+naml-std-core.workspace = true
+naml-std-random.workspace = true
+naml-std-io.workspace = true
+naml-std-threads.workspace = true
+naml-std-datetime.workspace = true
+naml-std-metrics.workspace = true
+naml-std-strings.workspace = true
+naml-std-collections.workspace = true
+naml-std-fs.workspace = true
+naml-std-path.workspace = true
+naml-std-encoding.workspace = true
+naml-std-net.workspace = true
+naml-std-env.workspace = true
+naml-std-os.workspace = true
+naml-std-process.workspace = true
+naml-std-testing.workspace = true
+naml-std-sqlite3.workspace = true
+naml-std-timers.workspace = true
+naml-std-crypto.workspace = true

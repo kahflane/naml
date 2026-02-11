@@ -1,0 +1,26 @@
+struct Box<T> {
+    value: T
+}
+
+struct Pair<A, B> {
+    first: A,
+    second: B
+}
+
+fn main() {
+    var int_box: Box<int> = Box { value: 42 };
+    if (int_box.value != 42) { panic("Box<int>"); }
+
+    var str_box: Box<string> = Box { value: "hello" };
+    if (str_box.value != "hello") { panic("Box<string>"); }
+
+    var pair: Pair<int, string> = Pair { first: 1, second: "one" };
+    if (pair.first != 1) { panic("Pair.first"); }
+    if (pair.second != "one") { panic("Pair.second"); }
+
+    var nested: Box<Pair<int, int>> = Box { value: Pair { first: 10, second: 20 } };
+    if (nested.value.first != 10) { panic("nested.first"); }
+    if (nested.value.second != 20) { panic("nested.second"); }
+
+    println("OK");
+}

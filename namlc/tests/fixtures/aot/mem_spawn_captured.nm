@@ -1,0 +1,25 @@
+use std::threads::*;
+
+fn main() {
+    var ch: channel<int> = open_channel(10);
+    var msg: string = "captured";
+
+    spawn {
+        var local: string = fmt("inside: {}", msg);
+        send(ch, 1);
+    };
+
+    spawn {
+        var local: string = fmt("also: {}", msg);
+        send(ch, 2);
+    };
+
+    join();
+
+    var v1: int = receive(ch) ?? 0;
+    var v2: int = receive(ch) ?? 0;
+    if (v1 + v2 != 3) { panic("spawn results"); }
+
+    close(ch);
+    println("OK");
+}

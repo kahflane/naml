@@ -1,0 +1,19 @@
+use std::collections::arrays::{push, count};
+
+fn main() {
+    var arr: [string] = [];
+    var i: int = 0;
+    while (i < 500) {
+        push(arr, fmt("str-{}", i));
+        i = i + 1;
+    }
+    if (count(arr) != 500) { panic("count"); }
+
+    var total_len: int = 0;
+    for (s: string in arr) {
+        total_len = total_len + 1;
+    }
+    if (total_len != 500) { panic("iteration"); }
+
+    println("OK");
+}

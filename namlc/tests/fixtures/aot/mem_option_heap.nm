@@ -1,0 +1,13 @@
+fn main() {
+    var opt: option<string> = none;
+    var i: int = 0;
+    while (i < 1000) {
+        if (i % 2 == 0) {
+            opt = some(fmt("even {}", i));
+        } else {
+            opt = none;
+        }
+        i = i + 1;
+    }
+    println("OK");
+}

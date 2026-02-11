@@ -1,0 +1,17 @@
+fn main() {
+    var i: int = 42;
+    var f: float = i as float;
+    if (f < 41.9 or f > 42.1) { panic("int to float"); }
+
+    var f2: float = 3.7;
+    var i2: int = f2 as int;
+    if (i2 != 3) { panic("float to int"); }
+
+    var num_str: string = fmt("{}", 123);
+    if (num_str != "123") { panic("int to string via fmt"); }
+
+    var float_str: string = fmt("{}", 3.14);
+    if (float_str != "3.14") { panic("float to string via fmt"); }
+
+    println("OK");
+}

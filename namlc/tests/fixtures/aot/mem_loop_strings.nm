@@ -1,0 +1,9 @@
+fn main() {
+    var i: int = 0;
+    while (i < 1000) {
+        var s: string = fmt("iteration {}", i);
+        var s2: string = fmt("extra {}", i);
+        i = i + 1;
+    }
+    println("OK");
+}

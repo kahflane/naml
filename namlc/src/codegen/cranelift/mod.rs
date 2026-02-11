@@ -49,8 +49,49 @@ use indexmap::IndexMap;
 use cranelift::prelude::{Block, Variable};
 use cranelift_codegen as codegen;
 use cranelift_jit::JITModule;
-use cranelift_module::FuncId;
+use cranelift_module::{FuncId, Module};
+use cranelift_object::ObjectModule;
 use lasso::{Rodeo, Spur};
+
+pub enum BackendModule {
+    Jit(JITModule),
+    Object(ObjectModule),
+}
+
+impl BackendModule {
+    pub fn as_jit_mut(&mut self) -> Option<&mut JITModule> {
+        match self {
+            BackendModule::Jit(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    pub fn as_object(self) -> Option<ObjectModule> {
+        match self {
+            BackendModule::Object(m) => Some(m),
+            _ => None,
+        }
+    }
+}
+
+impl std::ops::Deref for BackendModule {
+    type Target = dyn Module;
+    fn deref(&self) -> &(dyn Module + 'static) {
+        match self {
+            BackendModule::Jit(m) => m,
+            BackendModule::Object(m) => m,
+        }
+    }
+}
+
+impl std::ops::DerefMut for BackendModule {
+    fn deref_mut(&mut self) -> &mut (dyn Module + 'static) {
+        match self {
+            BackendModule::Jit(m) => m,
+            BackendModule::Object(m) => m,
+        }
+    }
+}
 
 use crate::ast::{Expression, FunctionItem, Statement};
 use crate::codegen::cranelift::heap::HeapType;
@@ -118,7 +159,7 @@ unsafe impl Send for InlineFuncInfo {}
 
 pub struct CompileContext<'a> {
     interner: &'a Rodeo,
-    module: &'a mut JITModule,
+    module: &'a mut dyn Module,
     functions: &'a HashMap<String, FuncId>,
     runtime_funcs: &'a HashMap<String, FuncId>,
     struct_defs: &'a HashMap<Spur, StructDef>,
@@ -244,7 +285,7 @@ pub struct JitCompiler<'a> {
     interner: &'a Rodeo,
     annotations: &'a TypeAnnotations,
     source_info: &'a crate::source::SourceFile,
-    module: JITModule,
+    module: BackendModule,
     ctx: codegen::Context,
     functions: HashMap<String, FuncId>,
     runtime_funcs: HashMap<String, FuncId>,

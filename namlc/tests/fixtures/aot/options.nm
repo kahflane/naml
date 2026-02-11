@@ -1,0 +1,23 @@
+fn main() {
+    var s: option<int> = some(42);
+    var n: option<int> = none;
+
+    var val: int = s!;
+    if (val != 42) { panic("unwrap"); }
+
+    var def: int = n ?? 99;
+    if (def != 99) { panic("coalesce none"); }
+
+    var keep: int = s ?? 0;
+    if (keep != 42) { panic("coalesce some"); }
+
+    var opt_str: option<string> = some("hello");
+    var str_val: string = opt_str!;
+    if (str_val != "hello") { panic("string unwrap"); }
+
+    var none_str: option<string> = none;
+    var str_def: string = none_str ?? "default";
+    if (str_def != "default") { panic("string coalesce"); }
+
+    println("OK");
+}

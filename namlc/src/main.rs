@@ -12,7 +12,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use namlc::{check_with_types, compile_and_run, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
+use namlc::{check_with_types, compile_and_run, compile_to_object, parse, tokenize, AstArena, DiagnosticReporter, SourceFile};
 
 #[derive(Parser)]
 #[command(name = "naml")]
@@ -34,10 +34,15 @@ enum Commands {
         r#unsafe: bool,
     },
     Build {
+        file: PathBuf,
+        #[arg(short, long, help = "Output binary path")]
+        output: Option<PathBuf>,
         #[arg(long, default_value = "native")]
         target: String,
         #[arg(long)]
         release: bool,
+        #[arg(long, help = "Unsafe mode: disable array bounds checking")]
+        r#unsafe: bool,
     },
     Check {
         path: Option<PathBuf>,
@@ -70,8 +75,8 @@ fn main() {
         Commands::Run { file, cached, release, r#unsafe } => {
             run_file(&file, cached, release, r#unsafe);
         }
-        Commands::Build { target, release } => {
-            build_project(&target, release);
+        Commands::Build { file, output, target, release, r#unsafe } => {
+            build_project(&file, output.as_deref(), &target, release, r#unsafe);
         }
         Commands::Check { path } => {
             check_code(path.as_deref());
@@ -150,9 +155,105 @@ fn run_file(file: &PathBuf, cached: bool, release: bool, unsafe_mode: bool) {
     }
 }
 
-fn build_project(target: &str, release: bool) {
-    println!("Building for target: {} (release: {})", target, release);
-    println!("(build not yet implemented)");
+fn build_project(
+    file: &PathBuf,
+    output: Option<&std::path::Path>,
+    target: &str,
+    release: bool,
+    unsafe_mode: bool,
+) {
+    if target != "native" {
+        eprintln!("Error: only 'native' target is currently supported");
+        std::process::exit(1);
+    }
+
+    if file.extension().map(|e| e != "nm").unwrap_or(true) {
+        eprintln!("Error: expected a .nm file, got '{}'", file.display());
+        std::process::exit(1);
+    }
+
+    let source_text = match std::fs::read_to_string(file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let file_name = file.display().to_string();
+    let source_file = SourceFile::new(file_name.clone(), source_text.clone());
+    let (tokens, mut interner) = tokenize(&source_text);
+
+    let arena = AstArena::new();
+    let parse_result = parse(&tokens, &source_text, &arena);
+
+    if !parse_result.errors.is_empty() {
+        let reporter = DiagnosticReporter::new(&source_file);
+        reporter.report_parse_errors(&parse_result.errors);
+        std::process::exit(1);
+    }
+
+    let source_dir = std::path::Path::new(&file_name).parent().map(|p| p.to_path_buf());
+    let pkg_manager = create_package_manager(source_dir.as_deref());
+
+    let type_result = check_with_types(
+        &parse_result.ast,
+        &mut interner,
+        source_dir,
+        pkg_manager.as_ref(),
+    );
+
+    if !type_result.errors.is_empty() {
+        let reporter = DiagnosticReporter::new(&source_file);
+        reporter.report_type_errors(&type_result.errors);
+        std::process::exit(1);
+    }
+
+    let obj_file = std::env::temp_dir().join("naml_build.o");
+
+    match compile_to_object(
+        &parse_result.ast,
+        &interner,
+        &type_result.annotations,
+        &type_result.imported_modules,
+        &source_file,
+        &obj_file,
+        release,
+        unsafe_mode,
+    ) {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("Compilation error: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    let output_path = output.map(|p| p.to_path_buf()).unwrap_or_else(|| {
+        let stem = file.file_stem().unwrap_or_default();
+        PathBuf::from(stem)
+    });
+
+    let runtime_lib = match namlc::linker::find_runtime_lib() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            let _ = std::fs::remove_file(&obj_file);
+            std::process::exit(1);
+        }
+    };
+
+    match namlc::linker::link(&obj_file, &output_path, &runtime_lib) {
+        Ok(()) => {
+            println!("Built {}", output_path.display());
+        }
+        Err(e) => {
+            eprintln!("Link error: {}", e);
+            let _ = std::fs::remove_file(&obj_file);
+            std::process::exit(1);
+        }
+    }
+
+    let _ = std::fs::remove_file(&obj_file);
 }
 
 fn check_code(path: Option<&std::path::Path>) {

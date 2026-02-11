@@ -23,6 +23,7 @@ pub mod ast;
 pub mod codegen;
 pub mod diagnostic;
 pub mod lexer;
+pub mod linker;
 pub mod parser;
 pub mod runtime;
 pub mod source;
@@ -30,6 +31,7 @@ pub mod typechecker;
 
 pub use ast::AstArena;
 pub use codegen::compile_and_run;
+pub use codegen::compile_to_object;
 pub use diagnostic::DiagnosticReporter;
 pub use lexer::tokenize;
 pub use parser::parse;

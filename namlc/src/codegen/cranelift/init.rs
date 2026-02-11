@@ -4,13 +4,97 @@ use indexmap::IndexMap;
 use cranelift::prelude::*;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::Module;
-use lasso::{Rodeo, Spur};
+use cranelift_object::{ObjectBuilder, ObjectModule};
+use lasso::Rodeo;
 
 use crate::codegen::CodegenError;
-use crate::codegen::cranelift::{EnumDef, EnumVariantDef, JitCompiler};
+use crate::codegen::cranelift::{BackendModule, EnumDef, EnumVariantDef, JitCompiler};
 use crate::typechecker::TypeAnnotations;
 
+fn create_isa(pic: bool) -> Result<cranelift_codegen::isa::OwnedTargetIsa, CodegenError> {
+    let mut flag_builder = settings::builder();
+    flag_builder.set("use_colocated_libcalls", "false").unwrap();
+    flag_builder
+        .set("is_pic", if pic { "true" } else { "false" })
+        .unwrap();
+    flag_builder.set("opt_level", "speed").unwrap();
+    flag_builder
+        .set("preserve_frame_pointers", "false")
+        .unwrap();
+
+    let isa_builder = cranelift_native::builder().map_err(|e| {
+        CodegenError::JitCompile(format!("Failed to create ISA builder: {}", e))
+    })?;
+
+    isa_builder
+        .finish(settings::Flags::new(flag_builder))
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to create ISA: {}", e)))
+}
+
 impl<'a> JitCompiler<'a> {
+    fn build_compiler(
+        interner: &'a Rodeo,
+        annotations: &'a TypeAnnotations,
+        source_info: &'a crate::source::SourceFile,
+        module: BackendModule,
+        release: bool,
+        unsafe_mode: bool,
+    ) -> Result<Self, CodegenError> {
+        let ctx = module.make_context();
+
+        let mut enum_defs = HashMap::new();
+        enum_defs.insert(
+            "option".to_string(),
+            EnumDef {
+                name: "option".to_string(),
+                variants: vec![
+                    EnumVariantDef {
+                        name: "none".to_string(),
+                        tag: 0,
+                        field_types: vec![],
+                        data_offset: 8,
+                    },
+                    EnumVariantDef {
+                        name: "some".to_string(),
+                        tag: 1,
+                        field_types: vec![crate::ast::NamlType::Int],
+                        data_offset: 8,
+                    },
+                ],
+                size: 16,
+            },
+        );
+
+        let mut compiler = Self {
+            interner,
+            annotations,
+            source_info,
+            module,
+            ctx,
+            functions: HashMap::new(),
+            runtime_funcs: HashMap::new(),
+            struct_defs: HashMap::new(),
+            enum_defs,
+            exception_names: HashSet::new(),
+            extern_fns: HashMap::new(),
+            global_vars: IndexMap::new(),
+            next_type_id: 0,
+            spawn_counter: 0,
+            spawn_blocks: HashMap::new(),
+            spawn_body_to_id: HashMap::new(),
+            lambda_counter: 0,
+            lambda_blocks: HashMap::new(),
+            lambda_body_to_id: HashMap::new(),
+            generic_functions: HashMap::new(),
+            inline_functions: HashMap::new(),
+            release_mode: release,
+            unsafe_mode,
+        };
+        compiler.declare_runtime_functions()?;
+        compiler.register_builtin_exceptions();
+        Ok(compiler)
+    }
+
     pub fn new(
         interner: &'a Rodeo,
         annotations: &'a TypeAnnotations,
@@ -18,22 +102,7 @@ impl<'a> JitCompiler<'a> {
         release: bool,
         unsafe_mode: bool,
     ) -> Result<Self, CodegenError> {
-        let mut flag_builder = settings::builder();
-        flag_builder.set("use_colocated_libcalls", "false").unwrap();
-        flag_builder.set("is_pic", "false").unwrap();
-        flag_builder.set("opt_level", "speed").unwrap();
-        flag_builder
-            .set("preserve_frame_pointers", "false")
-            .unwrap();
-
-        let isa_builder = cranelift_native::builder().map_err(|e| {
-            CodegenError::JitCompile(format!("Failed to create ISA builder: {}", e))
-        })?;
-
-        let isa = isa_builder
-            .finish(settings::Flags::new(flag_builder))
-            .map_err(|e| CodegenError::JitCompile(format!("Failed to create ISA: {}", e)))?;
-
+        let isa = create_isa(false)?;
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
 
         // Print builtins
@@ -187,6 +256,22 @@ impl<'a> JitCompiler<'a> {
         builder.symbol(
             "naml_array_print_strings",
             crate::runtime::naml_array_print_strings as *const u8,
+        );
+        builder.symbol(
+            "naml_map_print",
+            crate::runtime::naml_map_print as *const u8,
+        );
+        builder.symbol(
+            "naml_map_print_string_values",
+            crate::runtime::naml_map_print_string_values as *const u8,
+        );
+        builder.symbol(
+            "naml_map_print_float_values",
+            crate::runtime::naml_map_print_float_values as *const u8,
+        );
+        builder.symbol(
+            "naml_map_print_bool_values",
+            crate::runtime::naml_map_print_bool_values as *const u8,
         );
         builder.symbol(
             "naml_array_incref",
@@ -2057,60 +2142,25 @@ impl<'a> JitCompiler<'a> {
         builder.symbol("naml_db_sqlite_changes", crate::runtime::naml_db_sqlite_changes as *const u8);
         builder.symbol("naml_db_sqlite_last_insert_id", crate::runtime::naml_db_sqlite_last_insert_id as *const u8);
 
-        let module = JITModule::new(builder);
-        let ctx = module.make_context();
+        let module = BackendModule::Jit(JITModule::new(builder));
+        Self::build_compiler(interner, annotations, source_info, module, release, unsafe_mode)
+    }
 
-        // Built-in option type (polymorphic, treat as Option<i64> for now)
-        let mut enum_defs = HashMap::new();
-        enum_defs.insert(
-            "option".to_string(),
-            EnumDef {
-                name: "option".to_string(),
-                variants: vec![
-                    EnumVariantDef {
-                        name: "none".to_string(),
-                        tag: 0,
-                        field_types: vec![],
-                        data_offset: 8,
-                    },
-                    EnumVariantDef {
-                        name: "some".to_string(),
-                        tag: 1,
-                        field_types: vec![crate::ast::NamlType::Int],
-                        data_offset: 8,
-                    },
-                ],
-                size: 16, // 8 (tag+pad) + 8 (data)
-            },
-        );
-
-        let mut compiler = Self {
-            interner,
-            annotations,
-            source_info,
-            module,
-            ctx,
-            functions: HashMap::new(),
-            runtime_funcs: HashMap::new(),
-            struct_defs: HashMap::new(),
-            enum_defs,
-            exception_names: HashSet::new(),
-            extern_fns: HashMap::new(),
-            global_vars: IndexMap::new(),
-            next_type_id: 0,
-            spawn_counter: 0,
-            spawn_blocks: HashMap::new(),
-            spawn_body_to_id: HashMap::new(),
-            lambda_counter: 0,
-            lambda_blocks: HashMap::new(),
-            lambda_body_to_id: HashMap::new(),
-            generic_functions: HashMap::new(),
-            inline_functions: HashMap::new(),
-            release_mode: release,
-            unsafe_mode,
-        };
-        compiler.declare_runtime_functions()?;
-        compiler.register_builtin_exceptions();
-        Ok(compiler)
+    pub fn new_aot(
+        interner: &'a Rodeo,
+        annotations: &'a TypeAnnotations,
+        source_info: &'a crate::source::SourceFile,
+        release: bool,
+        unsafe_mode: bool,
+    ) -> Result<Self, CodegenError> {
+        let isa = create_isa(true)?;
+        let obj_builder = ObjectBuilder::new(
+            isa,
+            "naml_output",
+            cranelift_module::default_libcall_names(),
+        )
+        .map_err(|e| CodegenError::JitCompile(format!("Failed to create ObjectBuilder: {}", e)))?;
+        let module = BackendModule::Object(ObjectModule::new(obj_builder));
+        Self::build_compiler(interner, annotations, source_info, module, release, unsafe_mode)
     }
 }

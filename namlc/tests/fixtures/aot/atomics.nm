@@ -1,0 +1,35 @@
+use std::threads::*;
+
+fn worker_add(counter: atomic<int>, count: int) {
+    var i: int = 0;
+    while (i < count) {
+        atomic_add(counter, 1);
+        i = i + 1;
+    }
+}
+
+fn main() {
+    var counter: atomic<int> = with_atomic(0);
+
+    atomic_store(counter, 10);
+    var val: int = atomic_load(counter);
+    if (val != 10) { panic("store/load"); }
+
+    atomic_add(counter, 5);
+    val = atomic_load(counter);
+    if (val != 15) { panic("add"); }
+
+    atomic_store(counter, 0);
+
+    spawn { worker_add(counter, 250); };
+    spawn { worker_add(counter, 250); };
+    spawn { worker_add(counter, 250); };
+    spawn { worker_add(counter, 250); };
+
+    join();
+
+    var final_val: int = atomic_load(counter);
+    if (final_val != 1000) { panic(fmt("expected 1000, got {}", final_val)); }
+
+    println("OK");
+}

@@ -1,0 +1,38 @@
+struct Point {
+    x: int,
+    y: int
+}
+
+struct Line {
+    start: Point,
+    end_pt: Point
+}
+
+struct Canvas {
+    line: Line,
+    name: string
+}
+
+fn main() {
+    var line: Line = Line {
+        start: Point { x: 0, y: 0 },
+        end_pt: Point { x: 10, y: 20 }
+    };
+    if (line.start.x != 0) { panic("start.x"); }
+    if (line.start.y != 0) { panic("start.y"); }
+    if (line.end_pt.x != 10) { panic("end.x"); }
+    if (line.end_pt.y != 20) { panic("end.y"); }
+
+    var canvas: Canvas = Canvas {
+        line: Line {
+            start: Point { x: 1, y: 2 },
+            end_pt: Point { x: 3, y: 4 }
+        },
+        name: "test"
+    };
+    if (canvas.line.start.x != 1) { panic("deep nested x"); }
+    if (canvas.line.end_pt.y != 4) { panic("deep nested y"); }
+    if (canvas.name != "test") { panic("canvas name"); }
+
+    println("OK");
+}

@@ -1,0 +1,7 @@
+use std::random::*;
+
+fn main() {
+    var val: int = random(1, 100);
+    var in_range: bool = val >= 1 and val <= 100;
+    println(in_range);
+}

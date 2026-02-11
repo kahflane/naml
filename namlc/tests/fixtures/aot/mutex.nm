@@ -1,0 +1,30 @@
+use std::threads::*;
+
+fn worker(counter: mutex<int>, iters: int) {
+    var i: int = 0;
+    while (i < iters) {
+        locked (val: int in counter) {
+            val = val + 1;
+        }
+        i = i + 1;
+    }
+}
+
+fn main() {
+    var counter: mutex<int> = with_mutex(0);
+
+    spawn { worker(counter, 100); };
+    spawn { worker(counter, 100); };
+    spawn { worker(counter, 100); };
+
+    join();
+
+    var final_val: int = 0;
+    locked (val: int in counter) {
+        final_val = val;
+    }
+
+    if (final_val != 300) { panic(fmt("expected 300, got {}", final_val)); }
+
+    println("OK");
+}

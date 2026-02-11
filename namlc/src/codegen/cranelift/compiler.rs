@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use cranelift_module::{Linkage, Module};
 use lasso::Rodeo;
 
@@ -342,8 +344,11 @@ impl<'a> JitCompiler<'a> {
     }
 
     pub fn run_main(&mut self) -> Result<(), CodegenError> {
-        self.module
-            .finalize_definitions()
+        let jit = self.module.as_jit_mut().ok_or_else(|| {
+            CodegenError::JitCompile("run_main requires JIT backend".to_string())
+        })?;
+
+        jit.finalize_definitions()
             .map_err(|e| CodegenError::JitCompile(format!("Failed to finalize: {}", e)))?;
 
         let main_id = self
@@ -351,11 +356,24 @@ impl<'a> JitCompiler<'a> {
             .get("main")
             .ok_or_else(|| CodegenError::Execution("No main function found".to_string()))?;
 
-        let main_ptr = self.module.get_finalized_function(*main_id);
+        let main_ptr = jit.get_finalized_function(*main_id);
 
         let main_fn: fn(i64) = unsafe { std::mem::transmute(main_ptr) };
         main_fn(0);
 
         Ok(())
+    }
+
+    pub fn emit_object(self, output: &Path) -> Result<(), CodegenError> {
+        let obj_module = self.module.as_object().ok_or_else(|| {
+            CodegenError::JitCompile("emit_object requires Object backend".to_string())
+        })?;
+        let product = obj_module.finish();
+        let bytes = product.emit().map_err(|e| {
+            CodegenError::JitCompile(format!("Failed to emit object file: {}", e))
+        })?;
+        std::fs::write(output, bytes).map_err(|e| {
+            CodegenError::JitCompile(format!("Failed to write object file: {}", e))
+        })
     }
 }

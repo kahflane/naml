@@ -69,7 +69,7 @@ impl<'a> JitCompiler<'a> {
 
         let mut ctx = CompileContext {
             interner: self.interner,
-            module: &mut self.module,
+            module: &mut *self.module,
             functions: &self.functions,
             runtime_funcs: &self.runtime_funcs,
             struct_defs: &self.struct_defs,

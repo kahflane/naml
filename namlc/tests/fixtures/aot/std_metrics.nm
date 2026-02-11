@@ -1,0 +1,12 @@
+use std::metrics::*;
+
+fn main() {
+    var start: int = perf_now();
+    var i: int = 0;
+    while (i < 1000) {
+        i = i + 1;
+    }
+    var elapsed: int = elapsed_us(start);
+    var positive: bool = elapsed >= 0;
+    println(positive);
+}

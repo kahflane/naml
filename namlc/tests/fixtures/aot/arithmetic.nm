@@ -1,0 +1,31 @@
+fn main() {
+    var a: int = 10;
+    var b: int = 3;
+    var sum: int = a + b;
+    var diff: int = a - b;
+    var prod: int = a * b;
+    var quot: int = a / b;
+    var rem: int = a % b;
+
+    if (sum != 13) { panic("sum"); }
+    if (diff != 7) { panic("diff"); }
+    if (prod != 30) { panic("prod"); }
+    if (quot != 3) { panic("quot"); }
+    if (rem != 1) { panic("rem"); }
+
+    var x: float = 3.14;
+    var y: float = 2.0;
+    var fsum: float = x + y;
+    if (fsum < 5.13 or fsum > 5.15) { panic("fsum"); }
+
+    var t: bool = true;
+    var f: bool = false;
+    if (t and f) { panic("and"); }
+    if (not (t or f)) { panic("or"); }
+
+    if (a > b and a >= 10 and b <= 3 and b < a and a != b) {
+        println("OK");
+    } else {
+        panic("comparisons");
+    }
+}

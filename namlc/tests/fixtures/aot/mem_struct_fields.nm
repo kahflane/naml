@@ -1,0 +1,23 @@
+use std::collections::arrays::{push, count};
+
+struct Item {
+    name: string,
+    tags: [int]
+}
+
+fn make_item(n: int) -> Item {
+    var item: Item = Item {
+        name: fmt("item-{}", n),
+        tags: [n, n + 1, n + 2]
+    };
+    return item;
+}
+
+fn main() {
+    var i: int = 0;
+    while (i < 500) {
+        var item: Item = make_item(i);
+        i = i + 1;
+    }
+    println("OK");
+}

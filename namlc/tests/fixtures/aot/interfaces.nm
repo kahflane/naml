@@ -1,0 +1,39 @@
+interface Describable {
+    fn describe() -> string;
+}
+
+struct Circle implements Describable {
+    radius: int
+}
+
+pub fn (self: Circle) describe() -> string {
+    return "Circle";
+}
+
+pub fn (self: Circle) area() -> int {
+    return self.radius * self.radius * 3;
+}
+
+struct Square implements Describable {
+    side: int
+}
+
+pub fn (self: Square) describe() -> string {
+    return "Square";
+}
+
+pub fn (self: Square) area() -> int {
+    return self.side * self.side;
+}
+
+fn main() {
+    var c: Circle = Circle { radius: 5 };
+    if (c.describe() != "Circle") { panic("circle describe"); }
+    if (c.area() != 75) { panic("circle area"); }
+
+    var s: Square = Square { side: 4 };
+    if (s.describe() != "Square") { panic("square describe"); }
+    if (s.area() != 16) { panic("square area"); }
+
+    println("OK");
+}

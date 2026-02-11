@@ -1,0 +1,40 @@
+enum Color {
+    Red,
+    Green,
+    Blue,
+    Custom(string)
+}
+
+fn main() {
+    var c: Color = Color::Red;
+    var matched: int = 0;
+    switch (c) {
+        case Red: { matched = 1; }
+        case Green: { matched = 2; }
+        case Blue: { matched = 3; }
+        default: { matched = -1; }
+    }
+    if (matched != 1) { panic("Red"); }
+
+    c = Color::Custom("purple");
+    var extracted: string = "";
+    switch (c) {
+        case Custom(name): {
+            extracted = name;
+            matched = 4;
+        }
+        default: { matched = -1; }
+    }
+    if (matched != 4) { panic("Custom match"); }
+    if (extracted != "purple") { panic("Custom data"); }
+
+    c = Color::Blue;
+    var fell_to_default: bool = false;
+    switch (c) {
+        case Red: { }
+        default: { fell_to_default = true; }
+    }
+    if (not fell_to_default) { panic("default branch"); }
+
+    println("OK");
+}

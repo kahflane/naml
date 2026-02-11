@@ -1,0 +1,21 @@
+fn main() {
+    var x: int = 10;
+    if (x != 10) { panic("init"); }
+
+    x = 20;
+    if (x != 20) { panic("reassign"); }
+
+    var y: int = x + 5;
+    if (y != 25) { panic("computed"); }
+
+    var name: string = "hello";
+    if (name != "hello") { panic("string"); }
+
+    var flag: bool = true;
+    if (not flag) { panic("bool"); }
+
+    var pi: float = 3.14;
+    if (pi < 3.13 or pi > 3.15) { panic("float"); }
+
+    println("OK");
+}

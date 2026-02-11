@@ -1,0 +1,22 @@
+use std::collections::maps::{contains_key, count};
+
+fn main() {
+    var scores: map<string, int> = {};
+    scores["alice"] = 95;
+    scores["bob"] = 87;
+
+    if (count(scores) != 2) { panic("count"); }
+    if (not contains_key(scores, "alice")) { panic("contains"); }
+
+    var alice: int = scores["alice"]!;
+    if (alice != 95) { panic("get alice"); }
+
+    scores["alice"] = 100;
+    alice = scores["alice"]!;
+    if (alice != 100) { panic("update alice"); }
+
+    var bob: int = scores["bob"]!;
+    if (bob != 87) { panic("get bob"); }
+
+    println("OK");
+}
