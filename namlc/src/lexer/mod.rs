@@ -1029,7 +1029,7 @@ impl<'a, 'r> Lexer<'a, 'r> {
         match (word1, word2, b8) {
             (0x65746E69, 0x63616672, b'e') => TokenKind::Keyword(Keyword::Interface), // "interface"
             (0x65637865, 0x6F697470, b'n') => TokenKind::Keyword(Keyword::Exception), // "exception"
-            (0x6D726F66, 0x6D746167, b's') => TokenKind::Keyword(Keyword::Platforms), // "platforms"
+            (0x74616C70, 0x6D726F66, b's') => TokenKind::Keyword(Keyword::Platforms), // "platforms"
             _ => TokenKind::Ident,
         }
     }

@@ -32,7 +32,7 @@ For deployment, compile to native code via rustc:
 
 ```bash
 naml build
-./target/release/main
+./build/main
 ```
 
 This produces a highly optimized, self-contained binary with the naml runtime embedded.
@@ -292,7 +292,7 @@ fn main() {
 This works on all platforms:
 ```bash
 naml run dice.nm                    # Native JIT
-naml build && ./target/release/dice # Native binary
+naml build && ./build/dice # Native binary
 naml build --target server          # Server WASM
 naml build --target browser         # Browser WASM
 ```

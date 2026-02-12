@@ -142,6 +142,7 @@ impl<'a> JitCompiler<'a> {
             inline_result_var: None,
             borrowed_vars: HashSet::new(),
             reassigned_vars: HashSet::new(),
+            target: self.target,
         };
 
         // Set up receiver variable (self)

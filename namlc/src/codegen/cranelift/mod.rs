@@ -192,6 +192,7 @@ pub struct CompileContext<'a> {
     inline_result_var: Option<Variable>,
     borrowed_vars: HashSet<String>,
     reassigned_vars: HashSet<String>,
+    pub(crate) target: CompilationTarget,
 }
 
 unsafe impl Send for LambdaInfo {}

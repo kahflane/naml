@@ -96,6 +96,28 @@ var count = 0;        // Error: what type? int? uint? float?
 var name = "Alice";   // Error: ExpectedTypeAnnotation
 ```
 
+## Global Variables
+
+Variables declared at the top level of a file are global — accessible from any function in that file:
+
+```naml
+var PI: float = 3.141592653589793;
+var GRAVITY: float = 9.81;
+var SPEED_OF_LIGHT: int = 299792458;
+
+fn get_pi() -> float {
+    return PI;
+}
+
+fn main() {
+    println(PI);           // 3.141592653589793
+    println(get_pi());     // 3.141592653589793
+    println(GRAVITY);      // 9.81
+}
+```
+
+Global variables are processed before functions, so declaration order does not matter — a function defined above a global variable can still reference it.
+
 ## Variable Scope
 
 Variables are scoped to their containing block:

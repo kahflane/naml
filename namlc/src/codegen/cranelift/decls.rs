@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
 
+use crate::ast::CompilationTarget;
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::JitCompiler;
 
@@ -12,6 +13,9 @@ impl<'a> JitCompiler<'a> {
         let i64t = cranelift::prelude::types::I64;
         let f64t = cranelift::prelude::types::F64;
         let i32t = cranelift::prelude::types::I32;
+
+        let is_native = matches!(self.target, CompilationTarget::Native);
+        let is_native_or_edge = matches!(self.target, CompilationTarget::Native | CompilationTarget::Edge);
 
         let declare = |module: &mut dyn Module,
                        cache: &mut HashMap<String, FuncId>,
@@ -350,62 +354,64 @@ impl<'a> JitCompiler<'a> {
         )?;
 
         // I/O
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_read_line",
-            &[],
-            &[ptr],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_read_key",
-            &[],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_clear_screen",
-            &[],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_set_cursor",
-            &[i64t, i64t],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_hide_cursor",
-            &[],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_show_cursor",
-            &[],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_terminal_width",
-            &[],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_terminal_height",
-            &[],
-            &[i64t],
-        )?;
+        if is_native {
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_read_line",
+                &[],
+                &[ptr],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_read_key",
+                &[],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_clear_screen",
+                &[],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_set_cursor",
+                &[i64t, i64t],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_hide_cursor",
+                &[],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_show_cursor",
+                &[],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_terminal_width",
+                &[],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_terminal_height",
+                &[],
+                &[i64t],
+            )?;
+        }
 
         // Array functions
         declare(
@@ -1273,200 +1279,204 @@ impl<'a> JitCompiler<'a> {
         )?;
 
         // Channel functions
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_channel_new",
-            &[i64t],
-            &[ptr],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_channel_send",
-            &[ptr, i64t],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_channel_receive",
-            &[ptr, ptr],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_channel_close",
-            &[ptr],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_channel_len",
-            &[ptr],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_channel_incref",
-            &[ptr],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_channel_decref",
-            &[ptr],
-            &[],
-        )?;
+        if is_native {
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_channel_new",
+                &[i64t],
+                &[ptr],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_channel_send",
+                &[ptr, i64t],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_channel_receive",
+                &[ptr, ptr],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_channel_close",
+                &[ptr],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_channel_len",
+                &[ptr],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_channel_incref",
+                &[ptr],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_channel_decref",
+                &[ptr],
+                &[],
+            )?;
 
-        // Mutex functions
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_mutex_new",
-            &[i64t],
-            &[ptr],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_mutex_lock",
-            &[ptr],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_mutex_unlock",
-            &[ptr, i64t],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_mutex_incref",
-            &[ptr],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_mutex_decref",
-            &[ptr],
-            &[],
-        )?;
+            // Mutex functions
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_mutex_new",
+                &[i64t],
+                &[ptr],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_mutex_lock",
+                &[ptr],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_mutex_unlock",
+                &[ptr, i64t],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_mutex_incref",
+                &[ptr],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_mutex_decref",
+                &[ptr],
+                &[],
+            )?;
 
-        // RwLock functions
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_rwlock_new",
-            &[i64t],
-            &[ptr],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_rwlock_read_lock",
-            &[ptr],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_rwlock_read_unlock",
-            &[ptr],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_rwlock_write_lock",
-            &[ptr],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_rwlock_write_unlock",
-            &[ptr, i64t],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_rwlock_incref",
-            &[ptr],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_rwlock_decref",
-            &[ptr],
-            &[],
-        )?;
+            // RwLock functions
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_rwlock_new",
+                &[i64t],
+                &[ptr],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_rwlock_read_lock",
+                &[ptr],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_rwlock_read_unlock",
+                &[ptr],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_rwlock_write_lock",
+                &[ptr],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_rwlock_write_unlock",
+                &[ptr, i64t],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_rwlock_incref",
+                &[ptr],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_rwlock_decref",
+                &[ptr],
+                &[],
+            )?;
 
-        // AtomicInt functions
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_new", &[i64t], &[ptr])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_load", &[ptr], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_store", &[ptr, i64t], &[])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_add", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_sub", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_inc", &[ptr], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_dec", &[ptr], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_cas", &[ptr, i64t, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_swap", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_and", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_or", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_xor", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_incref", &[ptr], &[])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_decref", &[ptr], &[])?;
+            // AtomicInt functions
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_new", &[i64t], &[ptr])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_load", &[ptr], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_store", &[ptr, i64t], &[])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_add", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_sub", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_inc", &[ptr], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_dec", &[ptr], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_cas", &[ptr, i64t, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_swap", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_and", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_or", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_xor", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_incref", &[ptr], &[])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_int_decref", &[ptr], &[])?;
 
-        // AtomicUint functions
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_new", &[i64t], &[ptr])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_load", &[ptr], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_store", &[ptr, i64t], &[])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_add", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_sub", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_inc", &[ptr], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_dec", &[ptr], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_cas", &[ptr, i64t, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_swap", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_and", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_or", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_xor", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_incref", &[ptr], &[])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_decref", &[ptr], &[])?;
+            // AtomicUint functions
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_new", &[i64t], &[ptr])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_load", &[ptr], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_store", &[ptr, i64t], &[])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_add", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_sub", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_inc", &[ptr], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_dec", &[ptr], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_cas", &[ptr, i64t, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_swap", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_and", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_or", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_xor", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_incref", &[ptr], &[])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_uint_decref", &[ptr], &[])?;
 
-        // AtomicBool functions
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_new", &[i64t], &[ptr])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_load", &[ptr], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_store", &[ptr, i64t], &[])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_cas", &[ptr, i64t, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_swap", &[ptr, i64t], &[i64t])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_incref", &[ptr], &[])?;
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_decref", &[ptr], &[])?;
+            // AtomicBool functions
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_new", &[i64t], &[ptr])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_load", &[ptr], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_store", &[ptr, i64t], &[])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_cas", &[ptr, i64t, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_swap", &[ptr, i64t], &[i64t])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_incref", &[ptr], &[])?;
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_atomic_bool_decref", &[ptr], &[])?;
+        }
 
         // Scheduler/runtime
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_spawn",
-            &[ptr],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_spawn_closure",
-            &[ptr, ptr, i64t],
-            &[],
-        )?;
+        if is_native {
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_spawn",
+                &[ptr],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_spawn_closure",
+                &[ptr, ptr, i64t],
+                &[],
+            )?;
+        }
         declare(
             &mut *self.module,
             &mut self.runtime_funcs,
@@ -1474,102 +1484,108 @@ impl<'a> JitCompiler<'a> {
             &[i64t],
             &[ptr],
         )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_wait_all",
-            &[],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_sleep",
-            &[i64t],
-            &[],
-        )?;
+        if is_native {
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_wait_all",
+                &[],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_sleep",
+                &[i64t],
+                &[],
+            )?;
+        }
         // Timer functions
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_timers_set_timeout",
-            &[i64t, i64t, i64t, i64t],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_timers_cancel_timeout",
-            &[i64t],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_timers_set_interval",
-            &[i64t, i64t, i64t, i64t],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_timers_cancel_interval",
-            &[i64t],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_timers_schedule",
-            &[i64t, i64t, i64t, i64t],
-            &[i64t],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_timers_cancel_schedule",
-            &[i64t],
-            &[],
-        )?;
-        declare(
-            &mut *self.module,
-            &mut self.runtime_funcs,
-            "naml_timers_next_run",
-            &[i64t],
-            &[i64t],
-        )?;
+        if is_native {
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_timers_set_timeout",
+                &[i64t, i64t, i64t, i64t],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_timers_cancel_timeout",
+                &[i64t],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_timers_set_interval",
+                &[i64t, i64t, i64t, i64t],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_timers_cancel_interval",
+                &[i64t],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_timers_schedule",
+                &[i64t, i64t, i64t, i64t],
+                &[i64t],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_timers_cancel_schedule",
+                &[i64t],
+                &[],
+            )?;
+            declare(
+                &mut *self.module,
+                &mut self.runtime_funcs,
+                "naml_timers_next_run",
+                &[i64t],
+                &[i64t],
+            )?;
+        }
 
         // Crypto operations - hash: (ptr) -> ptr
-        for name in [
-            "naml_crypto_md5", "naml_crypto_sha1",
-            "naml_crypto_sha256", "naml_crypto_sha512",
-        ] {
-            declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr], &[ptr])?;
+        if is_native_or_edge {
+            for name in [
+                "naml_crypto_md5", "naml_crypto_sha1",
+                "naml_crypto_sha256", "naml_crypto_sha512",
+            ] {
+                declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr], &[ptr])?;
+            }
+            // Crypto operations - hash hex: (ptr) -> ptr
+            for name in [
+                "naml_crypto_md5_hex", "naml_crypto_sha1_hex",
+                "naml_crypto_sha256_hex", "naml_crypto_sha512_hex",
+            ] {
+                declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr], &[ptr])?;
+            }
+            // Crypto operations - HMAC: (ptr, ptr) -> ptr
+            for name in [
+                "naml_crypto_hmac_sha256", "naml_crypto_hmac_sha256_hex",
+                "naml_crypto_hmac_sha512", "naml_crypto_hmac_sha512_hex",
+            ] {
+                declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr, ptr], &[ptr])?;
+            }
+            // Crypto operations - HMAC verify: (ptr, ptr, ptr) -> i64 (bool)
+            for name in [
+                "naml_crypto_hmac_verify_sha256", "naml_crypto_hmac_verify_sha512",
+            ] {
+                declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr, ptr, ptr], &[i64t])?;
+            }
+            // Crypto operations - PBKDF2: (ptr, ptr, i64, i64) -> ptr
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_crypto_pbkdf2_sha256", &[ptr, ptr, i64t, i64t], &[ptr])?;
+            // Crypto operations - random bytes: (i64) -> ptr
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_crypto_random_bytes", &[i64t], &[ptr])?;
         }
-        // Crypto operations - hash hex: (ptr) -> ptr
-        for name in [
-            "naml_crypto_md5_hex", "naml_crypto_sha1_hex",
-            "naml_crypto_sha256_hex", "naml_crypto_sha512_hex",
-        ] {
-            declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr], &[ptr])?;
-        }
-        // Crypto operations - HMAC: (ptr, ptr) -> ptr
-        for name in [
-            "naml_crypto_hmac_sha256", "naml_crypto_hmac_sha256_hex",
-            "naml_crypto_hmac_sha512", "naml_crypto_hmac_sha512_hex",
-        ] {
-            declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr, ptr], &[ptr])?;
-        }
-        // Crypto operations - HMAC verify: (ptr, ptr, ptr) -> i64 (bool)
-        for name in [
-            "naml_crypto_hmac_verify_sha256", "naml_crypto_hmac_verify_sha512",
-        ] {
-            declare(&mut *self.module, &mut self.runtime_funcs, name, &[ptr, ptr, ptr], &[i64t])?;
-        }
-        // Crypto operations - PBKDF2: (ptr, ptr, i64, i64) -> ptr
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_crypto_pbkdf2_sha256", &[ptr, ptr, i64t, i64t], &[ptr])?;
-        // Crypto operations - random bytes: (i64) -> ptr
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_crypto_random_bytes", &[i64t], &[ptr])?;
 
         declare(
             &mut *self.module,
@@ -1675,7 +1691,8 @@ impl<'a> JitCompiler<'a> {
         )?;
 
         // File system operations
-        declare(
+        if is_native_or_edge {
+            declare(
             &mut *self.module,
             &mut self.runtime_funcs,
             "naml_fs_read",
@@ -2152,6 +2169,7 @@ impl<'a> JitCompiler<'a> {
             &[i64t, i64t, i64t],
             &[i64t],
         )?;
+        }
 
         // Path operations
         declare(
@@ -3187,8 +3205,9 @@ impl<'a> JitCompiler<'a> {
         )?;
 
         // Networking operations (from naml-std-net)
-        // Exception constructors
-        declare(
+        if is_native_or_edge {
+            // Exception constructors
+            declare(
             &mut *self.module,
             &mut self.runtime_funcs,
             "naml_network_error_new",
@@ -3613,8 +3632,10 @@ impl<'a> JitCompiler<'a> {
             &[ptr, ptr],
             &[ptr],
         )?;
+        }
 
-        declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_error_new", &[ptr, i64t], &[ptr])?;
+        if is_native_or_edge {
+            declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_error_new", &[ptr, i64t], &[ptr])?;
         declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_open", &[ptr], &[i64t])?;
         declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_open_memory", &[], &[i64t])?;
         declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_close", &[i64t], &[])?;
@@ -3642,6 +3663,7 @@ impl<'a> JitCompiler<'a> {
         declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_finalize", &[i64t], &[])?;
         declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_changes", &[i64t], &[i64t])?;
         declare(&mut *self.module, &mut self.runtime_funcs, "naml_db_sqlite_last_insert_id", &[i64t], &[i64t])?;
+        }
 
         Ok(())
     }

@@ -194,6 +194,38 @@ var strings: [string] = ["a", "b", "c"];
 var nested: [[int]] = [[1, 2], [3, 4]];
 ```
 
+## Type Aliases
+
+Create an alias for an existing type with the `type` keyword:
+
+```naml
+type UserID = int;
+type Headers = map<string, string>;
+type Handler = fn(int) -> int;
+```
+
+Aliases can be public and generic:
+
+```naml
+pub type Result<T> = option<T>;
+pub type Pair<A, B> = (A, B);
+```
+
+Use aliases just like the original type:
+
+```naml
+type UserID = int;
+
+fn find_user(id: UserID) -> string {
+    return fmt("User {}", id);
+}
+
+fn main() {
+    var id: UserID = 42;
+    println(find_user(id));
+}
+```
+
 ## Operators
 
 ### Arithmetic Operators

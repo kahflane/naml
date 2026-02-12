@@ -362,8 +362,8 @@ pub fn compile_expression(
                             func_name.to_string()
                         };
 
-                    if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name)
-                        .or_else(|| super::builtins::lookup_builtin(func_name))
+                    if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name, ctx.target)
+                        .or_else(|| super::builtins::lookup_builtin(func_name, ctx.target))
                     {
                         return super::builtins::compile_builtin_call(
                             ctx, builder, builtin, &call.args,
@@ -666,8 +666,8 @@ pub fn compile_expression(
                 }
 
                 // 2. Check builtin registry - try qualified name first, then simple name
-                if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name)
-                    .or_else(|| super::builtins::lookup_builtin(&func_name))
+                if let Some(builtin) = super::builtins::lookup_builtin(&qualified_name, ctx.target)
+                    .or_else(|| super::builtins::lookup_builtin(&func_name, ctx.target))
                 {
                     return super::builtins::compile_builtin_call(
                         ctx, builder, builtin, &call.args,

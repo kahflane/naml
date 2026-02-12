@@ -4125,6 +4125,16 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn collect_function(&mut self, func: &ast::FunctionItem) {
+        if let Some(ref plats) = func.platforms {
+            if !plats
+                .platforms
+                .iter()
+                .any(|p| self.target.matches_platform(p))
+            {
+                return;
+            }
+        }
+
         let type_params = func
             .generics
             .iter()

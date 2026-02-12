@@ -110,6 +110,9 @@ impl<'a> JitCompiler<'a> {
         let isa = create_isa(false, release)?;
         let mut builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
 
+        let is_native = matches!(target, CompilationTarget::Native);
+        let is_native_or_edge = matches!(target, CompilationTarget::Native | CompilationTarget::Edge);
+
         // Print builtins
         builder.symbol("naml_print_int", crate::runtime::naml_print_int as *const u8);
         builder.symbol("naml_print_float", crate::runtime::naml_print_float as *const u8);
@@ -467,71 +470,81 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_struct_set_field as *const u8,
         );
 
-        // Scheduler operations
-        builder.symbol("naml_spawn", crate::runtime::naml_spawn as *const u8);
-        builder.symbol(
-            "naml_spawn_closure",
-            crate::runtime::naml_spawn_closure as *const u8,
-        );
+        // Closure data allocation (used by lambdas on all platforms)
         builder.symbol(
             "naml_alloc_closure_data",
             crate::runtime::naml_alloc_closure_data as *const u8,
         );
-        builder.symbol("naml_wait_all", crate::runtime::naml_wait_all as *const u8);
-        builder.symbol("naml_sleep", crate::runtime::naml_sleep as *const u8);
+
+        // Scheduler operations (native only)
+        if is_native {
+            builder.symbol("naml_spawn", crate::runtime::naml_spawn as *const u8);
+            builder.symbol(
+                "naml_spawn_closure",
+                crate::runtime::naml_spawn_closure as *const u8,
+            );
+            builder.symbol("naml_wait_all", crate::runtime::naml_wait_all as *const u8);
+            builder.symbol("naml_sleep", crate::runtime::naml_sleep as *const u8);
+        }
+
+        // Random operations (all platforms)
         builder.symbol("naml_random", crate::runtime::naml_random as *const u8);
         builder.symbol(
             "naml_random_float",
             crate::runtime::naml_random_float as *const u8,
         );
 
-        // Timer operations
-        builder.symbol(
-            "naml_timers_set_timeout",
-            crate::runtime::naml_timers_set_timeout as *const u8,
-        );
-        builder.symbol(
-            "naml_timers_cancel_timeout",
-            crate::runtime::naml_timers_cancel_timeout as *const u8,
-        );
-        builder.symbol(
-            "naml_timers_set_interval",
-            crate::runtime::naml_timers_set_interval as *const u8,
-        );
-        builder.symbol(
-            "naml_timers_cancel_interval",
-            crate::runtime::naml_timers_cancel_interval as *const u8,
-        );
-        builder.symbol(
-            "naml_timers_schedule",
-            crate::runtime::naml_timers_schedule as *const u8,
-        );
-        builder.symbol(
-            "naml_timers_cancel_schedule",
-            crate::runtime::naml_timers_cancel_schedule as *const u8,
-        );
-        builder.symbol(
-            "naml_timers_next_run",
-            crate::runtime::naml_timers_next_run as *const u8,
-        );
+        // Timer operations (native only)
+        if is_native {
+            builder.symbol(
+                "naml_timers_set_timeout",
+                crate::runtime::naml_timers_set_timeout as *const u8,
+            );
+            builder.symbol(
+                "naml_timers_cancel_timeout",
+                crate::runtime::naml_timers_cancel_timeout as *const u8,
+            );
+            builder.symbol(
+                "naml_timers_set_interval",
+                crate::runtime::naml_timers_set_interval as *const u8,
+            );
+            builder.symbol(
+                "naml_timers_cancel_interval",
+                crate::runtime::naml_timers_cancel_interval as *const u8,
+            );
+            builder.symbol(
+                "naml_timers_schedule",
+                crate::runtime::naml_timers_schedule as *const u8,
+            );
+            builder.symbol(
+                "naml_timers_cancel_schedule",
+                crate::runtime::naml_timers_cancel_schedule as *const u8,
+            );
+            builder.symbol(
+                "naml_timers_next_run",
+                crate::runtime::naml_timers_next_run as *const u8,
+            );
+        }
 
-        // Crypto operations (from naml-std-crypto)
-        builder.symbol("naml_crypto_md5", crate::runtime::naml_crypto_md5 as *const u8);
-        builder.symbol("naml_crypto_md5_hex", crate::runtime::naml_crypto_md5_hex as *const u8);
-        builder.symbol("naml_crypto_sha1", crate::runtime::naml_crypto_sha1 as *const u8);
-        builder.symbol("naml_crypto_sha1_hex", crate::runtime::naml_crypto_sha1_hex as *const u8);
-        builder.symbol("naml_crypto_sha256", crate::runtime::naml_crypto_sha256 as *const u8);
-        builder.symbol("naml_crypto_sha256_hex", crate::runtime::naml_crypto_sha256_hex as *const u8);
-        builder.symbol("naml_crypto_sha512", crate::runtime::naml_crypto_sha512 as *const u8);
-        builder.symbol("naml_crypto_sha512_hex", crate::runtime::naml_crypto_sha512_hex as *const u8);
-        builder.symbol("naml_crypto_hmac_sha256", crate::runtime::naml_crypto_hmac_sha256 as *const u8);
-        builder.symbol("naml_crypto_hmac_sha256_hex", crate::runtime::naml_crypto_hmac_sha256_hex as *const u8);
-        builder.symbol("naml_crypto_hmac_sha512", crate::runtime::naml_crypto_hmac_sha512 as *const u8);
-        builder.symbol("naml_crypto_hmac_sha512_hex", crate::runtime::naml_crypto_hmac_sha512_hex as *const u8);
-        builder.symbol("naml_crypto_hmac_verify_sha256", crate::runtime::naml_crypto_hmac_verify_sha256 as *const u8);
-        builder.symbol("naml_crypto_hmac_verify_sha512", crate::runtime::naml_crypto_hmac_verify_sha512 as *const u8);
-        builder.symbol("naml_crypto_pbkdf2_sha256", crate::runtime::naml_crypto_pbkdf2_sha256 as *const u8);
-        builder.symbol("naml_crypto_random_bytes", crate::runtime::naml_crypto_random_bytes as *const u8);
+        // Crypto operations (from naml-std-crypto) - native and edge only
+        if is_native_or_edge {
+            builder.symbol("naml_crypto_md5", crate::runtime::naml_crypto_md5 as *const u8);
+            builder.symbol("naml_crypto_md5_hex", crate::runtime::naml_crypto_md5_hex as *const u8);
+            builder.symbol("naml_crypto_sha1", crate::runtime::naml_crypto_sha1 as *const u8);
+            builder.symbol("naml_crypto_sha1_hex", crate::runtime::naml_crypto_sha1_hex as *const u8);
+            builder.symbol("naml_crypto_sha256", crate::runtime::naml_crypto_sha256 as *const u8);
+            builder.symbol("naml_crypto_sha256_hex", crate::runtime::naml_crypto_sha256_hex as *const u8);
+            builder.symbol("naml_crypto_sha512", crate::runtime::naml_crypto_sha512 as *const u8);
+            builder.symbol("naml_crypto_sha512_hex", crate::runtime::naml_crypto_sha512_hex as *const u8);
+            builder.symbol("naml_crypto_hmac_sha256", crate::runtime::naml_crypto_hmac_sha256 as *const u8);
+            builder.symbol("naml_crypto_hmac_sha256_hex", crate::runtime::naml_crypto_hmac_sha256_hex as *const u8);
+            builder.symbol("naml_crypto_hmac_sha512", crate::runtime::naml_crypto_hmac_sha512 as *const u8);
+            builder.symbol("naml_crypto_hmac_sha512_hex", crate::runtime::naml_crypto_hmac_sha512_hex as *const u8);
+            builder.symbol("naml_crypto_hmac_verify_sha256", crate::runtime::naml_crypto_hmac_verify_sha256 as *const u8);
+            builder.symbol("naml_crypto_hmac_verify_sha512", crate::runtime::naml_crypto_hmac_verify_sha512 as *const u8);
+            builder.symbol("naml_crypto_pbkdf2_sha256", crate::runtime::naml_crypto_pbkdf2_sha256 as *const u8);
+            builder.symbol("naml_crypto_random_bytes", crate::runtime::naml_crypto_random_bytes as *const u8);
+        }
 
         // Diagnostic builtins
         builder.symbol("naml_warn", crate::runtime::naml_warn as *const u8);
@@ -546,36 +559,38 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_string_concat as *const u8,
         );
 
-        // I/O builtins
-        builder.symbol(
-            "naml_read_line",
-            crate::runtime::naml_read_line as *const u8,
-        );
-        builder.symbol("naml_read_key", crate::runtime::naml_read_key as *const u8);
-        builder.symbol(
-            "naml_clear_screen",
-            crate::runtime::naml_clear_screen as *const u8,
-        );
-        builder.symbol(
-            "naml_set_cursor",
-            crate::runtime::naml_set_cursor as *const u8,
-        );
-        builder.symbol(
-            "naml_hide_cursor",
-            crate::runtime::naml_hide_cursor as *const u8,
-        );
-        builder.symbol(
-            "naml_show_cursor",
-            crate::runtime::naml_show_cursor as *const u8,
-        );
-        builder.symbol(
-            "naml_terminal_width",
-            crate::runtime::naml_terminal_width as *const u8,
-        );
-        builder.symbol(
-            "naml_terminal_height",
-            crate::runtime::naml_terminal_height as *const u8,
-        );
+        // I/O builtins (native only)
+        if is_native {
+            builder.symbol(
+                "naml_read_line",
+                crate::runtime::naml_read_line as *const u8,
+            );
+            builder.symbol("naml_read_key", crate::runtime::naml_read_key as *const u8);
+            builder.symbol(
+                "naml_clear_screen",
+                crate::runtime::naml_clear_screen as *const u8,
+            );
+            builder.symbol(
+                "naml_set_cursor",
+                crate::runtime::naml_set_cursor as *const u8,
+            );
+            builder.symbol(
+                "naml_hide_cursor",
+                crate::runtime::naml_hide_cursor as *const u8,
+            );
+            builder.symbol(
+                "naml_show_cursor",
+                crate::runtime::naml_show_cursor as *const u8,
+            );
+            builder.symbol(
+                "naml_terminal_width",
+                crate::runtime::naml_terminal_width as *const u8,
+            );
+            builder.symbol(
+                "naml_terminal_height",
+                crate::runtime::naml_terminal_height as *const u8,
+            );
+        }
 
         // Datetime operations
         builder.symbol(
@@ -637,128 +652,131 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_metrics_elapsed_ns as *const u8,
         );
 
-        // Channel operations
-        builder.symbol(
-            "naml_channel_new",
-            crate::runtime::naml_channel_new as *const u8,
-        );
-        builder.symbol(
-            "naml_channel_send",
-            crate::runtime::naml_channel_send as *const u8,
-        );
-        builder.symbol(
-            "naml_channel_receive",
-            crate::runtime::naml_channel_receive as *const u8,
-        );
-        builder.symbol(
-            "naml_channel_close",
-            crate::runtime::naml_channel_close as *const u8,
-        );
-        builder.symbol(
-            "naml_channel_len",
-            crate::runtime::naml_channel_len as *const u8,
-        );
-        builder.symbol(
-            "naml_channel_incref",
-            crate::runtime::naml_channel_incref as *const u8,
-        );
-        builder.symbol(
-            "naml_channel_decref",
-            crate::runtime::naml_channel_decref as *const u8,
-        );
+        // Concurrency primitives (native only)
+        if is_native {
+            // Channel operations
+            builder.symbol(
+                "naml_channel_new",
+                crate::runtime::naml_channel_new as *const u8,
+            );
+            builder.symbol(
+                "naml_channel_send",
+                crate::runtime::naml_channel_send as *const u8,
+            );
+            builder.symbol(
+                "naml_channel_receive",
+                crate::runtime::naml_channel_receive as *const u8,
+            );
+            builder.symbol(
+                "naml_channel_close",
+                crate::runtime::naml_channel_close as *const u8,
+            );
+            builder.symbol(
+                "naml_channel_len",
+                crate::runtime::naml_channel_len as *const u8,
+            );
+            builder.symbol(
+                "naml_channel_incref",
+                crate::runtime::naml_channel_incref as *const u8,
+            );
+            builder.symbol(
+                "naml_channel_decref",
+                crate::runtime::naml_channel_decref as *const u8,
+            );
 
-        // Mutex operations
-        builder.symbol(
-            "naml_mutex_new",
-            crate::runtime::naml_mutex_new as *const u8,
-        );
-        builder.symbol(
-            "naml_mutex_lock",
-            crate::runtime::naml_mutex_lock as *const u8,
-        );
-        builder.symbol(
-            "naml_mutex_unlock",
-            crate::runtime::naml_mutex_unlock as *const u8,
-        );
-        builder.symbol(
-            "naml_mutex_incref",
-            crate::runtime::naml_mutex_incref as *const u8,
-        );
-        builder.symbol(
-            "naml_mutex_decref",
-            crate::runtime::naml_mutex_decref as *const u8,
-        );
+            // Mutex operations
+            builder.symbol(
+                "naml_mutex_new",
+                crate::runtime::naml_mutex_new as *const u8,
+            );
+            builder.symbol(
+                "naml_mutex_lock",
+                crate::runtime::naml_mutex_lock as *const u8,
+            );
+            builder.symbol(
+                "naml_mutex_unlock",
+                crate::runtime::naml_mutex_unlock as *const u8,
+            );
+            builder.symbol(
+                "naml_mutex_incref",
+                crate::runtime::naml_mutex_incref as *const u8,
+            );
+            builder.symbol(
+                "naml_mutex_decref",
+                crate::runtime::naml_mutex_decref as *const u8,
+            );
 
-        // RwLock operations
-        builder.symbol(
-            "naml_rwlock_new",
-            crate::runtime::naml_rwlock_new as *const u8,
-        );
-        builder.symbol(
-            "naml_rwlock_read_lock",
-            crate::runtime::naml_rwlock_read_lock as *const u8,
-        );
-        builder.symbol(
-            "naml_rwlock_read_unlock",
-            crate::runtime::naml_rwlock_read_unlock as *const u8,
-        );
-        builder.symbol(
-            "naml_rwlock_write_lock",
-            crate::runtime::naml_rwlock_write_lock as *const u8,
-        );
-        builder.symbol(
-            "naml_rwlock_write_unlock",
-            crate::runtime::naml_rwlock_write_unlock as *const u8,
-        );
-        builder.symbol(
-            "naml_rwlock_incref",
-            crate::runtime::naml_rwlock_incref as *const u8,
-        );
-        builder.symbol(
-            "naml_rwlock_decref",
-            crate::runtime::naml_rwlock_decref as *const u8,
-        );
+            // RwLock operations
+            builder.symbol(
+                "naml_rwlock_new",
+                crate::runtime::naml_rwlock_new as *const u8,
+            );
+            builder.symbol(
+                "naml_rwlock_read_lock",
+                crate::runtime::naml_rwlock_read_lock as *const u8,
+            );
+            builder.symbol(
+                "naml_rwlock_read_unlock",
+                crate::runtime::naml_rwlock_read_unlock as *const u8,
+            );
+            builder.symbol(
+                "naml_rwlock_write_lock",
+                crate::runtime::naml_rwlock_write_lock as *const u8,
+            );
+            builder.symbol(
+                "naml_rwlock_write_unlock",
+                crate::runtime::naml_rwlock_write_unlock as *const u8,
+            );
+            builder.symbol(
+                "naml_rwlock_incref",
+                crate::runtime::naml_rwlock_incref as *const u8,
+            );
+            builder.symbol(
+                "naml_rwlock_decref",
+                crate::runtime::naml_rwlock_decref as *const u8,
+            );
 
-        // AtomicInt operations
-        builder.symbol("naml_atomic_int_new", crate::runtime::naml_atomic_int_new as *const u8);
-        builder.symbol("naml_atomic_int_load", crate::runtime::naml_atomic_int_load as *const u8);
-        builder.symbol("naml_atomic_int_store", crate::runtime::naml_atomic_int_store as *const u8);
-        builder.symbol("naml_atomic_int_add", crate::runtime::naml_atomic_int_add as *const u8);
-        builder.symbol("naml_atomic_int_sub", crate::runtime::naml_atomic_int_sub as *const u8);
-        builder.symbol("naml_atomic_int_inc", crate::runtime::naml_atomic_int_inc as *const u8);
-        builder.symbol("naml_atomic_int_dec", crate::runtime::naml_atomic_int_dec as *const u8);
-        builder.symbol("naml_atomic_int_cas", crate::runtime::naml_atomic_int_cas as *const u8);
-        builder.symbol("naml_atomic_int_swap", crate::runtime::naml_atomic_int_swap as *const u8);
-        builder.symbol("naml_atomic_int_and", crate::runtime::naml_atomic_int_and as *const u8);
-        builder.symbol("naml_atomic_int_or", crate::runtime::naml_atomic_int_or as *const u8);
-        builder.symbol("naml_atomic_int_xor", crate::runtime::naml_atomic_int_xor as *const u8);
-        builder.symbol("naml_atomic_int_incref", crate::runtime::naml_atomic_int_incref as *const u8);
-        builder.symbol("naml_atomic_int_decref", crate::runtime::naml_atomic_int_decref as *const u8);
+            // AtomicInt operations
+            builder.symbol("naml_atomic_int_new", crate::runtime::naml_atomic_int_new as *const u8);
+            builder.symbol("naml_atomic_int_load", crate::runtime::naml_atomic_int_load as *const u8);
+            builder.symbol("naml_atomic_int_store", crate::runtime::naml_atomic_int_store as *const u8);
+            builder.symbol("naml_atomic_int_add", crate::runtime::naml_atomic_int_add as *const u8);
+            builder.symbol("naml_atomic_int_sub", crate::runtime::naml_atomic_int_sub as *const u8);
+            builder.symbol("naml_atomic_int_inc", crate::runtime::naml_atomic_int_inc as *const u8);
+            builder.symbol("naml_atomic_int_dec", crate::runtime::naml_atomic_int_dec as *const u8);
+            builder.symbol("naml_atomic_int_cas", crate::runtime::naml_atomic_int_cas as *const u8);
+            builder.symbol("naml_atomic_int_swap", crate::runtime::naml_atomic_int_swap as *const u8);
+            builder.symbol("naml_atomic_int_and", crate::runtime::naml_atomic_int_and as *const u8);
+            builder.symbol("naml_atomic_int_or", crate::runtime::naml_atomic_int_or as *const u8);
+            builder.symbol("naml_atomic_int_xor", crate::runtime::naml_atomic_int_xor as *const u8);
+            builder.symbol("naml_atomic_int_incref", crate::runtime::naml_atomic_int_incref as *const u8);
+            builder.symbol("naml_atomic_int_decref", crate::runtime::naml_atomic_int_decref as *const u8);
 
-        // AtomicUint operations
-        builder.symbol("naml_atomic_uint_new", crate::runtime::naml_atomic_uint_new as *const u8);
-        builder.symbol("naml_atomic_uint_load", crate::runtime::naml_atomic_uint_load as *const u8);
-        builder.symbol("naml_atomic_uint_store", crate::runtime::naml_atomic_uint_store as *const u8);
-        builder.symbol("naml_atomic_uint_add", crate::runtime::naml_atomic_uint_add as *const u8);
-        builder.symbol("naml_atomic_uint_sub", crate::runtime::naml_atomic_uint_sub as *const u8);
-        builder.symbol("naml_atomic_uint_inc", crate::runtime::naml_atomic_uint_inc as *const u8);
-        builder.symbol("naml_atomic_uint_dec", crate::runtime::naml_atomic_uint_dec as *const u8);
-        builder.symbol("naml_atomic_uint_cas", crate::runtime::naml_atomic_uint_cas as *const u8);
-        builder.symbol("naml_atomic_uint_swap", crate::runtime::naml_atomic_uint_swap as *const u8);
-        builder.symbol("naml_atomic_uint_and", crate::runtime::naml_atomic_uint_and as *const u8);
-        builder.symbol("naml_atomic_uint_or", crate::runtime::naml_atomic_uint_or as *const u8);
-        builder.symbol("naml_atomic_uint_xor", crate::runtime::naml_atomic_uint_xor as *const u8);
-        builder.symbol("naml_atomic_uint_incref", crate::runtime::naml_atomic_uint_incref as *const u8);
-        builder.symbol("naml_atomic_uint_decref", crate::runtime::naml_atomic_uint_decref as *const u8);
+            // AtomicUint operations
+            builder.symbol("naml_atomic_uint_new", crate::runtime::naml_atomic_uint_new as *const u8);
+            builder.symbol("naml_atomic_uint_load", crate::runtime::naml_atomic_uint_load as *const u8);
+            builder.symbol("naml_atomic_uint_store", crate::runtime::naml_atomic_uint_store as *const u8);
+            builder.symbol("naml_atomic_uint_add", crate::runtime::naml_atomic_uint_add as *const u8);
+            builder.symbol("naml_atomic_uint_sub", crate::runtime::naml_atomic_uint_sub as *const u8);
+            builder.symbol("naml_atomic_uint_inc", crate::runtime::naml_atomic_uint_inc as *const u8);
+            builder.symbol("naml_atomic_uint_dec", crate::runtime::naml_atomic_uint_dec as *const u8);
+            builder.symbol("naml_atomic_uint_cas", crate::runtime::naml_atomic_uint_cas as *const u8);
+            builder.symbol("naml_atomic_uint_swap", crate::runtime::naml_atomic_uint_swap as *const u8);
+            builder.symbol("naml_atomic_uint_and", crate::runtime::naml_atomic_uint_and as *const u8);
+            builder.symbol("naml_atomic_uint_or", crate::runtime::naml_atomic_uint_or as *const u8);
+            builder.symbol("naml_atomic_uint_xor", crate::runtime::naml_atomic_uint_xor as *const u8);
+            builder.symbol("naml_atomic_uint_incref", crate::runtime::naml_atomic_uint_incref as *const u8);
+            builder.symbol("naml_atomic_uint_decref", crate::runtime::naml_atomic_uint_decref as *const u8);
 
-        // AtomicBool operations
-        builder.symbol("naml_atomic_bool_new", crate::runtime::naml_atomic_bool_new as *const u8);
-        builder.symbol("naml_atomic_bool_load", crate::runtime::naml_atomic_bool_load as *const u8);
-        builder.symbol("naml_atomic_bool_store", crate::runtime::naml_atomic_bool_store as *const u8);
-        builder.symbol("naml_atomic_bool_cas", crate::runtime::naml_atomic_bool_cas as *const u8);
-        builder.symbol("naml_atomic_bool_swap", crate::runtime::naml_atomic_bool_swap as *const u8);
-        builder.symbol("naml_atomic_bool_incref", crate::runtime::naml_atomic_bool_incref as *const u8);
-        builder.symbol("naml_atomic_bool_decref", crate::runtime::naml_atomic_bool_decref as *const u8);
+            // AtomicBool operations
+            builder.symbol("naml_atomic_bool_new", crate::runtime::naml_atomic_bool_new as *const u8);
+            builder.symbol("naml_atomic_bool_load", crate::runtime::naml_atomic_bool_load as *const u8);
+            builder.symbol("naml_atomic_bool_store", crate::runtime::naml_atomic_bool_store as *const u8);
+            builder.symbol("naml_atomic_bool_cas", crate::runtime::naml_atomic_bool_cas as *const u8);
+            builder.symbol("naml_atomic_bool_swap", crate::runtime::naml_atomic_bool_swap as *const u8);
+            builder.symbol("naml_atomic_bool_incref", crate::runtime::naml_atomic_bool_incref as *const u8);
+            builder.symbol("naml_atomic_bool_decref", crate::runtime::naml_atomic_bool_decref as *const u8);
+        }
 
         // Map operations
         builder.symbol("naml_map_new", crate::runtime::naml_map_new as *const u8);
@@ -889,246 +907,248 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_map_from_entries as *const u8,
         );
 
-        // File system operations (from naml-std-fs)
-        builder.symbol("naml_fs_read", crate::runtime::naml_fs_read as *const u8);
-        builder.symbol(
-            "naml_fs_read_bytes",
-            crate::runtime::naml_fs_read_bytes as *const u8,
-        );
-        builder.symbol("naml_fs_write", crate::runtime::naml_fs_write as *const u8);
-        builder.symbol(
-            "naml_fs_append",
-            crate::runtime::naml_fs_append as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_write_bytes",
-            crate::runtime::naml_fs_write_bytes as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_append_bytes",
-            crate::runtime::naml_fs_append_bytes as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_exists",
-            crate::runtime::naml_fs_exists as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_is_file",
-            crate::runtime::naml_fs_is_file as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_is_dir",
-            crate::runtime::naml_fs_is_dir as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_list_dir",
-            crate::runtime::naml_fs_list_dir as *const u8,
-        );
-        builder.symbol("naml_fs_mkdir", crate::runtime::naml_fs_mkdir as *const u8);
-        builder.symbol(
-            "naml_fs_mkdir_all",
-            crate::runtime::naml_fs_mkdir_all as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_remove",
-            crate::runtime::naml_fs_remove as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_remove_all",
-            crate::runtime::naml_fs_remove_all as *const u8,
-        );
-        builder.symbol("naml_fs_join", crate::runtime::naml_fs_join as *const u8);
-        builder.symbol(
-            "naml_fs_dirname",
-            crate::runtime::naml_fs_dirname as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_basename",
-            crate::runtime::naml_fs_basename as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_extension",
-            crate::runtime::naml_fs_extension as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_absolute",
-            crate::runtime::naml_fs_absolute as *const u8,
-        );
-        builder.symbol("naml_fs_size", crate::runtime::naml_fs_size as *const u8);
-        builder.symbol(
-            "naml_fs_modified",
-            crate::runtime::naml_fs_modified as *const u8,
-        );
-        builder.symbol("naml_fs_copy", crate::runtime::naml_fs_copy as *const u8);
-        builder.symbol(
-            "naml_fs_rename",
-            crate::runtime::naml_fs_rename as *const u8,
-        );
-        builder.symbol("naml_fs_getwd", crate::runtime::naml_fs_getwd as *const u8);
-        builder.symbol("naml_fs_chdir", crate::runtime::naml_fs_chdir as *const u8);
-        builder.symbol(
-            "naml_fs_create_temp",
-            crate::runtime::naml_fs_create_temp as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mkdir_temp",
-            crate::runtime::naml_fs_mkdir_temp as *const u8,
-        );
-        builder.symbol("naml_fs_chmod", crate::runtime::naml_fs_chmod as *const u8);
-        builder.symbol(
-            "naml_fs_truncate",
-            crate::runtime::naml_fs_truncate as *const u8,
-        );
-        builder.symbol("naml_fs_stat", crate::runtime::naml_fs_stat as *const u8);
-        builder.symbol(
-            "naml_fs_symlink",
-            crate::runtime::naml_fs_symlink as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_readlink",
-            crate::runtime::naml_fs_readlink as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_lstat",
-            crate::runtime::naml_fs_lstat as *const u8,
-        );
-        builder.symbol("naml_fs_link", crate::runtime::naml_fs_link as *const u8);
-        builder.symbol(
-            "naml_fs_chtimes",
-            crate::runtime::naml_fs_chtimes as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_chown",
-            crate::runtime::naml_fs_chown as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_lchown",
-            crate::runtime::naml_fs_lchown as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_same_file",
-            crate::runtime::naml_fs_same_file as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_read_at",
-            crate::runtime::naml_fs_file_read_at as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_write_at",
-            crate::runtime::naml_fs_file_write_at as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_name",
-            crate::runtime::naml_fs_file_name as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_stat",
-            crate::runtime::naml_fs_file_stat as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_truncate",
-            crate::runtime::naml_fs_file_truncate as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_chmod",
-            crate::runtime::naml_fs_file_chmod as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_chown",
-            crate::runtime::naml_fs_file_chown as *const u8,
-        );
-        builder.symbol(
-            "naml_io_error_new",
-            crate::runtime::naml_io_error_new as *const u8,
-        );
-        builder.symbol(
-            "naml_permission_error_new",
-            crate::runtime::naml_permission_error_new as *const u8,
-        );
+        // File system operations (from naml-std-fs) - native and edge only
+        if is_native_or_edge {
+            builder.symbol("naml_fs_read", crate::runtime::naml_fs_read as *const u8);
+            builder.symbol(
+                "naml_fs_read_bytes",
+                crate::runtime::naml_fs_read_bytes as *const u8,
+            );
+            builder.symbol("naml_fs_write", crate::runtime::naml_fs_write as *const u8);
+            builder.symbol(
+                "naml_fs_append",
+                crate::runtime::naml_fs_append as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_write_bytes",
+                crate::runtime::naml_fs_write_bytes as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_append_bytes",
+                crate::runtime::naml_fs_append_bytes as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_exists",
+                crate::runtime::naml_fs_exists as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_is_file",
+                crate::runtime::naml_fs_is_file as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_is_dir",
+                crate::runtime::naml_fs_is_dir as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_list_dir",
+                crate::runtime::naml_fs_list_dir as *const u8,
+            );
+            builder.symbol("naml_fs_mkdir", crate::runtime::naml_fs_mkdir as *const u8);
+            builder.symbol(
+                "naml_fs_mkdir_all",
+                crate::runtime::naml_fs_mkdir_all as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_remove",
+                crate::runtime::naml_fs_remove as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_remove_all",
+                crate::runtime::naml_fs_remove_all as *const u8,
+            );
+            builder.symbol("naml_fs_join", crate::runtime::naml_fs_join as *const u8);
+            builder.symbol(
+                "naml_fs_dirname",
+                crate::runtime::naml_fs_dirname as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_basename",
+                crate::runtime::naml_fs_basename as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_extension",
+                crate::runtime::naml_fs_extension as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_absolute",
+                crate::runtime::naml_fs_absolute as *const u8,
+            );
+            builder.symbol("naml_fs_size", crate::runtime::naml_fs_size as *const u8);
+            builder.symbol(
+                "naml_fs_modified",
+                crate::runtime::naml_fs_modified as *const u8,
+            );
+            builder.symbol("naml_fs_copy", crate::runtime::naml_fs_copy as *const u8);
+            builder.symbol(
+                "naml_fs_rename",
+                crate::runtime::naml_fs_rename as *const u8,
+            );
+            builder.symbol("naml_fs_getwd", crate::runtime::naml_fs_getwd as *const u8);
+            builder.symbol("naml_fs_chdir", crate::runtime::naml_fs_chdir as *const u8);
+            builder.symbol(
+                "naml_fs_create_temp",
+                crate::runtime::naml_fs_create_temp as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mkdir_temp",
+                crate::runtime::naml_fs_mkdir_temp as *const u8,
+            );
+            builder.symbol("naml_fs_chmod", crate::runtime::naml_fs_chmod as *const u8);
+            builder.symbol(
+                "naml_fs_truncate",
+                crate::runtime::naml_fs_truncate as *const u8,
+            );
+            builder.symbol("naml_fs_stat", crate::runtime::naml_fs_stat as *const u8);
+            builder.symbol(
+                "naml_fs_symlink",
+                crate::runtime::naml_fs_symlink as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_readlink",
+                crate::runtime::naml_fs_readlink as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_lstat",
+                crate::runtime::naml_fs_lstat as *const u8,
+            );
+            builder.symbol("naml_fs_link", crate::runtime::naml_fs_link as *const u8);
+            builder.symbol(
+                "naml_fs_chtimes",
+                crate::runtime::naml_fs_chtimes as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_chown",
+                crate::runtime::naml_fs_chown as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_lchown",
+                crate::runtime::naml_fs_lchown as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_same_file",
+                crate::runtime::naml_fs_same_file as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_read_at",
+                crate::runtime::naml_fs_file_read_at as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_write_at",
+                crate::runtime::naml_fs_file_write_at as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_name",
+                crate::runtime::naml_fs_file_name as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_stat",
+                crate::runtime::naml_fs_file_stat as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_truncate",
+                crate::runtime::naml_fs_file_truncate as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_chmod",
+                crate::runtime::naml_fs_file_chmod as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_chown",
+                crate::runtime::naml_fs_file_chown as *const u8,
+            );
+            builder.symbol(
+                "naml_io_error_new",
+                crate::runtime::naml_io_error_new as *const u8,
+            );
+            builder.symbol(
+                "naml_permission_error_new",
+                crate::runtime::naml_permission_error_new as *const u8,
+            );
 
-        // Memory-mapped file operations
-        builder.symbol(
-            "naml_fs_mmap_open",
-            crate::runtime::naml_fs_mmap_open as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mmap_len",
-            crate::runtime::naml_fs_mmap_len as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mmap_read_byte",
-            crate::runtime::naml_fs_mmap_read_byte as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mmap_write_byte",
-            crate::runtime::naml_fs_mmap_write_byte as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mmap_read",
-            crate::runtime::naml_fs_mmap_read as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mmap_write",
-            crate::runtime::naml_fs_mmap_write as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mmap_flush",
-            crate::runtime::naml_fs_mmap_flush as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_mmap_close",
-            crate::runtime::naml_fs_mmap_close as *const u8,
-        );
+            // Memory-mapped file operations
+            builder.symbol(
+                "naml_fs_mmap_open",
+                crate::runtime::naml_fs_mmap_open as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mmap_len",
+                crate::runtime::naml_fs_mmap_len as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mmap_read_byte",
+                crate::runtime::naml_fs_mmap_read_byte as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mmap_write_byte",
+                crate::runtime::naml_fs_mmap_write_byte as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mmap_read",
+                crate::runtime::naml_fs_mmap_read as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mmap_write",
+                crate::runtime::naml_fs_mmap_write as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mmap_flush",
+                crate::runtime::naml_fs_mmap_flush as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_mmap_close",
+                crate::runtime::naml_fs_mmap_close as *const u8,
+            );
 
-        // File handle operations
-        builder.symbol(
-            "naml_fs_file_open",
-            crate::runtime::naml_fs_file_open as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_close",
-            crate::runtime::naml_fs_file_close as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_read",
-            crate::runtime::naml_fs_file_read as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_read_line",
-            crate::runtime::naml_fs_file_read_line as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_read_all",
-            crate::runtime::naml_fs_file_read_all as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_write",
-            crate::runtime::naml_fs_file_write as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_write_line",
-            crate::runtime::naml_fs_file_write_line as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_flush",
-            crate::runtime::naml_fs_file_flush as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_seek",
-            crate::runtime::naml_fs_file_seek as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_tell",
-            crate::runtime::naml_fs_file_tell as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_eof",
-            crate::runtime::naml_fs_file_eof as *const u8,
-        );
-        builder.symbol(
-            "naml_fs_file_size",
-            crate::runtime::naml_fs_file_size as *const u8,
-        );
+            // File handle operations
+            builder.symbol(
+                "naml_fs_file_open",
+                crate::runtime::naml_fs_file_open as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_close",
+                crate::runtime::naml_fs_file_close as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_read",
+                crate::runtime::naml_fs_file_read as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_read_line",
+                crate::runtime::naml_fs_file_read_line as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_read_all",
+                crate::runtime::naml_fs_file_read_all as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_write",
+                crate::runtime::naml_fs_file_write as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_write_line",
+                crate::runtime::naml_fs_file_write_line as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_flush",
+                crate::runtime::naml_fs_file_flush as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_seek",
+                crate::runtime::naml_fs_file_seek as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_tell",
+                crate::runtime::naml_fs_file_tell as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_eof",
+                crate::runtime::naml_fs_file_eof as *const u8,
+            );
+            builder.symbol(
+                "naml_fs_file_size",
+                crate::runtime::naml_fs_file_size as *const u8,
+            );
+        }
 
         // Path operations (from naml-std-path)
         builder.symbol(
@@ -1868,288 +1888,293 @@ impl<'a> JitCompiler<'a> {
             crate::runtime::naml_encoding_yaml_encode as *const u8,
         );
 
-        // Networking operations (from naml-std-net)
-        // Exception constructors
-        builder.symbol(
-            "naml_network_error_new",
-            crate::runtime::naml_network_error_new as *const u8,
-        );
-        builder.symbol(
-            "naml_timeout_error_new",
-            crate::runtime::naml_timeout_error_new as *const u8,
-        );
-        builder.symbol(
-            "naml_connection_refused_new",
-            crate::runtime::naml_connection_refused_new as *const u8,
-        );
+        // Networking operations (from naml-std-net) - native and edge only
+        if is_native_or_edge {
+            // Exception constructors
+            builder.symbol(
+                "naml_network_error_new",
+                crate::runtime::naml_network_error_new as *const u8,
+            );
+            builder.symbol(
+                "naml_timeout_error_new",
+                crate::runtime::naml_timeout_error_new as *const u8,
+            );
+            builder.symbol(
+                "naml_connection_refused_new",
+                crate::runtime::naml_connection_refused_new as *const u8,
+            );
 
-        // TCP Server
-        builder.symbol(
-            "naml_net_tcp_server_listen",
-            crate::runtime::naml_net_tcp_server_listen as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_server_accept",
-            crate::runtime::naml_net_tcp_server_accept as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_server_close",
-            crate::runtime::naml_net_tcp_server_close as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_server_local_addr",
-            crate::runtime::naml_net_tcp_server_local_addr as *const u8,
-        );
+            // TCP Server
+            builder.symbol(
+                "naml_net_tcp_server_listen",
+                crate::runtime::naml_net_tcp_server_listen as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_server_accept",
+                crate::runtime::naml_net_tcp_server_accept as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_server_close",
+                crate::runtime::naml_net_tcp_server_close as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_server_local_addr",
+                crate::runtime::naml_net_tcp_server_local_addr as *const u8,
+            );
 
-        // TCP Client
-        builder.symbol(
-            "naml_net_tcp_client_connect",
-            crate::runtime::naml_net_tcp_client_connect as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_client_read",
-            crate::runtime::naml_net_tcp_client_read as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_client_read_all",
-            crate::runtime::naml_net_tcp_client_read_all as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_client_write",
-            crate::runtime::naml_net_tcp_client_write as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_client_close",
-            crate::runtime::naml_net_tcp_client_close as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_client_set_timeout",
-            crate::runtime::naml_net_tcp_client_set_timeout as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tcp_socket_peer_addr",
-            crate::runtime::naml_net_tcp_socket_peer_addr as *const u8,
-        );
+            // TCP Client
+            builder.symbol(
+                "naml_net_tcp_client_connect",
+                crate::runtime::naml_net_tcp_client_connect as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_client_read",
+                crate::runtime::naml_net_tcp_client_read as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_client_read_all",
+                crate::runtime::naml_net_tcp_client_read_all as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_client_write",
+                crate::runtime::naml_net_tcp_client_write as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_client_close",
+                crate::runtime::naml_net_tcp_client_close as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_client_set_timeout",
+                crate::runtime::naml_net_tcp_client_set_timeout as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tcp_socket_peer_addr",
+                crate::runtime::naml_net_tcp_socket_peer_addr as *const u8,
+            );
 
-        // UDP
-        builder.symbol(
-            "naml_net_udp_bind",
-            crate::runtime::naml_net_udp_bind as *const u8,
-        );
-        builder.symbol(
-            "naml_net_udp_send",
-            crate::runtime::naml_net_udp_send as *const u8,
-        );
-        builder.symbol(
-            "naml_net_udp_receive",
-            crate::runtime::naml_net_udp_receive as *const u8,
-        );
-        builder.symbol(
-            "naml_net_udp_receive_from",
-            crate::runtime::naml_net_udp_receive_from as *const u8,
-        );
-        builder.symbol(
-            "naml_net_udp_close",
-            crate::runtime::naml_net_udp_close as *const u8,
-        );
-        builder.symbol(
-            "naml_net_udp_local_addr",
-            crate::runtime::naml_net_udp_local_addr as *const u8,
-        );
+            // UDP
+            builder.symbol(
+                "naml_net_udp_bind",
+                crate::runtime::naml_net_udp_bind as *const u8,
+            );
+            builder.symbol(
+                "naml_net_udp_send",
+                crate::runtime::naml_net_udp_send as *const u8,
+            );
+            builder.symbol(
+                "naml_net_udp_receive",
+                crate::runtime::naml_net_udp_receive as *const u8,
+            );
+            builder.symbol(
+                "naml_net_udp_receive_from",
+                crate::runtime::naml_net_udp_receive_from as *const u8,
+            );
+            builder.symbol(
+                "naml_net_udp_close",
+                crate::runtime::naml_net_udp_close as *const u8,
+            );
+            builder.symbol(
+                "naml_net_udp_local_addr",
+                crate::runtime::naml_net_udp_local_addr as *const u8,
+            );
 
-        // HTTP Client
-        builder.symbol(
-            "naml_net_http_client_get",
-            crate::runtime::naml_net_http_client_get as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_client_post",
-            crate::runtime::naml_net_http_client_post as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_client_put",
-            crate::runtime::naml_net_http_client_put as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_client_patch",
-            crate::runtime::naml_net_http_client_patch as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_client_delete",
-            crate::runtime::naml_net_http_client_delete as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_client_set_timeout",
-            crate::runtime::naml_net_http_client_set_timeout as *const u8,
-        );
-        // HTTP Response accessors
-        builder.symbol(
-            "naml_net_http_response_get_status",
-            crate::runtime::naml_net_http_response_get_status as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_response_get_body_bytes",
-            crate::runtime::naml_net_http_response_get_body_bytes as *const u8,
-        );
+            // HTTP Client
+            builder.symbol(
+                "naml_net_http_client_get",
+                crate::runtime::naml_net_http_client_get as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_client_post",
+                crate::runtime::naml_net_http_client_post as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_client_put",
+                crate::runtime::naml_net_http_client_put as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_client_patch",
+                crate::runtime::naml_net_http_client_patch as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_client_delete",
+                crate::runtime::naml_net_http_client_delete as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_client_set_timeout",
+                crate::runtime::naml_net_http_client_set_timeout as *const u8,
+            );
+            // HTTP Response accessors
+            builder.symbol(
+                "naml_net_http_response_get_status",
+                crate::runtime::naml_net_http_response_get_status as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_response_get_body_bytes",
+                crate::runtime::naml_net_http_response_get_body_bytes as *const u8,
+            );
 
-        // HTTP Server
-        builder.symbol(
-            "naml_net_http_server_open_router",
-            crate::runtime::naml_net_http_server_open_router as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_get",
-            crate::runtime::naml_net_http_server_get as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_post",
-            crate::runtime::naml_net_http_server_post as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_put",
-            crate::runtime::naml_net_http_server_put as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_patch",
-            crate::runtime::naml_net_http_server_patch as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_delete",
-            crate::runtime::naml_net_http_server_delete as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_with",
-            crate::runtime::naml_net_http_server_with as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_group",
-            crate::runtime::naml_net_http_server_group as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_mount",
-            crate::runtime::naml_net_http_server_mount as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_serve",
-            crate::runtime::naml_net_http_server_serve as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_server_text_response",
-            crate::runtime::naml_net_http_server_text_response as *const u8,
-        );
+            // HTTP Server
+            builder.symbol(
+                "naml_net_http_server_open_router",
+                crate::runtime::naml_net_http_server_open_router as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_get",
+                crate::runtime::naml_net_http_server_get as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_post",
+                crate::runtime::naml_net_http_server_post as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_put",
+                crate::runtime::naml_net_http_server_put as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_patch",
+                crate::runtime::naml_net_http_server_patch as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_delete",
+                crate::runtime::naml_net_http_server_delete as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_with",
+                crate::runtime::naml_net_http_server_with as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_group",
+                crate::runtime::naml_net_http_server_group as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_mount",
+                crate::runtime::naml_net_http_server_mount as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_serve",
+                crate::runtime::naml_net_http_server_serve as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_server_text_response",
+                crate::runtime::naml_net_http_server_text_response as *const u8,
+            );
 
-        // HTTP Middleware
-        builder.symbol(
-            "naml_net_http_middleware_logger",
-            crate::runtime::naml_net_http_middleware_logger as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_middleware_timeout",
-            crate::runtime::naml_net_http_middleware_timeout as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_middleware_recover",
-            crate::runtime::naml_net_http_middleware_recover as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_middleware_cors",
-            crate::runtime::naml_net_http_middleware_cors as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_middleware_rate_limit",
-            crate::runtime::naml_net_http_middleware_rate_limit as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_middleware_compress",
-            crate::runtime::naml_net_http_middleware_compress as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_middleware_request_id",
-            crate::runtime::naml_net_http_middleware_request_id as *const u8,
-        );
+            // HTTP Middleware
+            builder.symbol(
+                "naml_net_http_middleware_logger",
+                crate::runtime::naml_net_http_middleware_logger as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_middleware_timeout",
+                crate::runtime::naml_net_http_middleware_timeout as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_middleware_recover",
+                crate::runtime::naml_net_http_middleware_recover as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_middleware_cors",
+                crate::runtime::naml_net_http_middleware_cors as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_middleware_rate_limit",
+                crate::runtime::naml_net_http_middleware_rate_limit as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_middleware_compress",
+                crate::runtime::naml_net_http_middleware_compress as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_middleware_request_id",
+                crate::runtime::naml_net_http_middleware_request_id as *const u8,
+            );
 
-        // TLS Client
-        builder.symbol(
-            "naml_net_tls_client_connect",
-            crate::runtime::naml_net_tls_client_connect as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_client_read",
-            crate::runtime::naml_net_tls_client_read as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_client_read_all",
-            crate::runtime::naml_net_tls_client_read_all as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_client_write",
-            crate::runtime::naml_net_tls_client_write as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_client_close",
-            crate::runtime::naml_net_tls_client_close as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_client_set_timeout",
-            crate::runtime::naml_net_tls_client_set_timeout as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_client_peer_addr",
-            crate::runtime::naml_net_tls_client_peer_addr as *const u8,
-        );
+            // TLS Client
+            builder.symbol(
+                "naml_net_tls_client_connect",
+                crate::runtime::naml_net_tls_client_connect as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_client_read",
+                crate::runtime::naml_net_tls_client_read as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_client_read_all",
+                crate::runtime::naml_net_tls_client_read_all as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_client_write",
+                crate::runtime::naml_net_tls_client_write as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_client_close",
+                crate::runtime::naml_net_tls_client_close as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_client_set_timeout",
+                crate::runtime::naml_net_tls_client_set_timeout as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_client_peer_addr",
+                crate::runtime::naml_net_tls_client_peer_addr as *const u8,
+            );
 
-        // TLS Server
-        builder.symbol(
-            "naml_net_tls_server_wrap_listener",
-            crate::runtime::naml_net_tls_server_wrap_listener as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_server_accept",
-            crate::runtime::naml_net_tls_server_accept as *const u8,
-        );
-        builder.symbol(
-            "naml_net_tls_server_close_listener",
-            crate::runtime::naml_net_tls_server_close_listener as *const u8,
-        );
+            // TLS Server
+            builder.symbol(
+                "naml_net_tls_server_wrap_listener",
+                crate::runtime::naml_net_tls_server_wrap_listener as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_server_accept",
+                crate::runtime::naml_net_tls_server_accept as *const u8,
+            );
+            builder.symbol(
+                "naml_net_tls_server_close_listener",
+                crate::runtime::naml_net_tls_server_close_listener as *const u8,
+            );
 
-        // HTTP over TLS
-        builder.symbol(
-            "naml_net_http_server_serve_tls",
-            crate::runtime::naml_net_http_server_serve_tls as *const u8,
-        );
-        builder.symbol(
-            "naml_net_http_client_get_tls",
-            crate::runtime::naml_net_http_client_get_tls as *const u8,
-        );
+            // HTTP over TLS
+            builder.symbol(
+                "naml_net_http_server_serve_tls",
+                crate::runtime::naml_net_http_server_serve_tls as *const u8,
+            );
+            builder.symbol(
+                "naml_net_http_client_get_tls",
+                crate::runtime::naml_net_http_client_get_tls as *const u8,
+            );
+        }
 
-        builder.symbol("naml_db_sqlite_error_new", crate::runtime::naml_db_sqlite_error_new as *const u8);
-        builder.symbol("naml_db_sqlite_open", crate::runtime::naml_db_sqlite_open as *const u8);
-        builder.symbol("naml_db_sqlite_open_memory", crate::runtime::naml_db_sqlite_open_memory as *const u8);
-        builder.symbol("naml_db_sqlite_close", crate::runtime::naml_db_sqlite_close as *const u8);
-        builder.symbol("naml_db_sqlite_exec", crate::runtime::naml_db_sqlite_exec as *const u8);
-        builder.symbol("naml_db_sqlite_query", crate::runtime::naml_db_sqlite_query as *const u8);
-        builder.symbol("naml_db_sqlite_row_count", crate::runtime::naml_db_sqlite_row_count as *const u8);
-        builder.symbol("naml_db_sqlite_row_at", crate::runtime::naml_db_sqlite_row_at as *const u8);
-        builder.symbol("naml_db_sqlite_get_string", crate::runtime::naml_db_sqlite_get_string as *const u8);
-        builder.symbol("naml_db_sqlite_get_int", crate::runtime::naml_db_sqlite_get_int as *const u8);
-        builder.symbol("naml_db_sqlite_get_float", crate::runtime::naml_db_sqlite_get_float as *const u8);
-        builder.symbol("naml_db_sqlite_get_bool", crate::runtime::naml_db_sqlite_get_bool as *const u8);
-        builder.symbol("naml_db_sqlite_is_null", crate::runtime::naml_db_sqlite_is_null as *const u8);
-        builder.symbol("naml_db_sqlite_columns", crate::runtime::naml_db_sqlite_columns as *const u8);
-        builder.symbol("naml_db_sqlite_column_count", crate::runtime::naml_db_sqlite_column_count as *const u8);
-        builder.symbol("naml_db_sqlite_begin", crate::runtime::naml_db_sqlite_begin as *const u8);
-        builder.symbol("naml_db_sqlite_commit", crate::runtime::naml_db_sqlite_commit as *const u8);
-        builder.symbol("naml_db_sqlite_rollback", crate::runtime::naml_db_sqlite_rollback as *const u8);
-        builder.symbol("naml_db_sqlite_prepare", crate::runtime::naml_db_sqlite_prepare as *const u8);
-        builder.symbol("naml_db_sqlite_bind_string", crate::runtime::naml_db_sqlite_bind_string as *const u8);
-        builder.symbol("naml_db_sqlite_bind_int", crate::runtime::naml_db_sqlite_bind_int as *const u8);
-        builder.symbol("naml_db_sqlite_bind_float", crate::runtime::naml_db_sqlite_bind_float as *const u8);
-        builder.symbol("naml_db_sqlite_step", crate::runtime::naml_db_sqlite_step as *const u8);
-        builder.symbol("naml_db_sqlite_step_query", crate::runtime::naml_db_sqlite_step_query as *const u8);
-        builder.symbol("naml_db_sqlite_reset", crate::runtime::naml_db_sqlite_reset as *const u8);
-        builder.symbol("naml_db_sqlite_finalize", crate::runtime::naml_db_sqlite_finalize as *const u8);
-        builder.symbol("naml_db_sqlite_changes", crate::runtime::naml_db_sqlite_changes as *const u8);
-        builder.symbol("naml_db_sqlite_last_insert_id", crate::runtime::naml_db_sqlite_last_insert_id as *const u8);
+        // SQLite operations (from naml-std-db) - native and edge only
+        if is_native_or_edge {
+            builder.symbol("naml_db_sqlite_error_new", crate::runtime::naml_db_sqlite_error_new as *const u8);
+            builder.symbol("naml_db_sqlite_open", crate::runtime::naml_db_sqlite_open as *const u8);
+            builder.symbol("naml_db_sqlite_open_memory", crate::runtime::naml_db_sqlite_open_memory as *const u8);
+            builder.symbol("naml_db_sqlite_close", crate::runtime::naml_db_sqlite_close as *const u8);
+            builder.symbol("naml_db_sqlite_exec", crate::runtime::naml_db_sqlite_exec as *const u8);
+            builder.symbol("naml_db_sqlite_query", crate::runtime::naml_db_sqlite_query as *const u8);
+            builder.symbol("naml_db_sqlite_row_count", crate::runtime::naml_db_sqlite_row_count as *const u8);
+            builder.symbol("naml_db_sqlite_row_at", crate::runtime::naml_db_sqlite_row_at as *const u8);
+            builder.symbol("naml_db_sqlite_get_string", crate::runtime::naml_db_sqlite_get_string as *const u8);
+            builder.symbol("naml_db_sqlite_get_int", crate::runtime::naml_db_sqlite_get_int as *const u8);
+            builder.symbol("naml_db_sqlite_get_float", crate::runtime::naml_db_sqlite_get_float as *const u8);
+            builder.symbol("naml_db_sqlite_get_bool", crate::runtime::naml_db_sqlite_get_bool as *const u8);
+            builder.symbol("naml_db_sqlite_is_null", crate::runtime::naml_db_sqlite_is_null as *const u8);
+            builder.symbol("naml_db_sqlite_columns", crate::runtime::naml_db_sqlite_columns as *const u8);
+            builder.symbol("naml_db_sqlite_column_count", crate::runtime::naml_db_sqlite_column_count as *const u8);
+            builder.symbol("naml_db_sqlite_begin", crate::runtime::naml_db_sqlite_begin as *const u8);
+            builder.symbol("naml_db_sqlite_commit", crate::runtime::naml_db_sqlite_commit as *const u8);
+            builder.symbol("naml_db_sqlite_rollback", crate::runtime::naml_db_sqlite_rollback as *const u8);
+            builder.symbol("naml_db_sqlite_prepare", crate::runtime::naml_db_sqlite_prepare as *const u8);
+            builder.symbol("naml_db_sqlite_bind_string", crate::runtime::naml_db_sqlite_bind_string as *const u8);
+            builder.symbol("naml_db_sqlite_bind_int", crate::runtime::naml_db_sqlite_bind_int as *const u8);
+            builder.symbol("naml_db_sqlite_bind_float", crate::runtime::naml_db_sqlite_bind_float as *const u8);
+            builder.symbol("naml_db_sqlite_step", crate::runtime::naml_db_sqlite_step as *const u8);
+            builder.symbol("naml_db_sqlite_step_query", crate::runtime::naml_db_sqlite_step_query as *const u8);
+            builder.symbol("naml_db_sqlite_reset", crate::runtime::naml_db_sqlite_reset as *const u8);
+            builder.symbol("naml_db_sqlite_finalize", crate::runtime::naml_db_sqlite_finalize as *const u8);
+            builder.symbol("naml_db_sqlite_changes", crate::runtime::naml_db_sqlite_changes as *const u8);
+            builder.symbol("naml_db_sqlite_last_insert_id", crate::runtime::naml_db_sqlite_last_insert_id as *const u8);
+        }
 
         let module = BackendModule::Jit(JITModule::new(builder));
         Self::build_compiler(interner, annotations, source_info, module, release, unsafe_mode, target)

@@ -3,7 +3,7 @@ use std::path::Path;
 use cranelift_module::Linkage;
 use lasso::Rodeo;
 
-use crate::ast::{Expression, Item, SourceFile, Statement};
+use crate::ast::{Expression, FunctionItem, Item, SourceFile, Statement};
 use crate::codegen::CodegenError;
 use crate::codegen::cranelift::heap::{self, get_heap_type_resolved};
 use crate::codegen::cranelift::{
@@ -12,6 +12,13 @@ use crate::codegen::cranelift::{
 use crate::typechecker::TypeAnnotations;
 
 impl<'a> JitCompiler<'a> {
+    fn should_compile_function(&self, f: &FunctionItem) -> bool {
+        match &f.platforms {
+            None => true,
+            Some(p) => p.platforms.iter().any(|p| self.target.matches_platform(p)),
+        }
+    }
+
     pub fn compile(&mut self, ast: &'a SourceFile<'a>) -> Result<(), CodegenError> {
         for item in &ast.items {
             if let crate::ast::Item::Struct(struct_item) = item {
@@ -185,6 +192,7 @@ impl<'a> JitCompiler<'a> {
         for item in &ast.items {
             if let Item::Function(f) = item
                 && let Some(ref body) = f.body
+                && self.should_compile_function(f)
             {
                 self.scan_for_spawn_blocks(body)?;
             }
@@ -205,6 +213,9 @@ impl<'a> JitCompiler<'a> {
         // Skip generic functions - they will be monomorphized
         for item in &ast.items {
             if let Item::Function(f) = item {
+                if !self.should_compile_function(f) {
+                    continue;
+                }
                 let is_generic = !f.generics.is_empty();
                 if is_generic && f.receiver.is_none() {
                     // Store generic function for later monomorphization
@@ -221,7 +232,8 @@ impl<'a> JitCompiler<'a> {
         // Identify inline candidates (small non-generic functions)
         for item in &ast.items {
             if let Item::Function(f) = item {
-                if f.receiver.is_none() && f.generics.is_empty() {
+                if f.receiver.is_none() && f.generics.is_empty() && self.should_compile_function(f)
+                {
                     self.maybe_add_inline_candidate(f);
                 }
             }
@@ -246,6 +258,7 @@ impl<'a> JitCompiler<'a> {
                 && f.receiver.is_none()
                 && f.body.is_some()
                 && f.generics.is_empty()
+                && self.should_compile_function(f)
             {
                 self.compile_function(f)?;
             }
@@ -256,6 +269,7 @@ impl<'a> JitCompiler<'a> {
             if let Item::Function(f) = item
                 && f.receiver.is_some()
                 && f.body.is_some()
+                && self.should_compile_function(f)
             {
                 self.compile_method(f)?;
             }
@@ -324,6 +338,7 @@ impl<'a> JitCompiler<'a> {
         for item in &parse_result.ast.items {
             if let Item::Function(f) = item {
                 if f.is_public && f.receiver.is_none() && f.body.is_some() && f.generics.is_empty()
+                    && self.should_compile_function(f)
                 {
                     self.declare_function(f)?;
                 }
@@ -332,6 +347,7 @@ impl<'a> JitCompiler<'a> {
         for item in &parse_result.ast.items {
             if let Item::Function(f) = item {
                 if f.is_public && f.receiver.is_none() && f.body.is_some() && f.generics.is_empty()
+                    && self.should_compile_function(f)
                 {
                     self.compile_function(f)?;
                 }

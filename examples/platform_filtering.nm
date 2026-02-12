@@ -1,0 +1,67 @@
+use std::testing::*;
+
+#[platforms(native)]
+fn get_platform() -> string {
+    return "native";
+}
+
+#[platforms(edge)]
+fn get_platform() -> string {
+    return "edge";
+}
+
+#[platforms(browser)]
+fn get_platform() -> string {
+    return "browser";
+}
+
+#[platforms(native)]
+fn read_config() -> string {
+    return "read from filesystem";
+}
+
+#[platforms(browser)]
+fn read_config() -> string {
+    return "read from OPFS";
+}
+
+#[platforms(native, edge)]
+fn server_only_greeting() -> string {
+    return "Hello from the server side!";
+}
+
+fn universal_add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn main() {
+    println("=== Platform Filtering Demo ===");
+    println("");
+
+    println("Platform-specific function selection:");
+    var platform: string = get_platform();
+    print("  Current platform: ");
+    println(platform);
+    assert(platform == "native", "Should select native implementation");
+
+    var config: string = read_config();
+    print("  Config source: ");
+    println(config);
+    assert(config == "read from filesystem", "Should use filesystem on native");
+
+    var greeting: string = server_only_greeting();
+    print("  Server greeting: ");
+    println(greeting);
+    assert(greeting == "Hello from the server side!", "Native matches native+edge functions");
+
+    println("");
+    println("Cross-platform functions work everywhere:");
+    var sum: int = universal_add(20, 22);
+    print("  20 + 22 = ");
+    println(sum);
+    assert_eq(sum, 42, "Universal functions work on all platforms");
+
+    println("");
+    println("All assertions passed!");
+    println("=== Done ===");
+}

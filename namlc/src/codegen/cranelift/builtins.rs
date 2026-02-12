@@ -39,6 +39,11 @@ use super::strings::call_string_from_cstr;
 use super::{ARRAY_LEN_OFFSET, CompileContext};
 use crate::ast::{Expression, Literal, LiteralExpr};
 use crate::codegen::CodegenError;
+use crate::ast::{CompilationTarget, Platform};
+
+const ALL: &[Platform] = &[Platform::Native, Platform::Edge, Platform::Browser];
+const NATIVE_ONLY: &[Platform] = &[Platform::Native];
+const NATIVE_EDGE: &[Platform] = &[Platform::Native, Platform::Edge];
 
 /// Describes how to compile a built-in function
 #[derive(Debug, Clone, Copy)]
@@ -812,6 +817,7 @@ pub enum BuiltinStrategy {
 pub struct BuiltinFunction {
     pub name: &'static str,
     pub strategy: BuiltinStrategy,
+    pub platforms: &'static [Platform],
 }
 
 /// Get the built-in function registry
@@ -824,226 +830,280 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "collections::arrays::count",
             strategy: BuiltinStrategy::ArrayLength,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::push",
             strategy: BuiltinStrategy::ArrayPush,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::reserved",
             strategy: BuiltinStrategy::ArrayWithCapacity,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::pop",
             strategy: BuiltinStrategy::OneArgOptionAccess("naml_array_pop"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::shift",
             strategy: BuiltinStrategy::OneArgOptionAccess("naml_array_shift"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::first",
             strategy: BuiltinStrategy::OneArgOptionAccess("naml_array_first"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::last",
             strategy: BuiltinStrategy::OneArgOptionAccess("naml_array_last"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::fill",
             strategy: BuiltinStrategy::ArrayFill,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::clear",
             strategy: BuiltinStrategy::ArrayClear,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::get",
             strategy: BuiltinStrategy::ArrayGet,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::sum",
             strategy: BuiltinStrategy::OneArgInt("naml_array_sum"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::min",
             strategy: BuiltinStrategy::ArrayMinMax("naml_array_min", true),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::max",
             strategy: BuiltinStrategy::ArrayMinMax("naml_array_max", false),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::reversed",
             strategy: BuiltinStrategy::OneArgPtr("naml_array_reversed"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::sort",
             strategy: BuiltinStrategy::OneArgPtr("naml_array_sort"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::flatten",
             strategy: BuiltinStrategy::OneArgPtr("naml_array_flatten"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::take",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_take"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::drop",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_drop"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::slice",
             strategy: BuiltinStrategy::ThreeArgPtr("naml_array_slice"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::index_of",
             strategy: BuiltinStrategy::ArrayIndexOf,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::contains",
             strategy: BuiltinStrategy::ArrayContains,
+            platforms: ALL,
         },
         // Mutation operations
         BuiltinFunction {
             name: "collections::arrays::insert",
             strategy: BuiltinStrategy::ThreeArgVoid("naml_array_insert"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::remove_at",
             strategy: BuiltinStrategy::TwoArgOptionInt("naml_array_remove_at"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::remove",
             strategy: BuiltinStrategy::TwoArgBool("naml_array_remove"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::swap",
             strategy: BuiltinStrategy::ThreeArgVoid("naml_array_swap"),
+            platforms: ALL,
         },
         // Deduplication
         BuiltinFunction {
             name: "collections::arrays::unique",
             strategy: BuiltinStrategy::OneArgPtr("naml_array_unique"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::compact",
             strategy: BuiltinStrategy::OneArgPtr("naml_array_compact"),
+            platforms: ALL,
         },
         // Backward search
         BuiltinFunction {
             name: "collections::arrays::last_index_of",
             strategy: BuiltinStrategy::ArrayLastIndexOf,
+            platforms: ALL,
         },
         // Array combination
         BuiltinFunction {
             name: "collections::arrays::zip",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_zip"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::unzip",
             strategy: BuiltinStrategy::OneArgPtr("naml_array_unzip"),
+            platforms: ALL,
         },
         // Splitting
         BuiltinFunction {
             name: "collections::arrays::chunk",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_chunk"),
+            platforms: ALL,
         },
         // Set operations
         BuiltinFunction {
             name: "collections::arrays::intersect",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_intersect"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::diff",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_diff"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::union",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_union"),
+            platforms: ALL,
         },
         // Random
         BuiltinFunction {
             name: "collections::arrays::shuffle",
             strategy: BuiltinStrategy::OneArgPtr("naml_array_shuffle"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::sample_n",
             strategy: BuiltinStrategy::TwoArgPtr("naml_array_sample_n"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::sample",
             strategy: BuiltinStrategy::Sample,
+            platforms: ALL,
         },
         // Lambda-based collection functions
         BuiltinFunction {
             name: "collections::arrays::any",
             strategy: BuiltinStrategy::LambdaBool("naml_array_any"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::all",
             strategy: BuiltinStrategy::LambdaBool("naml_array_all"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::count_if",
             strategy: BuiltinStrategy::LambdaInt("naml_array_count_if"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::apply",
             strategy: BuiltinStrategy::LambdaArray("naml_array_map"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::where",
             strategy: BuiltinStrategy::LambdaArray("naml_array_filter"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::partition",
             strategy: BuiltinStrategy::LambdaArray("naml_array_partition"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::take_while",
             strategy: BuiltinStrategy::LambdaArray("naml_array_take_while"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::drop_while",
             strategy: BuiltinStrategy::LambdaArray("naml_array_drop_while"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::reject",
             strategy: BuiltinStrategy::LambdaArray("naml_array_reject"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::flat_apply",
             strategy: BuiltinStrategy::LambdaArray("naml_array_flat_apply"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::find",
             strategy: BuiltinStrategy::LambdaFind,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::find_index",
             strategy: BuiltinStrategy::LambdaFindIndex,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::find_last",
             strategy: BuiltinStrategy::LambdaFindLast,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::find_last_index",
             strategy: BuiltinStrategy::LambdaFindLastIndex,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::fold",
             strategy: BuiltinStrategy::LambdaFold,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::scan",
             strategy: BuiltinStrategy::LambdaScan,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::arrays::sort_by",
             strategy: BuiltinStrategy::LambdaSortBy,
+            platforms: ALL,
         },
         // ========================================
         // Collections module - map operations
@@ -1052,100 +1112,123 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "collections::maps::count",
             strategy: BuiltinStrategy::MapLength,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::contains_key",
             strategy: BuiltinStrategy::MapContainsKey,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::remove",
             strategy: BuiltinStrategy::MapRemove,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::clear",
             strategy: BuiltinStrategy::MapClear,
+            platforms: ALL,
         },
         // Extraction
         BuiltinFunction {
             name: "collections::maps::keys",
             strategy: BuiltinStrategy::MapExtract("naml_map_keys"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::values",
             strategy: BuiltinStrategy::MapExtract("naml_map_values"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::entries",
             strategy: BuiltinStrategy::MapEntries,
+            platforms: ALL,
         },
         // Lookup
         BuiltinFunction {
             name: "collections::maps::first_key",
             strategy: BuiltinStrategy::MapFirstOption("naml_map_first_key"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::first_value",
             strategy: BuiltinStrategy::MapFirstOption("naml_map_first_value"),
+            platforms: ALL,
         },
         // Lambda-based functions
         BuiltinFunction {
             name: "collections::maps::any",
             strategy: BuiltinStrategy::MapLambdaBool("naml_map_any"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::all",
             strategy: BuiltinStrategy::MapLambdaBool("naml_map_all"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::count_if",
             strategy: BuiltinStrategy::MapLambdaInt("naml_map_count_if"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::fold",
             strategy: BuiltinStrategy::MapLambdaFold,
+            platforms: ALL,
         },
         // Transformation
         BuiltinFunction {
             name: "collections::maps::transform",
             strategy: BuiltinStrategy::MapLambdaMap("naml_map_transform"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::where",
             strategy: BuiltinStrategy::MapLambdaMap("naml_map_where"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::reject",
             strategy: BuiltinStrategy::MapLambdaMap("naml_map_reject"),
+            platforms: ALL,
         },
         // Combining
         BuiltinFunction {
             name: "collections::maps::merge",
             strategy: BuiltinStrategy::MapCombine("naml_map_merge"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::defaults",
             strategy: BuiltinStrategy::MapCombine("naml_map_defaults"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::intersect",
             strategy: BuiltinStrategy::MapCombine("naml_map_intersect"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::diff",
             strategy: BuiltinStrategy::MapCombine("naml_map_diff"),
+            platforms: ALL,
         },
         // Conversion
         BuiltinFunction {
             name: "collections::maps::invert",
             strategy: BuiltinStrategy::MapInvert,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::from_arrays",
             strategy: BuiltinStrategy::MapFromArrays,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "collections::maps::from_entries",
             strategy: BuiltinStrategy::MapFromEntries,
+            platforms: ALL,
         },
         // ========================================
         // IO module - core I/O operations
@@ -1153,30 +1236,37 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "print",
             strategy: BuiltinStrategy::Print(false),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "println",
             strategy: BuiltinStrategy::Print(true),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "io::read_line",
             strategy: BuiltinStrategy::ReadLine,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "fmt",
             strategy: BuiltinStrategy::Fmt,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "warn",
             strategy: BuiltinStrategy::Stderr("warn"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "error",
             strategy: BuiltinStrategy::Stderr("error"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "panic",
             strategy: BuiltinStrategy::Stderr("panic"),
+            platforms: ALL,
         },
         // ========================================
         // IO module - terminal operations
@@ -1184,30 +1274,37 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "io::read_key",
             strategy: BuiltinStrategy::NoArgInt("naml_read_key"),
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "io::clear_screen",
             strategy: BuiltinStrategy::NoArgVoid("naml_clear_screen"),
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "io::set_cursor",
             strategy: BuiltinStrategy::TwoArgVoid("naml_set_cursor"),
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "io::hide_cursor",
             strategy: BuiltinStrategy::NoArgVoid("naml_hide_cursor"),
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "io::show_cursor",
             strategy: BuiltinStrategy::NoArgVoid("naml_show_cursor"),
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "io::terminal_width",
             strategy: BuiltinStrategy::NoArgInt("naml_terminal_width"),
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "io::terminal_height",
             strategy: BuiltinStrategy::NoArgInt("naml_terminal_height"),
+            platforms: NATIVE_ONLY,
         },
         // ========================================
         // Random module
@@ -1215,10 +1312,12 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "random::random",
             strategy: BuiltinStrategy::RandomInt,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "random::random_float",
             strategy: BuiltinStrategy::RandomFloat,
+            platforms: ALL,
         },
         // ========================================
         // Datetime module
@@ -1226,42 +1325,52 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "datetime::now_ms",
             strategy: BuiltinStrategy::NoArgInt("naml_datetime_now_ms"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::now_s",
             strategy: BuiltinStrategy::NoArgInt("naml_datetime_now_s"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::year",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_year"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::month",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_month"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::day",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_day"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::hour",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_hour"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::minute",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_minute"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::second",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_second"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::day_of_week",
             strategy: BuiltinStrategy::DatetimeOneArgInt("naml_datetime_day_of_week"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "datetime::format_date",
             strategy: BuiltinStrategy::DatetimeFormat,
+            platforms: ALL,
         },
         // ========================================
         // Metrics module
@@ -1269,18 +1378,22 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "metrics::perf_now",
             strategy: BuiltinStrategy::NoArgInt("naml_metrics_perf_now"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "metrics::elapsed_ms",
             strategy: BuiltinStrategy::OneArgInt("naml_metrics_elapsed_ms"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "metrics::elapsed_us",
             strategy: BuiltinStrategy::OneArgInt("naml_metrics_elapsed_us"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "metrics::elapsed_ns",
             strategy: BuiltinStrategy::OneArgInt("naml_metrics_elapsed_ns"),
+            platforms: ALL,
         },
         // ========================================
         // Strings module
@@ -1288,78 +1401,97 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "strings::len",
             strategy: BuiltinStrategy::StringOneArgInt("naml_string_char_len"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::char_at",
             strategy: BuiltinStrategy::StringArgIntInt("naml_string_char_at"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::upper",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_upper"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::lower",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_lower"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::split",
             strategy: BuiltinStrategy::StringTwoArgPtr("naml_string_split"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::concat",
             strategy: BuiltinStrategy::StringJoin,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::has",
             strategy: BuiltinStrategy::StringTwoArgBool("naml_string_contains"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::starts_with",
             strategy: BuiltinStrategy::StringTwoArgBool("naml_string_starts_with"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::ends_with",
             strategy: BuiltinStrategy::StringTwoArgBool("naml_string_ends_with"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::replace",
             strategy: BuiltinStrategy::StringThreeArgPtr("naml_string_replace"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::replace_all",
             strategy: BuiltinStrategy::StringThreeArgPtr("naml_string_replace_all"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::ltrim",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_ltrim"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::rtrim",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_rtrim"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::substr",
             strategy: BuiltinStrategy::StringArgIntIntPtr("naml_string_substr"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::lpad",
             strategy: BuiltinStrategy::StringArgIntStrPtr("naml_string_lpad"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::rpad",
             strategy: BuiltinStrategy::StringArgIntStrPtr("naml_string_rpad"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::repeat",
             strategy: BuiltinStrategy::StringArgIntPtr("naml_string_repeat"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::lines",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_lines"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "strings::chars",
             strategy: BuiltinStrategy::StringOneArgPtr("naml_string_chars"),
+            platforms: ALL,
         },
         // ========================================
         // Threads/Channel module
@@ -1367,82 +1499,102 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "threads::sleep",
             strategy: BuiltinStrategy::Sleep,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::join",
             strategy: BuiltinStrategy::ThreadsJoin,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::open_channel",
             strategy: BuiltinStrategy::ChannelOpen,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::send",
             strategy: BuiltinStrategy::ChannelSend,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::receive",
             strategy: BuiltinStrategy::ChannelReceive,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::close",
             strategy: BuiltinStrategy::ChannelClose,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::with_mutex",
             strategy: BuiltinStrategy::MutexNew,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::with_rwlock",
             strategy: BuiltinStrategy::RwlockNew,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::with_atomic",
             strategy: BuiltinStrategy::AtomicNew,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_load",
             strategy: BuiltinStrategy::AtomicLoad,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_store",
             strategy: BuiltinStrategy::AtomicStore,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_add",
             strategy: BuiltinStrategy::AtomicAdd,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_sub",
             strategy: BuiltinStrategy::AtomicSub,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_inc",
             strategy: BuiltinStrategy::AtomicInc,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_dec",
             strategy: BuiltinStrategy::AtomicDec,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_cas",
             strategy: BuiltinStrategy::AtomicCas,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_swap",
             strategy: BuiltinStrategy::AtomicSwap,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_and",
             strategy: BuiltinStrategy::AtomicAnd,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_or",
             strategy: BuiltinStrategy::AtomicOr,
+            platforms: NATIVE_ONLY,
         },
         BuiltinFunction {
             name: "threads::atomic_xor",
             strategy: BuiltinStrategy::AtomicXor,
+            platforms: NATIVE_ONLY,
         },
         // ========================================
         // File system module
@@ -1450,122 +1602,152 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "fs::read",
             strategy: BuiltinStrategy::FsRead,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::read_bytes",
             strategy: BuiltinStrategy::FsReadBytes,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::write",
             strategy: BuiltinStrategy::FsWrite,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::append",
             strategy: BuiltinStrategy::FsAppend,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::write_bytes",
             strategy: BuiltinStrategy::FsWriteBytes,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::append_bytes",
             strategy: BuiltinStrategy::FsAppendBytes,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::exists",
             strategy: BuiltinStrategy::FsExists,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::is_file",
             strategy: BuiltinStrategy::FsIsFile,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::is_dir",
             strategy: BuiltinStrategy::FsIsDir,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::list_dir",
             strategy: BuiltinStrategy::FsListDir,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mkdir",
             strategy: BuiltinStrategy::FsMkdir,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mkdir_all",
             strategy: BuiltinStrategy::FsMkdirAll,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::remove",
             strategy: BuiltinStrategy::FsRemove,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::remove_all",
             strategy: BuiltinStrategy::FsRemoveAll,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::join",
             strategy: BuiltinStrategy::FsJoin,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::dirname",
             strategy: BuiltinStrategy::FsDirname,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::basename",
             strategy: BuiltinStrategy::FsBasename,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::extension",
             strategy: BuiltinStrategy::FsExtension,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::absolute",
             strategy: BuiltinStrategy::FsAbsolute,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::size",
             strategy: BuiltinStrategy::FsSize,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::modified",
             strategy: BuiltinStrategy::FsModified,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::copy",
             strategy: BuiltinStrategy::FsCopy,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::rename",
             strategy: BuiltinStrategy::FsRename,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::getwd",
             strategy: BuiltinStrategy::FsGetwd,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::chdir",
             strategy: BuiltinStrategy::FsChdir,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::create_temp",
             strategy: BuiltinStrategy::FsCreateTemp,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mkdir_temp",
             strategy: BuiltinStrategy::FsMkdirTemp,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::chmod",
             strategy: BuiltinStrategy::FsChmod,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::truncate",
             strategy: BuiltinStrategy::FsTruncate,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::stat",
             strategy: BuiltinStrategy::FsStat,
+            platforms: NATIVE_EDGE,
         },
         // ========================================
         // Memory-mapped file operations
@@ -1573,34 +1755,42 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "fs::mmap_open",
             strategy: BuiltinStrategy::FsMmapOpen,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mmap_len",
             strategy: BuiltinStrategy::FsMmapLen,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mmap_read_byte",
             strategy: BuiltinStrategy::FsMmapReadByte,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mmap_write_byte",
             strategy: BuiltinStrategy::FsMmapWriteByte,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mmap_read",
             strategy: BuiltinStrategy::FsMmapRead,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mmap_write",
             strategy: BuiltinStrategy::FsMmapWrite,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mmap_flush",
             strategy: BuiltinStrategy::FsMmapFlush,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::mmap_close",
             strategy: BuiltinStrategy::FsMmapClose,
+            platforms: NATIVE_EDGE,
         },
         // ========================================
         // File handle operations
@@ -1608,50 +1798,62 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "fs::file_open",
             strategy: BuiltinStrategy::FsFileOpen,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_close",
             strategy: BuiltinStrategy::FsFileClose,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_read",
             strategy: BuiltinStrategy::FsFileRead,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_read_line",
             strategy: BuiltinStrategy::FsFileReadLine,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_read_all",
             strategy: BuiltinStrategy::FsFileReadAll,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_write",
             strategy: BuiltinStrategy::FsFileWrite,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_write_line",
             strategy: BuiltinStrategy::FsFileWriteLine,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_flush",
             strategy: BuiltinStrategy::FsFileFlush,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_seek",
             strategy: BuiltinStrategy::FsFileSeek,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_tell",
             strategy: BuiltinStrategy::FsFileTell,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_eof",
             strategy: BuiltinStrategy::FsFileEof,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_size",
             strategy: BuiltinStrategy::FsFileSize,
+            platforms: NATIVE_EDGE,
         },
         // ========================================
         // Link/symlink operations
@@ -1659,34 +1861,42 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "fs::symlink",
             strategy: BuiltinStrategy::FsSymlink,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::readlink",
             strategy: BuiltinStrategy::FsReadlink,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::lstat",
             strategy: BuiltinStrategy::FsLstat,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::link",
             strategy: BuiltinStrategy::FsLink,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::chtimes",
             strategy: BuiltinStrategy::FsChtimes,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::chown",
             strategy: BuiltinStrategy::FsChown,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::lchown",
             strategy: BuiltinStrategy::FsLchown,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::same_file",
             strategy: BuiltinStrategy::FsSameFile,
+            platforms: NATIVE_EDGE,
         },
         // ========================================
         // Additional file handle operations
@@ -1694,30 +1904,37 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "fs::file_read_at",
             strategy: BuiltinStrategy::FsFileReadAt,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_write_at",
             strategy: BuiltinStrategy::FsFileWriteAt,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_name",
             strategy: BuiltinStrategy::FsFileName,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_stat",
             strategy: BuiltinStrategy::FsFileStat,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_truncate",
             strategy: BuiltinStrategy::FsFileTruncate,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_chmod",
             strategy: BuiltinStrategy::FsFileChmod,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "fs::file_chown",
             strategy: BuiltinStrategy::FsFileChown,
+            platforms: NATIVE_EDGE,
         },
         // ========================================
         // Path module
@@ -1726,70 +1943,87 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "path::join",
             strategy: BuiltinStrategy::PathJoin,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::normalize",
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_normalize"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::dirname",
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_dirname"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::basename",
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_basename"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::extension",
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_extension"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::stem",
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_stem"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::to_slash",
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_to_slash"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::from_slash",
             strategy: BuiltinStrategy::PathOneArgStr("naml_path_from_slash"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::is_absolute",
             strategy: BuiltinStrategy::PathOneArgBool("naml_path_is_absolute"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::is_relative",
             strategy: BuiltinStrategy::PathOneArgBool("naml_path_is_relative"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::has_root",
             strategy: BuiltinStrategy::PathOneArgBool("naml_path_has_root"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::with_extension",
             strategy: BuiltinStrategy::PathTwoArgStr("naml_path_with_extension"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::strip_prefix",
             strategy: BuiltinStrategy::PathTwoArgStr("naml_path_strip_prefix"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::starts_with",
             strategy: BuiltinStrategy::PathTwoArgBool("naml_path_starts_with"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::ends_with",
             strategy: BuiltinStrategy::PathTwoArgBool("naml_path_ends_with"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::components",
             strategy: BuiltinStrategy::PathComponents,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "path::separator",
             strategy: BuiltinStrategy::PathSeparator,
+            platforms: ALL,
         },
         // ========================================
         // Env module
@@ -1797,30 +2031,37 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "env::getenv",
             strategy: BuiltinStrategy::EnvGetenv,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "env::lookup_env",
             strategy: BuiltinStrategy::EnvLookupEnv,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "env::setenv",
             strategy: BuiltinStrategy::EnvSetenv,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "env::unsetenv",
             strategy: BuiltinStrategy::EnvUnsetenv,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "env::clearenv",
             strategy: BuiltinStrategy::EnvClearenv,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "env::environ",
             strategy: BuiltinStrategy::EnvEnviron,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "env::expand_env",
             strategy: BuiltinStrategy::EnvExpandEnv,
+            platforms: ALL,
         },
         // ========================================
         // OS module
@@ -1828,50 +2069,62 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "os::hostname",
             strategy: BuiltinStrategy::OsHostname,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::temp_dir",
             strategy: BuiltinStrategy::OsTempDir,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::home_dir",
             strategy: BuiltinStrategy::OsHomeDir,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::cache_dir",
             strategy: BuiltinStrategy::OsCacheDir,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::config_dir",
             strategy: BuiltinStrategy::OsConfigDir,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::executable",
             strategy: BuiltinStrategy::OsExecutable,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::pagesize",
             strategy: BuiltinStrategy::OsPagesize,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::getuid",
             strategy: BuiltinStrategy::OsGetuid,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::geteuid",
             strategy: BuiltinStrategy::OsGeteuid,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::getgid",
             strategy: BuiltinStrategy::OsGetgid,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::getegid",
             strategy: BuiltinStrategy::OsGetegid,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "os::getgroups",
             strategy: BuiltinStrategy::OsGetgroups,
+            platforms: ALL,
         },
         // ========================================
         // Process module
@@ -1879,74 +2132,92 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "process::getpid",
             strategy: BuiltinStrategy::ProcessGetpid,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::getppid",
             strategy: BuiltinStrategy::ProcessGetppid,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::exit",
             strategy: BuiltinStrategy::ProcessExit,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::pipe_read",
             strategy: BuiltinStrategy::ProcessPipeRead,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::pipe_write",
             strategy: BuiltinStrategy::ProcessPipeWrite,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::start_process",
             strategy: BuiltinStrategy::ProcessStart,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::find_process",
             strategy: BuiltinStrategy::ProcessFind,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::wait",
             strategy: BuiltinStrategy::ProcessWait,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::signal",
             strategy: BuiltinStrategy::ProcessSignal,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::kill",
             strategy: BuiltinStrategy::ProcessKill,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::release",
             strategy: BuiltinStrategy::ProcessRelease,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::SIGHUP",
             strategy: BuiltinStrategy::ProcessSighup,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::SIGINT",
             strategy: BuiltinStrategy::ProcessSigint,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::SIGQUIT",
             strategy: BuiltinStrategy::ProcessSigquit,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::SIGKILL",
             strategy: BuiltinStrategy::ProcessSigkill,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::SIGTERM",
             strategy: BuiltinStrategy::ProcessSigterm,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::SIGSTOP",
             strategy: BuiltinStrategy::ProcessSigstop,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "process::SIGCONT",
             strategy: BuiltinStrategy::ProcessSigcont,
+            platforms: ALL,
         },
         // ========================================
         // Testing module
@@ -1954,74 +2225,92 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "testing::assert",
             strategy: BuiltinStrategy::TestingAssert,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_eq",
             strategy: BuiltinStrategy::TestingAssertEq,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_eq_float",
             strategy: BuiltinStrategy::TestingAssertEqFloat,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_eq_string",
             strategy: BuiltinStrategy::TestingAssertEqString,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_eq_bool",
             strategy: BuiltinStrategy::TestingAssertEqBool,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_neq",
             strategy: BuiltinStrategy::TestingAssertNeq,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_neq_string",
             strategy: BuiltinStrategy::TestingAssertNeqString,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_true",
             strategy: BuiltinStrategy::TestingAssertTrue,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_false",
             strategy: BuiltinStrategy::TestingAssertFalse,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_gt",
             strategy: BuiltinStrategy::TestingAssertGt,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_gte",
             strategy: BuiltinStrategy::TestingAssertGte,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_lt",
             strategy: BuiltinStrategy::TestingAssertLt,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_lte",
             strategy: BuiltinStrategy::TestingAssertLte,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::fail",
             strategy: BuiltinStrategy::TestingFail,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_approx",
             strategy: BuiltinStrategy::TestingAssertApprox,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_contains",
             strategy: BuiltinStrategy::TestingAssertContains,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_starts_with",
             strategy: BuiltinStrategy::TestingAssertStartsWith,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "testing::assert_ends_with",
             strategy: BuiltinStrategy::TestingAssertEndsWith,
+            platforms: ALL,
         },
         // ========================================
         // Encoding module
@@ -2030,82 +2319,101 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "utf8::encode",
             strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_utf8_encode"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "utf8::decode",
             strategy: BuiltinStrategy::EncodingDecodeToString("naml_encoding_utf8_decode"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "utf8::is_valid",
             strategy: BuiltinStrategy::EncodingValidate("naml_encoding_utf8_is_valid"),
+            platforms: ALL,
         },
         // Hex
         BuiltinFunction {
             name: "encoding::hex::encode",
             strategy: BuiltinStrategy::EncodingBytesToString("naml_encoding_hex_encode"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::hex::decode",
             strategy: BuiltinStrategy::EncodingDecodeToBytes("naml_encoding_hex_decode"),
+            platforms: ALL,
         },
         // Base64
         BuiltinFunction {
             name: "base64::encode",
             strategy: BuiltinStrategy::EncodingBytesToString("naml_encoding_base64_encode"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "base64::decode",
             strategy: BuiltinStrategy::EncodingDecodeToBytes("naml_encoding_base64_decode"),
+            platforms: ALL,
         },
         // URL
         BuiltinFunction {
             name: "encoding::url::encode",
             strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_url_encode"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::url::decode",
             strategy: BuiltinStrategy::EncodingDecodeToString("naml_encoding_url_decode"),
+            platforms: ALL,
         },
         // JSON
         BuiltinFunction {
             name: "encoding::json::decode",
             strategy: BuiltinStrategy::JsonDecode,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::encode",
             strategy: BuiltinStrategy::JsonEncode("naml_json_encode"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::encode_pretty",
             strategy: BuiltinStrategy::JsonEncode("naml_json_encode_pretty"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::exists",
             strategy: BuiltinStrategy::JsonExists,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::path",
             strategy: BuiltinStrategy::JsonPath,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::keys",
             strategy: BuiltinStrategy::JsonKeys,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::count",
             strategy: BuiltinStrategy::JsonCount,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::get_type",
             strategy: BuiltinStrategy::JsonGetType,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::type_name",
             strategy: BuiltinStrategy::JsonTypeName,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::json::is_null",
             strategy: BuiltinStrategy::JsonIsNull,
+            platforms: ALL,
         },
         // ========================================
         // TOML encoding module
@@ -2113,14 +2421,17 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "encoding::toml::decode",
             strategy: BuiltinStrategy::TomlDecode,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::toml::encode",
             strategy: BuiltinStrategy::TomlEncode("naml_encoding_toml_encode"),
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::toml::encode_pretty",
             strategy: BuiltinStrategy::TomlEncode("naml_encoding_toml_encode_pretty"),
+            platforms: ALL,
         },
         // ========================================
         // YAML encoding module
@@ -2128,85 +2439,87 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "encoding::yaml::decode",
             strategy: BuiltinStrategy::YamlDecode,
+            platforms: ALL,
         },
         BuiltinFunction {
             name: "encoding::yaml::encode",
             strategy: BuiltinStrategy::YamlEncode,
+            platforms: ALL,
         },
         // ========================================
         // Binary encoding module
         // ========================================
-        BuiltinFunction { name: "encoding::binary::read_u8", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u8") },
-        BuiltinFunction { name: "encoding::binary::read_i8", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i8") },
-        BuiltinFunction { name: "encoding::binary::read_u16_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u16_be") },
-        BuiltinFunction { name: "encoding::binary::read_u16_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u16_le") },
-        BuiltinFunction { name: "encoding::binary::read_i16_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i16_be") },
-        BuiltinFunction { name: "encoding::binary::read_i16_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i16_le") },
-        BuiltinFunction { name: "encoding::binary::read_u32_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u32_be") },
-        BuiltinFunction { name: "encoding::binary::read_u32_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u32_le") },
-        BuiltinFunction { name: "encoding::binary::read_i32_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i32_be") },
-        BuiltinFunction { name: "encoding::binary::read_i32_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i32_le") },
-        BuiltinFunction { name: "encoding::binary::read_u64_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u64_be") },
-        BuiltinFunction { name: "encoding::binary::read_u64_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u64_le") },
-        BuiltinFunction { name: "encoding::binary::read_i64_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i64_be") },
-        BuiltinFunction { name: "encoding::binary::read_i64_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i64_le") },
-        BuiltinFunction { name: "encoding::binary::read_f32_be", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f32_be") },
-        BuiltinFunction { name: "encoding::binary::read_f32_le", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f32_le") },
-        BuiltinFunction { name: "encoding::binary::read_f64_be", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f64_be") },
-        BuiltinFunction { name: "encoding::binary::read_f64_le", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f64_le") },
-        BuiltinFunction { name: "encoding::binary::write_u8", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u8") },
-        BuiltinFunction { name: "encoding::binary::write_i8", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i8") },
-        BuiltinFunction { name: "encoding::binary::write_u16_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u16_be") },
-        BuiltinFunction { name: "encoding::binary::write_u16_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u16_le") },
-        BuiltinFunction { name: "encoding::binary::write_i16_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i16_be") },
-        BuiltinFunction { name: "encoding::binary::write_i16_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i16_le") },
-        BuiltinFunction { name: "encoding::binary::write_u32_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u32_be") },
-        BuiltinFunction { name: "encoding::binary::write_u32_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u32_le") },
-        BuiltinFunction { name: "encoding::binary::write_i32_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i32_be") },
-        BuiltinFunction { name: "encoding::binary::write_i32_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i32_le") },
-        BuiltinFunction { name: "encoding::binary::write_u64_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u64_be") },
-        BuiltinFunction { name: "encoding::binary::write_u64_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u64_le") },
-        BuiltinFunction { name: "encoding::binary::write_i64_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i64_be") },
-        BuiltinFunction { name: "encoding::binary::write_i64_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i64_le") },
-        BuiltinFunction { name: "encoding::binary::write_f32_be", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f32_be") },
-        BuiltinFunction { name: "encoding::binary::write_f32_le", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f32_le") },
-        BuiltinFunction { name: "encoding::binary::write_f64_be", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f64_be") },
-        BuiltinFunction { name: "encoding::binary::write_f64_le", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f64_le") },
-        BuiltinFunction { name: "encoding::binary::alloc", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_alloc") },
-        BuiltinFunction { name: "encoding::binary::from_string", strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_binary_from_string") },
-        BuiltinFunction { name: "encoding::binary::len", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_len") },
-        BuiltinFunction { name: "encoding::binary::capacity", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_capacity") },
-        BuiltinFunction { name: "encoding::binary::slice", strategy: BuiltinStrategy::BinaryThreeArgCall("naml_encoding_binary_slice") },
-        BuiltinFunction { name: "encoding::binary::concat", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_concat") },
-        BuiltinFunction { name: "encoding::binary::append", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_append") },
-        BuiltinFunction { name: "encoding::binary::copy_within", strategy: BuiltinStrategy::BinaryFourArgVoid("naml_encoding_binary_copy_within") },
-        BuiltinFunction { name: "encoding::binary::clear", strategy: BuiltinStrategy::BinaryOneArgVoid("naml_encoding_binary_clear") },
-        BuiltinFunction { name: "encoding::binary::resize", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_resize") },
-        BuiltinFunction { name: "encoding::binary::fill", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_fill") },
-        BuiltinFunction { name: "encoding::binary::index_of", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_index_of") },
-        BuiltinFunction { name: "encoding::binary::contains", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_contains") },
-        BuiltinFunction { name: "encoding::binary::starts_with", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_starts_with") },
-        BuiltinFunction { name: "encoding::binary::ends_with", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_ends_with") },
-        BuiltinFunction { name: "encoding::binary::equals", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_equals") },
+        BuiltinFunction { name: "encoding::binary::read_u8", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u8"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_i8", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i8"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_u16_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u16_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_u16_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u16_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_i16_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i16_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_i16_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i16_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_u32_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u32_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_u32_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u32_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_i32_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i32_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_i32_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i32_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_u64_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u64_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_u64_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_u64_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_i64_be", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i64_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_i64_le", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_read_i64_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_f32_be", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f32_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_f32_le", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f32_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_f64_be", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f64_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::read_f64_le", strategy: BuiltinStrategy::BinaryReadFloat("naml_encoding_binary_read_f64_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_u8", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u8"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_i8", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i8"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_u16_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u16_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_u16_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u16_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_i16_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i16_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_i16_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i16_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_u32_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u32_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_u32_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u32_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_i32_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i32_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_i32_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i32_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_u64_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u64_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_u64_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_u64_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_i64_be", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i64_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_i64_le", strategy: BuiltinStrategy::BinaryThreeArgVoid("naml_encoding_binary_write_i64_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_f32_be", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f32_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_f32_le", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f32_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_f64_be", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f64_be"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::write_f64_le", strategy: BuiltinStrategy::BinaryWriteFloat("naml_encoding_binary_write_f64_le"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::alloc", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_alloc"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::from_string", strategy: BuiltinStrategy::EncodingStringToBytes("naml_encoding_binary_from_string"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::len", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_len"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::capacity", strategy: BuiltinStrategy::BinaryOneArgCall("naml_encoding_binary_capacity"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::slice", strategy: BuiltinStrategy::BinaryThreeArgCall("naml_encoding_binary_slice"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::concat", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_concat"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::append", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_append"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::copy_within", strategy: BuiltinStrategy::BinaryFourArgVoid("naml_encoding_binary_copy_within"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::clear", strategy: BuiltinStrategy::BinaryOneArgVoid("naml_encoding_binary_clear"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::resize", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_resize"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::fill", strategy: BuiltinStrategy::BinaryTwoArgVoid("naml_encoding_binary_fill"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::index_of", strategy: BuiltinStrategy::BinaryTwoArgCall("naml_encoding_binary_index_of"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::contains", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_contains"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::starts_with", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_starts_with"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::ends_with", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_ends_with"), platforms: ALL },
+        BuiltinFunction { name: "encoding::binary::equals", strategy: BuiltinStrategy::BinaryTwoArgBool("naml_encoding_binary_equals"), platforms: ALL },
         // ========================================
         // Crypto module
         // ========================================
-        BuiltinFunction { name: "crypto::md5", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_md5") },
-        BuiltinFunction { name: "crypto::md5_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_md5_hex") },
-        BuiltinFunction { name: "crypto::sha1", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha1") },
-        BuiltinFunction { name: "crypto::sha1_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha1_hex") },
-        BuiltinFunction { name: "crypto::sha256", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha256") },
-        BuiltinFunction { name: "crypto::sha256_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha256_hex") },
-        BuiltinFunction { name: "crypto::sha512", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha512") },
-        BuiltinFunction { name: "crypto::sha512_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha512_hex") },
-        BuiltinFunction { name: "crypto::hmac_sha256", strategy: BuiltinStrategy::CryptoHmacBytes("naml_crypto_hmac_sha256") },
-        BuiltinFunction { name: "crypto::hmac_sha256_hex", strategy: BuiltinStrategy::CryptoHmacHex("naml_crypto_hmac_sha256_hex") },
-        BuiltinFunction { name: "crypto::hmac_sha512", strategy: BuiltinStrategy::CryptoHmacBytes("naml_crypto_hmac_sha512") },
-        BuiltinFunction { name: "crypto::hmac_sha512_hex", strategy: BuiltinStrategy::CryptoHmacHex("naml_crypto_hmac_sha512_hex") },
-        BuiltinFunction { name: "crypto::hmac_verify_sha256", strategy: BuiltinStrategy::CryptoHmacVerify("naml_crypto_hmac_verify_sha256") },
-        BuiltinFunction { name: "crypto::hmac_verify_sha512", strategy: BuiltinStrategy::CryptoHmacVerify("naml_crypto_hmac_verify_sha512") },
-        BuiltinFunction { name: "crypto::pbkdf2_sha256", strategy: BuiltinStrategy::CryptoPbkdf2("naml_crypto_pbkdf2_sha256") },
-        BuiltinFunction { name: "crypto::random_bytes", strategy: BuiltinStrategy::CryptoRandomBytes("naml_crypto_random_bytes") },
+        BuiltinFunction { name: "crypto::md5", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_md5"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::md5_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_md5_hex"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::sha1", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha1"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::sha1_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha1_hex"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::sha256", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha256"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::sha256_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha256_hex"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::sha512", strategy: BuiltinStrategy::CryptoHashBytes("naml_crypto_sha512"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::sha512_hex", strategy: BuiltinStrategy::CryptoHashHex("naml_crypto_sha512_hex"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::hmac_sha256", strategy: BuiltinStrategy::CryptoHmacBytes("naml_crypto_hmac_sha256"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::hmac_sha256_hex", strategy: BuiltinStrategy::CryptoHmacHex("naml_crypto_hmac_sha256_hex"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::hmac_sha512", strategy: BuiltinStrategy::CryptoHmacBytes("naml_crypto_hmac_sha512"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::hmac_sha512_hex", strategy: BuiltinStrategy::CryptoHmacHex("naml_crypto_hmac_sha512_hex"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::hmac_verify_sha256", strategy: BuiltinStrategy::CryptoHmacVerify("naml_crypto_hmac_verify_sha256"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::hmac_verify_sha512", strategy: BuiltinStrategy::CryptoHmacVerify("naml_crypto_hmac_verify_sha512"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::pbkdf2_sha256", strategy: BuiltinStrategy::CryptoPbkdf2("naml_crypto_pbkdf2_sha256"), platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "crypto::random_bytes", strategy: BuiltinStrategy::CryptoRandomBytes("naml_crypto_random_bytes"), platforms: NATIVE_EDGE },
         // ========================================
         // Networking module (strict hierarchy: net::tcp::server, net::tcp::client, etc.)
         // ========================================
@@ -2214,221 +2527,260 @@ pub fn get_builtin_registry() -> &'static [BuiltinFunction] {
         BuiltinFunction {
             name: "net::tcp::server::listen",
             strategy: BuiltinStrategy::NetTcpListen,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::server::accept",
             strategy: BuiltinStrategy::NetTcpAccept,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::server::close",
             strategy: BuiltinStrategy::NetTcpServerClose,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::server::local_addr",
             strategy: BuiltinStrategy::NetTcpServerLocalAddr,
+            platforms: NATIVE_EDGE,
         },
         // TCP Client
         BuiltinFunction {
             name: "net::tcp::client::connect",
             strategy: BuiltinStrategy::NetTcpConnect,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::client::read",
             strategy: BuiltinStrategy::NetTcpRead,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::client::read_all",
             strategy: BuiltinStrategy::NetTcpReadAll,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::client::write",
             strategy: BuiltinStrategy::NetTcpWrite,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::client::set_timeout",
             strategy: BuiltinStrategy::NetTcpSetTimeout,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::client::peer_addr",
             strategy: BuiltinStrategy::NetTcpPeerAddr,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tcp::client::close",
             strategy: BuiltinStrategy::NetTcpClientClose,
+            platforms: NATIVE_EDGE,
         },
         // UDP
         BuiltinFunction {
             name: "net::udp::bind",
             strategy: BuiltinStrategy::NetUdpBind,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::udp::send",
             strategy: BuiltinStrategy::NetUdpSend,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::udp::receive",
             strategy: BuiltinStrategy::NetUdpReceive,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::udp::close",
             strategy: BuiltinStrategy::NetUdpClose,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::udp::local_addr",
             strategy: BuiltinStrategy::NetUdpLocalAddr,
+            platforms: NATIVE_EDGE,
         },
         // HTTP Client
         BuiltinFunction {
             name: "net::http::client::get",
             strategy: BuiltinStrategy::NetHttpGet,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::post",
             strategy: BuiltinStrategy::NetHttpPost,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::put",
             strategy: BuiltinStrategy::NetHttpPut,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::patch",
             strategy: BuiltinStrategy::NetHttpPatch,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::delete",
             strategy: BuiltinStrategy::NetHttpDelete,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::set_timeout",
             strategy: BuiltinStrategy::NetHttpSetTimeout,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::status",
             strategy: BuiltinStrategy::NetHttpStatus,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::body",
             strategy: BuiltinStrategy::NetHttpBody,
+            platforms: NATIVE_EDGE,
         },
         // ========================================
         // HTTP Server module
         // ========================================
-        BuiltinFunction { name: "net::http::server::open_router", strategy: BuiltinStrategy::NetHttpServerOpenRouter },
-        BuiltinFunction { name: "net::http::server::get", strategy: BuiltinStrategy::NetHttpServerGet },
-        BuiltinFunction { name: "net::http::server::post", strategy: BuiltinStrategy::NetHttpServerPost },
-        BuiltinFunction { name: "net::http::server::put", strategy: BuiltinStrategy::NetHttpServerPut },
-        BuiltinFunction { name: "net::http::server::patch", strategy: BuiltinStrategy::NetHttpServerPatch },
-        BuiltinFunction { name: "net::http::server::delete", strategy: BuiltinStrategy::NetHttpServerDelete },
-        BuiltinFunction { name: "net::http::server::with", strategy: BuiltinStrategy::NetHttpServerWith },
-        BuiltinFunction { name: "net::http::server::group", strategy: BuiltinStrategy::NetHttpServerGroup },
-        BuiltinFunction { name: "net::http::server::mount", strategy: BuiltinStrategy::NetHttpServerMount },
-        BuiltinFunction { name: "net::http::server::serve", strategy: BuiltinStrategy::NetHttpServerServe },
-        BuiltinFunction { name: "net::http::server::text_response", strategy: BuiltinStrategy::NetHttpServerTextResponse },
+        BuiltinFunction { name: "net::http::server::open_router", strategy: BuiltinStrategy::NetHttpServerOpenRouter, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::get", strategy: BuiltinStrategy::NetHttpServerGet, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::post", strategy: BuiltinStrategy::NetHttpServerPost, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::put", strategy: BuiltinStrategy::NetHttpServerPut, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::patch", strategy: BuiltinStrategy::NetHttpServerPatch, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::delete", strategy: BuiltinStrategy::NetHttpServerDelete, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::with", strategy: BuiltinStrategy::NetHttpServerWith, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::group", strategy: BuiltinStrategy::NetHttpServerGroup, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::mount", strategy: BuiltinStrategy::NetHttpServerMount, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::serve", strategy: BuiltinStrategy::NetHttpServerServe, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "net::http::server::text_response", strategy: BuiltinStrategy::NetHttpServerTextResponse, platforms: NATIVE_EDGE },
         // ========================================
         // TLS module
         // ========================================
         BuiltinFunction {
             name: "net::tls::connect",
             strategy: BuiltinStrategy::NetTlsConnect,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::read",
             strategy: BuiltinStrategy::NetTlsRead,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::read_all",
             strategy: BuiltinStrategy::NetTlsReadAll,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::write",
             strategy: BuiltinStrategy::NetTlsWrite,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::close",
             strategy: BuiltinStrategy::NetTlsClientClose,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::set_timeout",
             strategy: BuiltinStrategy::NetTlsSetTimeout,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::peer_addr",
             strategy: BuiltinStrategy::NetTlsPeerAddr,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::wrap_listener",
             strategy: BuiltinStrategy::NetTlsWrapListener,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::accept",
             strategy: BuiltinStrategy::NetTlsAccept,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::tls::close_listener",
             strategy: BuiltinStrategy::NetTlsCloseListener,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::server::serve_tls",
             strategy: BuiltinStrategy::NetHttpServeTls,
+            platforms: NATIVE_EDGE,
         },
         BuiltinFunction {
             name: "net::http::client::get_tls",
             strategy: BuiltinStrategy::NetHttpGetTls,
+            platforms: NATIVE_EDGE,
         },
         // ========================================
         // SQLite database module
         // ========================================
-        BuiltinFunction { name: "db::sqlite::open", strategy: BuiltinStrategy::SqliteOpen },
-        BuiltinFunction { name: "db::sqlite::open_memory", strategy: BuiltinStrategy::SqliteOpenMemory },
-        BuiltinFunction { name: "db::sqlite::close", strategy: BuiltinStrategy::SqliteClose },
-        BuiltinFunction { name: "db::sqlite::exec", strategy: BuiltinStrategy::SqliteExec },
-        BuiltinFunction { name: "db::sqlite::query", strategy: BuiltinStrategy::SqliteQuery },
-        BuiltinFunction { name: "db::sqlite::row_count", strategy: BuiltinStrategy::SqliteRowCount },
-        BuiltinFunction { name: "db::sqlite::row_at", strategy: BuiltinStrategy::SqliteRowAt },
-        BuiltinFunction { name: "db::sqlite::get_string", strategy: BuiltinStrategy::SqliteGetString },
-        BuiltinFunction { name: "db::sqlite::get_int", strategy: BuiltinStrategy::SqliteGetInt },
-        BuiltinFunction { name: "db::sqlite::get_float", strategy: BuiltinStrategy::SqliteGetFloat },
-        BuiltinFunction { name: "db::sqlite::get_bool", strategy: BuiltinStrategy::SqliteGetBool },
-        BuiltinFunction { name: "db::sqlite::is_null", strategy: BuiltinStrategy::SqliteIsNull },
-        BuiltinFunction { name: "db::sqlite::columns", strategy: BuiltinStrategy::SqliteColumns },
-        BuiltinFunction { name: "db::sqlite::column_count", strategy: BuiltinStrategy::SqliteColumnCount },
-        BuiltinFunction { name: "db::sqlite::begin", strategy: BuiltinStrategy::SqliteBegin },
-        BuiltinFunction { name: "db::sqlite::commit", strategy: BuiltinStrategy::SqliteCommit },
-        BuiltinFunction { name: "db::sqlite::rollback", strategy: BuiltinStrategy::SqliteRollback },
-        BuiltinFunction { name: "db::sqlite::prepare", strategy: BuiltinStrategy::SqlitePrepare },
-        BuiltinFunction { name: "db::sqlite::bind_string", strategy: BuiltinStrategy::SqliteBindString },
-        BuiltinFunction { name: "db::sqlite::bind_int", strategy: BuiltinStrategy::SqliteBindInt },
-        BuiltinFunction { name: "db::sqlite::bind_float", strategy: BuiltinStrategy::SqliteBindFloat },
-        BuiltinFunction { name: "db::sqlite::step", strategy: BuiltinStrategy::SqliteStep },
-        BuiltinFunction { name: "db::sqlite::step_query", strategy: BuiltinStrategy::SqliteStepQuery },
-        BuiltinFunction { name: "db::sqlite::reset", strategy: BuiltinStrategy::SqliteReset },
-        BuiltinFunction { name: "db::sqlite::finalize", strategy: BuiltinStrategy::SqliteFinalize },
-        BuiltinFunction { name: "db::sqlite::changes", strategy: BuiltinStrategy::SqliteChanges },
-        BuiltinFunction { name: "db::sqlite::last_insert_id", strategy: BuiltinStrategy::SqliteLastInsertId },
+        BuiltinFunction { name: "db::sqlite::open", strategy: BuiltinStrategy::SqliteOpen, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::open_memory", strategy: BuiltinStrategy::SqliteOpenMemory, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::close", strategy: BuiltinStrategy::SqliteClose, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::exec", strategy: BuiltinStrategy::SqliteExec, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::query", strategy: BuiltinStrategy::SqliteQuery, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::row_count", strategy: BuiltinStrategy::SqliteRowCount, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::row_at", strategy: BuiltinStrategy::SqliteRowAt, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::get_string", strategy: BuiltinStrategy::SqliteGetString, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::get_int", strategy: BuiltinStrategy::SqliteGetInt, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::get_float", strategy: BuiltinStrategy::SqliteGetFloat, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::get_bool", strategy: BuiltinStrategy::SqliteGetBool, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::is_null", strategy: BuiltinStrategy::SqliteIsNull, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::columns", strategy: BuiltinStrategy::SqliteColumns, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::column_count", strategy: BuiltinStrategy::SqliteColumnCount, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::begin", strategy: BuiltinStrategy::SqliteBegin, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::commit", strategy: BuiltinStrategy::SqliteCommit, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::rollback", strategy: BuiltinStrategy::SqliteRollback, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::prepare", strategy: BuiltinStrategy::SqlitePrepare, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::bind_string", strategy: BuiltinStrategy::SqliteBindString, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::bind_int", strategy: BuiltinStrategy::SqliteBindInt, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::bind_float", strategy: BuiltinStrategy::SqliteBindFloat, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::step", strategy: BuiltinStrategy::SqliteStep, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::step_query", strategy: BuiltinStrategy::SqliteStepQuery, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::reset", strategy: BuiltinStrategy::SqliteReset, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::finalize", strategy: BuiltinStrategy::SqliteFinalize, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::changes", strategy: BuiltinStrategy::SqliteChanges, platforms: NATIVE_EDGE },
+        BuiltinFunction { name: "db::sqlite::last_insert_id", strategy: BuiltinStrategy::SqliteLastInsertId, platforms: NATIVE_EDGE },
         // ========================================
         // Timers module
         // ========================================
-        BuiltinFunction { name: "timers::set_timeout", strategy: BuiltinStrategy::TimerSetTimeout },
-        BuiltinFunction { name: "timers::cancel_timeout", strategy: BuiltinStrategy::TimerCancelTimeout },
-        BuiltinFunction { name: "timers::set_interval", strategy: BuiltinStrategy::TimerSetInterval },
-        BuiltinFunction { name: "timers::cancel_interval", strategy: BuiltinStrategy::TimerCancelInterval },
-        BuiltinFunction { name: "timers::schedule", strategy: BuiltinStrategy::TimerSchedule },
-        BuiltinFunction { name: "timers::cancel_schedule", strategy: BuiltinStrategy::TimerCancelSchedule },
-        BuiltinFunction { name: "timers::next_run", strategy: BuiltinStrategy::TimerNextRun },
+        BuiltinFunction { name: "timers::set_timeout", strategy: BuiltinStrategy::TimerSetTimeout, platforms: NATIVE_ONLY },
+        BuiltinFunction { name: "timers::cancel_timeout", strategy: BuiltinStrategy::TimerCancelTimeout, platforms: NATIVE_ONLY },
+        BuiltinFunction { name: "timers::set_interval", strategy: BuiltinStrategy::TimerSetInterval, platforms: NATIVE_ONLY },
+        BuiltinFunction { name: "timers::cancel_interval", strategy: BuiltinStrategy::TimerCancelInterval, platforms: NATIVE_ONLY },
+        BuiltinFunction { name: "timers::schedule", strategy: BuiltinStrategy::TimerSchedule, platforms: NATIVE_ONLY },
+        BuiltinFunction { name: "timers::cancel_schedule", strategy: BuiltinStrategy::TimerCancelSchedule, platforms: NATIVE_ONLY },
+        BuiltinFunction { name: "timers::next_run", strategy: BuiltinStrategy::TimerNextRun, platforms: NATIVE_ONLY },
     ];
     REGISTRY
 }
 
-pub fn lookup_builtin(name: &str) -> Option<&'static BuiltinFunction> {
+pub fn lookup_builtin(name: &str, target: CompilationTarget) -> Option<&'static BuiltinFunction> {
     let registry = get_builtin_registry();
+    let matches_target = |f: &&BuiltinFunction| {
+        f.platforms.iter().any(|p| target.matches_platform(p))
+    };
     // 1. Exact match
-    if let Some(f) = registry.iter().find(|f| f.name == name) {
+    if let Some(f) = registry.iter().find(|f| f.name == name && matches_target(f)) {
         return Some(f);
     }
     // 2. Suffix match (e.g., "arrays::count" matches "collections::arrays::count")
     if name.contains("::") {
         let suffix = format!("::{}", name);
-        if let Some(f) = registry.iter().find(|f| f.name.ends_with(&suffix)) {
+        if let Some(f) = registry.iter().find(|f| f.name.ends_with(&suffix) && matches_target(f)) {
             return Some(f);
         }
     }

@@ -90,7 +90,7 @@ Compile to optimized native executable:
 
 ```bash
 naml build
-./target/release/main
+./build/main
 ```
 
 ## Working with Modules
@@ -154,12 +154,16 @@ fn main() {
 
 ## Error Handling
 
-Functions can throw errors:
+Define exception types and use `try/catch`:
 
 ```naml
-fn divide(a: int, b: int) -> int throws string {
+exception DivisionByZero {
+    message: string
+}
+
+fn divide(a: int, b: int) -> int throws DivisionByZero {
     if (b == 0) {
-        throw "Division by zero";
+        throw DivisionByZero("Cannot divide by zero");
     }
     return a / b;
 }
@@ -170,8 +174,8 @@ fn main() {
         println(fmt("Result: {}", result));
 
         var bad: int = divide(10, 0);  # This throws
-    } catch (err: string) {
-        println(fmt("Error: {}", err));
+    } catch (err: DivisionByZero) {
+        println(fmt("Error: {}", err.message));
     }
 }
 ```

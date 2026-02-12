@@ -47,7 +47,6 @@ use std::sync::LazyLock;
 
 const EXCEPTION_TYPE_PROCESS_ERROR: i64 = 9;
 const PROCESS_ERROR_STRUCT_TYPE_ID: u32 = 0xFFFF_0009;
-const PROCESS_STATUS_STRUCT_TYPE_ID: u32 = 0xFFFF_000A;
 
 struct ProcessTable {
     entries: HashMap<i64, ProcessEntry>,

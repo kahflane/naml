@@ -162,10 +162,15 @@ naml favors explicit, readable code over brevity:
 - Explicit error handling with `throws` and `try/catch`
 
 ```naml
+# Define exception types explicitly
+exception DivisionByZero {
+    message: string
+}
+
 # Clear and explicit
-fn divide(a: int, b: int) -> int throws string {
+fn divide(a: int, b: int) -> int throws DivisionByZero {
     if (b == 0) {
-        throw "Division by zero";
+        throw DivisionByZero("Cannot divide by zero");
     }
     return a / b;
 }
@@ -173,8 +178,8 @@ fn divide(a: int, b: int) -> int throws string {
 # Usage is also explicit
 try {
     var result: int = divide(10, 0);
-} catch (err: string) {
-    println(err);
+} catch (err: DivisionByZero) {
+    println(err.message);
 }
 ```
 
